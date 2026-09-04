@@ -427,6 +427,7 @@ sudo journalctl -u wg-quick@wg0 -f
 # Export pour analyse (Excel, Power BI, ELK...)
 cat /var/log/wireguard/tunnels.csv
 ```
+<img width="1917" height="705" alt="image" src="https://github.com/user-attachments/assets/b5e420b4-ac98-42a3-bc13-8477cf251a48" />
 
 <img width="1907" height="986" alt="image" src="https://github.com/user-attachments/assets/57461f0b-4def-40df-8490-d7fb470725ba" />
 
