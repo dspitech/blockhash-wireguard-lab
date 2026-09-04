@@ -65,6 +65,9 @@ az account show
 
 si vous êtes dan sle portail Azure lancez le Cloud Shell.
 
+<img width="1540" height="431" alt="image" src="https://github.com/user-attachments/assets/d962187a-f522-4344-b53d-02c307cff626" />
+
+
 ---
 
 ## 3. Architecture
@@ -153,6 +156,8 @@ L'infrastructure est organisée en **modules Terraform réutilisables**, pattern
 git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/terraform && cp terraform.tfvars.example terraform.tfvars
 ```
 
+<img width="1881" height="522" alt="image" src="https://github.com/user-attachments/assets/af50a882-71b6-4e0c-8831-c14575fab6bd" />
+
 Éditez `terraform.tfvars` :
 
 ```hcl
@@ -160,6 +165,9 @@ admin_password   = "VotreMotDePasseFort!2026"  # Mot de passe de la VM
 admin_source_ip  = "203.0.113.10/32"   # votre IP publique -> whatismyipaddress.com
 dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 ```
+
+<img width="1731" height="656" alt="image" src="https://github.com/user-attachments/assets/2c87a7b5-5df8-4407-86c0-9d4aa9d7f066" />
+
 
 > **Bonne pratique :** en environnement de production, ne laissez jamais `admin_source_ip` en `*`. Restreignez systématiquement l'accès SSH et au dashboard à votre IP (ou à une plage d'IP d'entreprise / un VPN d'administration). Préférez également `use_ssh_key = true` avec une clé publique plutôt qu'un mot de passe.
 
@@ -169,8 +177,12 @@ dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 
 ```bash
 terraform fmt && terraform init && terraform validate && terraform plan && terraform apply -auto-approve
-
 ```
+
+<img width="1923" height="750" alt="image" src="https://github.com/user-attachments/assets/d8414692-ab83-4c8d-9601-17f2fc25188d" />
+
+<img width="791" height="287" alt="image" src="https://github.com/user-attachments/assets/e434bde9-f4ee-4c3c-87a8-783dfd3f04f4" />
+
 
 Ou, sous Windows, via l'assistant fourni :
 
@@ -193,6 +205,10 @@ az vm show -g RG-Lab-WireGuard -n vm-wireguard-lab -d -o table
 terraform state list
 ```
 
+<img width="1507" height="220" alt="image" src="https://github.com/user-attachments/assets/46ff6640-6cc4-406c-8eec-4edae5a27ad3" />
+<img width="1272" height="425" alt="image" src="https://github.com/user-attachments/assets/c95b3999-2cb3-4c65-b8af-f0e2b8dd97cf" />
+
+
 ### 4.4 Pourquoi des modules ?
 
 Structurer l'infrastructure en modules (`network`, `compute`) plutôt qu'un fichier unique permet, en contexte professionnel, de :
@@ -212,6 +228,7 @@ Fichier concerné : `scripts/01-install-wireguard-server.sh`
 ```bash
 ssh wgadmin@<FQDN_ou_IP_publique>
 ```
+<img width="1115" height="495" alt="image" src="https://github.com/user-attachments/assets/0158a223-1c92-46f3-b4ea-4ad68d605428" />
 
 ### 5.2 Transfert et exécution du script
 
@@ -220,6 +237,7 @@ Depuis votre poste local :
 ```bash
 git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/scripts
 ```
+<img width="1656" height="487" alt="image" src="https://github.com/user-attachments/assets/263e064a-65e3-41e3-8fbe-9350bfeee8af" />
 
 Sur la VM :
 
@@ -227,6 +245,9 @@ Sur la VM :
 chmod +x *.sh
 sudo ./01-install-wireguard-server.sh
 ```
+
+<img width="1584" height="402" alt="image" src="https://github.com/user-attachments/assets/9ac8ae0e-e982-421d-b20c-89ebea908748" />
+
 
 ### 5.3 Ce que fait le script
 
@@ -248,6 +269,14 @@ ip a show wg0
 
 Vous devez voir l'interface `wg0` active avec l'adresse `10.66.66.1/24` et la clé publique du serveur affichée.
 
+<img width="1371" height="660" alt="image" src="https://github.com/user-attachments/assets/da7a9a1f-752b-454a-8789-929e71d4161f" />
+
+<img width="1077" height="352" alt="image" src="https://github.com/user-attachments/assets/afa8c1b6-24d5-44b3-ae28-caf4ec38a201" />
+
+<img width="1280" height="287" alt="image" src="https://github.com/user-attachments/assets/16f2eaa0-9a9e-452a-9c3b-ffbd0c74679f" />
+
+
+
 ---
 
 ## 6. Étape 3- Création et distribution des clients
@@ -267,6 +296,8 @@ Le script :
 - génère le fichier `clients/ordinateur-alice.conf` prêt à l'emploi ;
 - affiche un **QR code** dans le terminal (scannable directement depuis l'app mobile WireGuard).
 
+<img width="1686" height="981" alt="image" src="https://github.com/user-attachments/assets/3bac56b1-3d42-447b-9939-b0589e512c0a" />
+
 ### 6.2 Distribuer la configuration
 
 **Poste desktop (Windows/macOS/Linux) :**
@@ -280,6 +311,9 @@ Le script :
 3. **Importer le fichier dans l'application WireGuard** — ouvrez WireGuard, cliquez sur **"Import tunnel(s) from file"**, puis sélectionnez le fichier `.conf` récupéré à l'étape précédente. Le tunnel apparaît automatiquement dans la liste à gauche : rien à créer ou configurer manuellement, l'import fait tout.
 4. **Activer le tunnel** — sélectionnez le tunnel dans la liste et cliquez sur **"Activate"** (ou basculez l'interrupteur). La connexion VPN démarre immédiatement.
 5. **Vérifier que ça fonctionne** — ouvrez un navigateur et allez sur [whatismyipaddress.com](https://whatismyipaddress.com), ou dans PowerShell tapez `curl ifconfig.me`. L'IP affichée doit être celle du serveur (Azure ou votre box), pas votre IP personnelle habituelle.
+
+<img width="1435" height="987" alt="image" src="https://github.com/user-attachments/assets/8489a755-287c-458e-84dd-fe7fc71c70e1" />
+
 
 ### 6.3 Révoquer un client (optionnel)
 
@@ -317,6 +351,8 @@ Aucune base de données : l'API lit directement l'état WireGuard en direct (`wg
 Depuis la VM, dans le dossier `dashboard/` lancez le script d'installation :
 
 ```bash
+cd ~/blockhash-wireguard-lab
+ls dashboard          # doit lister backend/ et frontend/ 
 sudo ./scripts/03-install-dashboard.sh 8080
 ```
 
@@ -327,6 +363,8 @@ Le script :
 - autorise le service à lire l'état WireGuard sans lui donner les droits root complets (`sudoers` restreint à `wg show`, ou capacité `CAP_NET_ADMIN`- voir le script) ;
 - crée et démarre le service systemd `blockhash-dashboard` (gunicorn, 2 workers) ;
 - ouvre le port choisi (8080 par défaut) dans `ufw`.
+
+<img width="1740" height="982" alt="image" src="https://github.com/user-attachments/assets/78de9d13-bdc5-44ae-b824-e692bb488cb6" />
 
 ### 7.3 Accès au Dashboard
 
@@ -349,6 +387,8 @@ sudo systemctl status blockhash-dashboard
 sudo journalctl -u blockhash-dashboard -f
 curl -s http://localhost:8080/healthz
 ```
+
+<img width="1911" height="877" alt="image" src="https://github.com/user-attachments/assets/dd8e91e8-b821-4531-94e5-91932ffdbaf0" />
 
 ---
 
@@ -385,6 +425,9 @@ sudo journalctl -u wg-quick@wg0 -f
 # Export pour analyse (Excel, Power BI, ELK...)
 cat /var/log/wireguard/tunnels.csv
 ```
+
+<img width="1907" height="986" alt="image" src="https://github.com/user-attachments/assets/57461f0b-4def-40df-8490-d7fb470725ba" />
+
 
 Ces logs permettent, dans un cadre professionnel, de répondre à des besoins d'**audit** (qui s'est connecté, quand, combien de données échangées) et peuvent être ingérés par un SIEM ou un outil de supervision (ELK, Grafana + Loki, Azure Monitor via l'agent Log Analytics).
 
