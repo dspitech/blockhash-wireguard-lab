@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BLOCKHash — Supervision WireGuard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ============ BARRE LATERALE ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">BH</span>
+      <div class="brand-text">
+        <strong>BLOCKHash</strong>
+        <span>Tunnel Ops</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item is-active" data-view="overview">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 10.5 10 3l7 7.5M5 9v7.5h10V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Vue d'ensemble
+      </button>
+      <button class="nav-item" data-view="journal">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 3h10v14l-2.5-1.5L10 17l-2.5-1.5L5 17V3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 7h5M7.5 10h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Journal des connexions
+      </button>
+      <button class="nav-item" data-view="clients">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="6.5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Clients WireGuard
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="conn-pill" id="conn-pill">
+        <span class="dot"></span>
+        <span id="conn-label">Connexion…</span>
+      </div>
+      <p>Interface <code>wg0</code></p>
+    </div>
+  </aside>
+
+  <!-- ============ CONTENU PRINCIPAL ============ -->
+  <main class="main">
+
+    <header class="topbar">
+      <div>
+        <h1 id="view-title">Vue d'ensemble</h1>
+        <p id="view-subtitle">Etat en temps réel des tunnels VPN BLOCKHash</p>
+      </div>
+      <div class="topbar-right">
+        <div class="clock" id="clock">--:--:--</div>
+        <button class="btn-refresh" id="refresh-btn" title="Actualiser maintenant">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.76-4.24M16 3v4h-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="banner" id="demo-banner" hidden>
+      Mode démonstration — l'API backend n'a pas répondu, ces données sont simulées à titre d'aperçu.
+    </div>
+
+    <!-- ===== VUE : APERCU ===== -->
+    <section class="view is-active" data-view="overview">
+
+      <div class="hero-panel">
+        <div class="hero-head">
+          <div>
+            <span class="hero-eyebrow">Débit du tunnel</span>
+            <div class="hero-figure"><span id="hero-throughput">0</span><span class="hero-unit">Mb/s</span></div>
+          </div>
+          <div class="hero-legend">
+            <span><i class="sw sw-rx"></i>Réception</span>
+            <span><i class="sw sw-tx"></i>Émission</span>
+          </div>
+        </div>
+        <canvas id="throughput-chart" height="120"></canvas>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Tunnels actifs</span>
+          <span class="kpi-value" id="kpi-active">–</span>
+          <span class="kpi-detail" id="kpi-active-detail">sur – pairs configurés</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Volume reçu</span>
+          <span class="kpi-value" id="kpi-rx">–</span>
+          <span class="kpi-detail">cumul depuis les logs</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Volume émis</span>
+          <span class="kpi-value" id="kpi-tx">–</span>
+          <span class="kpi-detail">cumul depuis les logs</span>
+        </div>
+        <div class="kpi-card kpi-card--alert">
+          <span class="kpi-label">Alertes</span>
+          <span class="kpi-value" id="kpi-alerts">–</span>
+          <span class="kpi-detail">pairs sans handshake</span>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Derniers événements</h2>
+            <button class="link-btn" data-goto="journal">Voir le journal complet</button>
+          </div>
+          <ul class="event-list" id="recent-events"></ul>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Répartition du trafic</h2>
+          </div>
+          <canvas id="distribution-chart" height="220"></canvas>
+          <ul class="legend-list" id="distribution-legend"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VUE : JOURNAL ===== -->
+    <section class="view" data-view="journal">
+      <div class="panel panel--flush">
+        <div class="table-toolbar">
+          <div class="search-field">
+            <svg viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input type="text" id="log-search" placeholder="Rechercher un client, une IP, une clé…" />
+          </div>
+          <div class="chip-group" id="status-filters">
+            <button class="chip is-active" data-status="all">Tous</button>
+            <button class="chip" data-status="online">En ligne</button>
+            <button class="chip" data-status="idle">Inactif</button>
+            <button class="chip" data-status="never">Jamais connecté</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table" id="log-table">
+            <thead>
+              <tr>
+                <th data-sort="timestamp">Horodatage</th>
+                <th data-sort="peer">Client</th>
+                <th data-sort="endpoint">Endpoint</th>
+                <th data-sort="allowed_ips">IP tunnel</th>
+                <th data-sort="rx_bytes">Reçu</th>
+                <th data-sort="tx_bytes">Émis</th>
+              </tr>
+            </thead>
+            <tbody id="log-table-body"></tbody>
+          </table>
+          <p class="table-empty" id="log-empty" hidden>Aucune entrée ne correspond à votre recherche.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VUE : CLIENTS ===== -->
+    <section class="view" data-view="clients">
+      <div class="client-grid" id="client-grid"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-09-03T20:45:00Z",
+  "demo_mode": true,
+  "stats": {
+    "active_tunnels": 4,
+    "total_peers": 6,
+    "total_rx_bytes": 4831202234,
+    "total_tx_bytes": 1926882110,
+    "alerts": 1
+  },
+  "peers": [
+    { "name": "alice-laptop", "public_key": "hT2kP9q…8fQ=", "endpoint": "88.163.24.12:51820", "allowed_ips": "10.66.66.2/32", "last_handshake": "2026-09-03T20:43:12Z", "seconds_since_handshake": 108, "rx_bytes": 1820442112, "tx_bytes": 612004421, "status": "online" },
+    { "name": "bruno-desktop", "public_key": "Lm4nX7w…2rV=", "endpoint": "90.12.44.201:34981", "allowed_ips": "10.66.66.3/32", "last_handshake": "2026-09-03T20:44:50Z", "seconds_since_handshake": 10, "rx_bytes": 902331004, "tx_bytes": 340221004, "status": "online" },
+    { "name": "camille-mobile", "public_key": "Qw8sT1z…9jK=", "endpoint": "78.192.10.44:60122", "allowed_ips": "10.66.66.4/32", "last_handshake": "2026-09-03T20:41:03Z", "seconds_since_handshake": 237, "rx_bytes": 512004112, "tx_bytes": 220441002, "status": "idle" },
+    { "name": "dam-server-backup", "public_key": "Zp3vC6y…4tN=", "endpoint": "51.75.201.9:51820", "allowed_ips": "10.66.66.5/32", "last_handshake": "2026-09-03T20:44:59Z", "seconds_since_handshake": 1, "rx_bytes": 1290004221, "tx_bytes": 640221331, "status": "online" },
+    { "name": "elena-tablette", "public_key": "Bx9rM2u…6dH=", "endpoint": "82.44.109.7:41200", "allowed_ips": "10.66.66.6/32", "last_handshake": "2026-09-03T20:44:40Z", "seconds_since_handshake": 20, "rx_bytes": 302004110, "tx_bytes": 100221004, "status": "online" },
+    { "name": "poste-formation-07", "public_key": "Fk1jN5s…3pW=", "endpoint": null, "allowed_ips": "10.66.66.7/32", "last_handshake": null, "seconds_since_handshake": null, "rx_bytes": 0, "tx_bytes": 0, "status": "never" }
+  ],
+  "logs": [
+    { "timestamp": "2026-09-03 20:45:00", "peer": "bruno-desktop", "public_key": "Lm4nX7w…2rV=", "endpoint": "90.12.44.201:34981", "allowed_ips": "10.66.66.3/32", "last_handshake": "2026-09-03 20:44:50", "rx_bytes": 902331004, "tx_bytes": 340221004 },
+    { "timestamp": "2026-09-03 20:45:00", "peer": "dam-server-backup", "public_key": "Zp3vC6y…4tN=", "endpoint": "51.75.201.9:51820", "allowed_ips": "10.66.66.5/32", "last_handshake": "2026-09-03 20:44:59", "rx_bytes": 1290004221, "tx_bytes": 640221331 },
+    { "timestamp": "2026-09-03 20:40:00", "peer": "alice-laptop", "public_key": "hT2kP9q…8fQ=", "endpoint": "88.163.24.12:51820", "allowed_ips": "10.66.66.2/32", "last_handshake": "2026-09-03 20:39:40", "rx_bytes": 1790442112, "tx_bytes": 601004421, "note": "Handshake renouvelé" },
+    { "timestamp": "2026-09-03 20:40:00", "peer": "camille-mobile", "public_key": "Qw8sT1z…9jK=", "endpoint": "78.192.10.44:60122", "allowed_ips": "10.66.66.4/32", "last_handshake": "2026-09-03 20:38:12", "rx_bytes": 500004112, "tx_bytes": 218441002 },
+    { "timestamp": "2026-09-03 20:35:00", "peer": "elena-tablette", "public_key": "Bx9rM2u…6dH=", "endpoint": "82.44.109.7:41200", "allowed_ips": "10.66.66.6/32", "last_handshake": "2026-09-03 20:34:58", "rx_bytes": 295004110, "tx_bytes": 97221004 },
+    { "timestamp": "2026-09-03 20:30:00", "peer": "bruno-desktop", "public_key": "Lm4nX7w…2rV=", "endpoint": "90.12.44.201:34981", "allowed_ips": "10.66.66.3/32", "last_handshake": "2026-09-03 20:29:50", "rx_bytes": 860221004, "tx_bytes": 322004112 }
+  ],
+  "throughput_series": [
+    { "t": "20:00", "rx": 210004112, "tx": 88004112 },
+    { "t": "20:05", "rx": 244221004, "tx": 96004221 },
+    { "t": "20:10", "rx": 198004112, "tx": 71004112 },
+    { "t": "20:15", "rx": 302004221, "tx": 121004221 },
+    { "t": "20:20", "rx": 355004112, "tx": 140004112 },
+    { "t": "20:25", "rx": 288004221, "tx": 108004221 },
+    { "t": "20:30", "rx": 410004112, "tx": 165004112 },
+    { "t": "20:35", "rx": 372004221, "tx": 149004221 },
+    { "t": "20:40", "rx": 452004112, "tx": 183004112 },
+    { "t": "20:45", "rx": 398004221, "tx": 160004221 }
+  ]
+}
