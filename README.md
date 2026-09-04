@@ -56,12 +56,14 @@ Ce LAB permet de reproduire, en environnement cloud isolé, un déploiement comp
 | Application WireGuard | [wireguard.com/install](https://www.wireguard.com/install/) sur le poste client (Windows/macOS/Linux/iOS/Android) |
 | Connaissances de base | Ligne de commande Linux, notions de réseau (NAT, CIDR, ports) |
 
-Vérifiez votre connexion à Azure avant de commencer :
+Vérifiez votre connexion à Azure avant de commencer si vous êtes en local :
 
 ```bash
 az login
 az account show
 ```
+
+si vous êtes dan sle portail Azure lancez le Cloud Shell.
 
 ---
 
@@ -148,14 +150,13 @@ L'infrastructure est organisée en **modules Terraform réutilisables**, pattern
 ### 4.1 Personnaliser les variables
 
 ```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
+git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/terraform && cp terraform.tfvars.example terraform.tfvars
 ```
 
 Éditez `terraform.tfvars` :
 
 ```hcl
-admin_password   = "VotreMotDePasseFort!2026"
+admin_password   = "VotreMotDePasseFort!2026"  # Mot de passe de la VM
 admin_source_ip  = "203.0.113.10/32"   # votre IP publique -> whatismyipaddress.com
 dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 ```
@@ -167,9 +168,8 @@ dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 ### 4.2 Lancer le déploiement
 
 ```bash
-terraform init      # telecharge le provider azurerm et initialise les modules
-terraform plan       # previsualise les ressources qui seront creees
-terraform apply       # cree effectivement l'infrastructure (confirmation requise)
+terraform fmt && terraform init && terraform validate && terraform plan && terraform apply -auto-approve
+
 ```
 
 Ou, sous Windows, via l'assistant fourni :
@@ -218,14 +218,12 @@ ssh wgadmin@<FQDN_ou_IP_publique>
 Depuis votre poste local :
 
 ```bash
-scp -r scripts/ wgadmin@<FQDN>:/home/wgadmin/
-ssh wgadmin@<FQDN>
+git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/scripts
 ```
 
 Sur la VM :
 
 ```bash
-cd scripts
 chmod +x *.sh
 sudo ./01-install-wireguard-server.sh
 ```
@@ -273,17 +271,17 @@ Le script :
 
 **Poste desktop (Windows/macOS/Linux) :**
 
-```bash
-scp wgadmin@<FQDN>:/etc/wireguard/clients/ordinateur-alice.conf .
+1. **Installer l'application WireGuard sur Windows** — téléchargez l'installeur officiel sur [wireguard.com/install](https://www.wireguard.com/install/) (lien "Windows"), puis lancez-le. C'est un simple `.exe`, aucune configuration nécessaire à l'installation.
+2. **Récupérer le fichier `.conf` généré sur le serveur** — ce fichier a déjà été créé par le script `02-add-client.sh` sur la VM (ex. `ordinateur-alice.conf`). Depuis Windows, ouvrez PowerShell (Windows 10/11 embarque `scp`) et tapez :
+```powershell
+   scp wgadmin@<FQDN>:/etc/wireguard/clients/ordinateur-alice.conf C:\Users\VotreNom\Desktop\
 ```
+   — ou utilisez [WinSCP](https://winscp.net/) si vous préférez une interface graphique.
+3. **Importer le fichier dans l'application WireGuard** — ouvrez WireGuard, cliquez sur **"Import tunnel(s) from file"**, puis sélectionnez le fichier `.conf` récupéré à l'étape précédente. Le tunnel apparaît automatiquement dans la liste à gauche : rien à créer ou configurer manuellement, l'import fait tout.
+4. **Activer le tunnel** — sélectionnez le tunnel dans la liste et cliquez sur **"Activate"** (ou basculez l'interrupteur). La connexion VPN démarre immédiatement.
+5. **Vérifier que ça fonctionne** — ouvrez un navigateur et allez sur [whatismyipaddress.com](https://whatismyipaddress.com), ou dans PowerShell tapez `curl ifconfig.me`. L'IP affichée doit être celle du serveur (Azure ou votre box), pas votre IP personnelle habituelle.
 
-Puis importer ce fichier dans l'application WireGuard officielle (`Import tunnel(s) from file`).
-
-**Mobile (iOS/Android) :** ouvrir l'application WireGuard → `+` → `Scan from QR code` → scanner le QR affiché par le script.
-
-> **Sécurité :** chaque fichier `.conf` contient une clé privée. Transmettez-le uniquement via un canal sécurisé (SCP/SFTP, messagerie chiffrée) et supprimez-le du serveur une fois distribué si votre politique l'exige.
-
-### 6.3 Révoquer un client
+### 6.3 Révoquer un client (optionnel)
 
 ```bash
 sudo ./05-revoke-client.sh ordinateur-alice
@@ -297,7 +295,7 @@ Retire le peer à chaud (sans coupure de service) et archive ses clés dans `cli
 
 Fichiers concernés : `dashboard/` (backend Flask + frontend HTML/CSS/JS), `scripts/03-install-dashboard.sh`
 
-Ce LAB inclut un **dashboard maison**, conçu et maintenu par BLOCKHash- pas de dépendance à un outil tiers. Il affiche en temps réel :
+Ce LAB inclut un **dashboard**, conçu et maintenu par BLOCKHash- pas de dépendance à un outil tiers. Il affiche en temps réel :
 
 - des **cartes indicateurs** (tunnels actifs, volume reçu/émis, alertes) et un graphique de débit en direct ;
 - un **journal des connexions triable et filtrable** (clic sur chaque colonne, recherche libre, filtres par statut) alimenté par les logs CSV de l'étape 5 ;
@@ -316,12 +314,9 @@ Aucune base de données : l'API lit directement l'état WireGuard en direct (`wg
 
 ### 7.2 Installation
 
-Depuis votre poste, transférez le dossier `dashboard/` puis lancez le script d'installation sur la VM :
+Depuis la VM, dans le dossier `dashboard/` lancez le script d'installation :
 
 ```bash
-scp -r dashboard/ wgadmin@<FQDN>:/home/wgadmin/
-ssh wgadmin@<FQDN>
-cd ~
 sudo ./scripts/03-install-dashboard.sh 8080
 ```
 
@@ -333,7 +328,7 @@ Le script :
 - crée et démarre le service systemd `blockhash-dashboard` (gunicorn, 2 workers) ;
 - ouvre le port choisi (8080 par défaut) dans `ufw`.
 
-### 7.3 Accès
+### 7.3 Accès au Dashboard
 
 ```
 http://<FQDN_ou_IP_publique>:8080
@@ -495,8 +490,7 @@ iperf3 -c 10.66.66.1
 Pour éviter toute facturation Azure inutile après le TP :
 
 ```bash
-cd terraform
-terraform destroy
+cd terraform && terraform destroy -auto-approve
 ```
 
 Cette commande supprime l'intégralité des ressources (VM, disques, IP publique, NSG, VNet) gérées par l'état Terraform. Confirmez avec `yes` lorsque demandé.
