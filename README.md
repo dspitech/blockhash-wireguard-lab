@@ -183,6 +183,8 @@ terraform fmt && terraform init && terraform validate && terraform plan && terra
 
 <img width="791" height="287" alt="image" src="https://github.com/user-attachments/assets/e434bde9-f4ee-4c3c-87a8-783dfd3f04f4" />
 
+<img width="1330" height="581" alt="image" src="https://github.com/user-attachments/assets/577d0639-18a8-423b-86f1-e801b8d571aa" />
+
 
 Ou, sous Windows, via l'assistant fourni :
 
@@ -428,6 +430,9 @@ cat /var/log/wireguard/tunnels.csv
 
 <img width="1907" height="986" alt="image" src="https://github.com/user-attachments/assets/57461f0b-4def-40df-8490-d7fb470725ba" />
 
+<img width="1897" height="867" alt="image" src="https://github.com/user-attachments/assets/96e8bc6e-d948-41cd-a160-0643244e2b28" />
+
+<img width="1917" height="877" alt="image" src="https://github.com/user-attachments/assets/abeefa5d-1343-4638-b706-c4ab415515dd" />
 
 Ces logs permettent, dans un cadre professionnel, de répondre à des besoins d'**audit** (qui s'est connecté, quand, combien de données échangées) et peuvent être ingérés par un SIEM ou un outil de supervision (ELK, Grafana + Loki, Azure Monitor via l'agent Log Analytics).
 
@@ -535,6 +540,9 @@ Pour éviter toute facturation Azure inutile après le TP :
 ```bash
 cd terraform && terraform destroy -auto-approve
 ```
+
+<img width="906" height="127" alt="image" src="https://github.com/user-attachments/assets/7036fa90-b3f4-4b06-bb15-4da914d0fa24" />
+
 
 Cette commande supprime l'intégralité des ressources (VM, disques, IP publique, NSG, VNet) gérées par l'état Terraform. Confirmez avec `yes` lorsque demandé.
 
