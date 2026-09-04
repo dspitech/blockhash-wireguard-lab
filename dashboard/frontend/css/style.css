@@ -231,6 +231,11 @@ code { font-family: var(--font-mono); }
   margin-bottom: 18px;
 }
 
+/* Chart.js (maintainAspectRatio:false) a besoin d'une hauteur explicite
+   sur le conteneur/canvas, sinon le graphique reste invisible (hauteur 0). */
+#throughput-chart { display: block; width: 100% !important; height: 220px !important; }
+#distribution-chart { display: block; width: 100% !important; height: 220px !important; }
+
 .hero-head {
   display: flex;
   align-items: flex-end;
@@ -328,6 +333,8 @@ code { font-family: var(--font-mono); }
   font-size: 13px;
 }
 .event-list li:last-child { border-bottom: none; }
+/* Ligne de repli "Aucun événement récent" : un seul enfant, pas 3 -> pleine largeur */
+.event-list li:has(> .event-main:only-child) { grid-template-columns: 1fr; }
 
 .event-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-signal); }
 
