@@ -22,7 +22,7 @@ mkdir -p "$CLIENTS_DIR"
 cd "$WG_DIR"
 
 # --- Détermine la prochaine IP disponible dans le tunnel (.2, .3, ...) ---
-LAST_OCTET=$(grep -oP "AllowedIPs = ${WG_SERVER_SUBNET}\.\K[0-9]+" "$WG_IF.conf" 2>/dev/null | sort -n | tail -1)
+LAST_OCTET=$(grep -oP "AllowedIPs = ${WG_SERVER_SUBNET}\.\K[0-9]+" "$WG_IF.conf" 2>/dev/null | sort -n | tail -1 || true)
 NEXT_OCTET=$(( ${LAST_OCTET:-1} + 1 ))
 CLIENT_IP="${WG_SERVER_SUBNET}.${NEXT_OCTET}/32"
 

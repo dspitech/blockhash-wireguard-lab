@@ -89,7 +89,7 @@ async function loadData() {
 }
 
 function buildHeaders() {
-  const token = window.localStorage.getItem("blockhash_dashboard_token");
+  const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem("blockhash_dashboard_token");
   return token ? { "X-API-Token": token } : {};
 }
 
@@ -99,11 +99,19 @@ function buildHeaders() {
 function render() {
   renderConnectionStatus();
   renderKpis();
-  renderThroughputChart();
-  renderRecentEvents();
-  renderDistributionChart();
-  renderLogTable();
-  renderClientGrid();
+  safeRender("throughput chart", renderThroughputChart);
+  safeRender("recent events", renderRecentEvents);
+  safeRender("distribution chart", renderDistributionChart);
+  safeRender("log table", renderLogTable);
+  safeRender("client grid", renderClientGrid);
+}
+
+function safeRender(label, fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`Erreur d'affichage (${label}) :`, err);
+  }
 }
 
 function renderConnectionStatus() {

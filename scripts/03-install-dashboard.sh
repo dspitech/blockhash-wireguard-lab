@@ -47,6 +47,17 @@ EOF
   chmod 600 /etc/blockhash/dashboard.env
 fi
 
+TOKEN_VALUE=$(grep DASHBOARD_TOKEN /etc/blockhash/dashboard.env | cut -d= -f2)
+
+echo "== 4bis. Injection du jeton dans le frontend (pour que le navigateur soit deja authentifie) =="
+cat > "$APP_DIR/frontend/js/config.js" <<EOF
+// Fichier genere automatiquement par 03-install-dashboard.sh
+// Permet au frontend d'appeler l'API sans configuration manuelle.
+// Le jeton n'apporte qu'une defense complementaire : l'acces au port
+// ${DASHBOARD_PORT} est deja restreint a votre IP admin par le NSG/ufw.
+window.__BLOCKHASH_TOKEN__ = "${TOKEN_VALUE}";
+EOF
+
 echo "== 5. Autorisation sudo restreinte pour lire l'etat WireGuard =="
 # gunicorn tourne sous www-data ; on l'autorise UNIQUEMENT a executer 'wg show'
 cat > /etc/sudoers.d/blockhash-dashboard <<EOF
@@ -60,6 +71,9 @@ setcap cap_net_admin+ep /usr/bin/wg || true
 
 echo "== 6. Attribution des permissions =="
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
+chgrp "$SERVICE_USER" /etc/wireguard || true
+chmod 750 /etc/wireguard || true
+chgrp "$SERVICE_USER" /etc/wireguard/wg0.conf || true
 chmod 640 /etc/wireguard/wg0.conf || true
 
 echo "== 7. Creation du service systemd (gunicorn) =="
@@ -90,7 +104,6 @@ echo "== 8. Ouverture du port dans le pare-feu local (ufw) =="
 ufw allow "$DASHBOARD_PORT"/tcp comment "BLOCKHash Dashboard - admin only"
 
 SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
-TOKEN_VALUE=$(grep DASHBOARD_TOKEN /etc/blockhash/dashboard.env | cut -d= -f2)
 
 echo ""
 echo "=================================================="
