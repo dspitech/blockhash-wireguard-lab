@@ -1,5 +1,5 @@
-# LAB WireGuard VPN — BLOCKHash
-
+# LAB WireGuard VPN- BLOCKHash
+ 
 **Guide complet d'installation, de configuration et de supervision d'un serveur VPN WireGuard sur une VM Ubuntu dans Microsoft Azure.**
  
 Ce document est un support de formation (TP) destiné aux professionnels et étudiants souhaitant maîtriser le déploiement d'une infrastructure VPN moderne, de l'infrastructure-as-code jusqu'à la supervision opérationnelle.
@@ -11,17 +11,17 @@ Ce document est un support de formation (TP) destiné aux professionnels et étu
 1. [Présentation du LAB](#1-présentation-du-lab)
 2. [Prérequis](#2-prérequis)
 3. [Architecture](#3-architecture)
-4. [Étape 1 — Déploiement de l'infrastructure Azure](#4-étape-1--déploiement-de-linfrastructure-azure)
-5. [Étape 2 — Installation du serveur WireGuard](#5-étape-2--installation-du-serveur-wireguard)
-6. [Étape 3 — Création et distribution des clients](#6-étape-3--création-et-distribution-des-clients)
-7. [Étape 4 — Dashboard de supervision](#7-étape-4--dashboard-de-supervision)
-8. [Étape 5 — Journalisation et logs](#8-étape-5--journalisation-et-logs)
-9. [Étape 6 — Tests et validation du tunnel](#9-étape-6--tests-et-validation-du-tunnel)
+4. [Étape 1- Déploiement de l'infrastructure Azure](#4-étape-1--déploiement-de-linfrastructure-azure)
+5. [Étape 2- Installation du serveur WireGuard](#5-étape-2--installation-du-serveur-wireguard)
+6. [Étape 3- Création et distribution des clients](#6-étape-3--création-et-distribution-des-clients)
+7. [Étape 4- Dashboard de supervision](#7-étape-4--dashboard-de-supervision)
+8. [Étape 5- Journalisation et logs](#8-étape-5--journalisation-et-logs)
+9. [Étape 6- Tests et validation du tunnel](#9-étape-6--tests-et-validation-du-tunnel)
 10. [Commandes Linux de référence](#10-commandes-linux-de-référence)
 11. [Durcissement et bonnes pratiques de sécurité](#11-durcissement-et-bonnes-pratiques-de-sécurité)
 12. [Dépannage (Troubleshooting)](#12-dépannage-troubleshooting)
 13. [Nettoyage / destruction du LAB](#13-nettoyage--destruction-du-lab)
-14. [Annexe — Exercices pour les stagiaires](#14-annexe--exercices-pour-les-stagiaires)
+14. [Annexe- Exercices pour les stagiaires](#14-annexe--exercices-pour-les-stagiaires)
 15. [Licence et conditions de diffusion](#15-licence-et-conditions-de-diffusion)
 
 ---
@@ -51,7 +51,7 @@ Ce LAB permet de reproduire, en environnement cloud isolé, un déploiement comp
 |---|---|
 | Abonnement Azure | Actif, avec droits de création de groupe de ressources |
 | Terraform | CLI >= 1.5 ([téléchargement](https://developer.hashicorp.com/terraform/install)) |
-| Azure CLI | `az` CLI installée et authentifiée (`az login`) — utilisée par le provider Terraform `azurerm` |
+| Azure CLI | `az` CLI installée et authentifiée (`az login`)- utilisée par le provider Terraform `azurerm` |
 | Client SSH | OpenSSH (intégré à Windows 10/11, macOS, Linux) |
 | Application WireGuard | [wireguard.com/install](https://www.wireguard.com/install/) sur le poste client (Windows/macOS/Linux/iOS/Android) |
 | Connaissances de base | Ligne de commande Linux, notions de réseau (NAT, CIDR, ports) |
@@ -136,7 +136,7 @@ blockhash-wireguard-lab/
 
 ---
 
-## 4. Étape 1 — Déploiement de l'infrastructure Azure (Terraform)
+## 4. Étape 1- Déploiement de l'infrastructure Azure (Terraform)
 
 Fichiers concernés : `terraform/` (racine + modules `network` et `compute`)
 
@@ -162,7 +162,7 @@ dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 
 > **Bonne pratique :** en environnement de production, ne laissez jamais `admin_source_ip` en `*`. Restreignez systématiquement l'accès SSH et au dashboard à votre IP (ou à une plage d'IP d'entreprise / un VPN d'administration). Préférez également `use_ssh_key = true` avec une clé publique plutôt qu'un mot de passe.
 
-`terraform.tfvars` contient des secrets : ne le committez jamais dans un dépôt Git public (il est déjà exclu via `.gitignore` — voir section 15).
+`terraform.tfvars` contient des secrets : ne le committez jamais dans un dépôt Git public (il est déjà exclu via `.gitignore`- voir section 15).
 
 ### 4.2 Lancer le déploiement
 
@@ -203,7 +203,7 @@ Structurer l'infrastructure en modules (`network`, `compute`) plutôt qu'un fich
 
 ---
 
-## 5. Étape 2 — Installation du serveur WireGuard
+## 5. Étape 2- Installation du serveur WireGuard
 
 Fichier concerné : `scripts/01-install-wireguard-server.sh`
 
@@ -252,7 +252,7 @@ Vous devez voir l'interface `wg0` active avec l'adresse `10.66.66.1/24` et la cl
 
 ---
 
-## 6. Étape 3 — Création et distribution des clients
+## 6. Étape 3- Création et distribution des clients
 
 Fichier concerné : `scripts/02-add-client.sh`
 
@@ -293,16 +293,16 @@ Retire le peer à chaud (sans coupure de service) et archive ses clés dans `cli
 
 ---
 
-## 7. Étape 4 — Dashboard de supervision BLOCKHash
+## 7. Étape 4- Dashboard de supervision BLOCKHash
 
 Fichiers concernés : `dashboard/` (backend Flask + frontend HTML/CSS/JS), `scripts/03-install-dashboard.sh`
 
-Ce LAB inclut un **dashboard maison**, conçu et maintenu par BLOCKHash — pas de dépendance à un outil tiers. Il affiche en temps réel :
+Ce LAB inclut un **dashboard maison**, conçu et maintenu par BLOCKHash- pas de dépendance à un outil tiers. Il affiche en temps réel :
 
 - des **cartes indicateurs** (tunnels actifs, volume reçu/émis, alertes) et un graphique de débit en direct ;
 - un **journal des connexions triable et filtrable** (clic sur chaque colonne, recherche libre, filtres par statut) alimenté par les logs CSV de l'étape 5 ;
 - une **grille de clients** avec statut (en ligne / inactif / jamais connecté), dernier handshake et volumes de données ;
-- un **mode démonstration** automatique : si l'API est injoignable, le dashboard bascule sur un jeu de données d'exemple (`dashboard/frontend/data/sample-data.json`) — utile pour présenter le produit à un client avant tout déploiement réel.
+- un **mode démonstration** automatique : si l'API est injoignable, le dashboard bascule sur un jeu de données d'exemple (`dashboard/frontend/data/sample-data.json`)- utile pour présenter le produit à un client avant tout déploiement réel.
 
 ### 7.1 Architecture du dashboard
 
@@ -329,7 +329,7 @@ Le script :
 - installe Python 3, crée un environnement virtuel et installe Flask + gunicorn ;
 - copie l'application dans `/opt/blockhash-dashboard` ;
 - génère un jeton d'API (`/etc/blockhash/dashboard.env`) ;
-- autorise le service à lire l'état WireGuard sans lui donner les droits root complets (`sudoers` restreint à `wg show`, ou capacité `CAP_NET_ADMIN` — voir le script) ;
+- autorise le service à lire l'état WireGuard sans lui donner les droits root complets (`sudoers` restreint à `wg show`, ou capacité `CAP_NET_ADMIN`- voir le script) ;
 - crée et démarre le service systemd `blockhash-dashboard` (gunicorn, 2 workers) ;
 - ouvre le port choisi (8080 par défaut) dans `ufw`.
 
@@ -343,7 +343,7 @@ http://<FQDN_ou_IP_publique>:8080
 
 ### 7.4 Personnalisation
 
-- **Palette et identité visuelle** : `dashboard/frontend/css/style.css` (variables CSS en tête de fichier — couleurs, typographies) pour adapter aux couleurs d'un client si vous revendez ce LAB.
+- **Palette et identité visuelle** : `dashboard/frontend/css/style.css` (variables CSS en tête de fichier- couleurs, typographies) pour adapter aux couleurs d'un client si vous revendez ce LAB.
 - **Fréquence de rafraîchissement** : `REFRESH_INTERVAL_MS` dans `dashboard/frontend/js/app.js` (30 secondes par défaut).
 - **Seuil "en ligne"** : `HANDSHAKE_ONLINE_THRESHOLD_SEC` dans `dashboard/backend/app.py` (180 secondes par défaut).
 
@@ -357,7 +357,7 @@ curl -s http://localhost:8080/healthz
 
 ---
 
-## 8. Étape 5 — Journalisation et logs
+## 8. Étape 5- Journalisation et logs
 
 Fichier concerné : `scripts/04-logging-monitoring.sh`
 
@@ -395,7 +395,7 @@ Ces logs permettent, dans un cadre professionnel, de répondre à des besoins d'
 
 ---
 
-## 9. Étape 6 — Tests et validation du tunnel
+## 9. Étape 6- Tests et validation du tunnel
 
 ### 9.1 Depuis le serveur
 
@@ -466,7 +466,7 @@ iperf3 -c 10.66.66.1
 
 - **Restreindre les sources** : ne jamais laisser `adminSourceIp` en `*` en production ; limiter le SSH et le dashboard à des IP nommées ou à un VPN d'administration dédié.
 - **Rotation des clés** : régénérer les clés serveur/clients périodiquement (tous les 6-12 mois ou en cas de suspicion de compromission).
-- **PSK (clé pré-partagée)** : toujours l'utiliser en complément des clés Curve25519 (résistance additionnelle post-quantique partielle) — déjà activé par défaut dans `02-add-client.sh`.
+- **PSK (clé pré-partagée)** : toujours l'utiliser en complément des clés Curve25519 (résistance additionnelle post-quantique partielle)- déjà activé par défaut dans `02-add-client.sh`.
 - **Authentification SSH par clé** : désactiver l'authentification par mot de passe une fois la VM opérationnelle (`PasswordAuthentication no` dans `/etc/ssh/sshd_config`).
 - **Mise à jour automatique** : activer `unattended-upgrades` sur la VM.
 - **Principe du moindre privilège** : un compte administrateur dédié par technicien, pas de partage de clé SSH.
@@ -503,7 +503,7 @@ Cette commande supprime l'intégralité des ressources (VM, disques, IP publique
 
 ---
 
-## 14. Annexe — Exercices pour les stagiaires
+## 14. Annexe- Exercices pour les stagiaires
 
 1. Déployer l'infrastructure Azure avec un `vm_size` différent (`Standard_B1s`) via `terraform.tfvars` et mesurer l'impact sur les performances (`iperf3`).
 2. Créer 3 clients WireGuard et documenter, pour chacun, l'IP attribuée et la clé publique.
@@ -521,8 +521,8 @@ Ce LAB a été conçu par **BLOCKHash** comme support de formation professionnel
 
 - Les scripts et templates (`azure/`, `scripts/`) peuvent être adaptés librement pour un usage interne en entreprise.
 - Toute redistribution commerciale de ce support (revente du LAB en tant que produit de formation) doit conserver la mention **« Développé par BLOCKHash »** dans ce README, sauf accord contraire écrit avec BLOCKHash.
-- Ce support est fourni à titre pédagogique. BLOCKHash ne saurait être tenu responsable d'une mauvaise configuration réseau menant à une exposition non désirée d'un système en production — se référer systématiquement à la section 11 (Durcissement) avant tout déploiement réel.
+- Ce support est fourni à titre pédagogique. BLOCKHash ne saurait être tenu responsable d'une mauvaise configuration réseau menant à une exposition non désirée d'un système en production- se référer systématiquement à la section 11 (Durcissement) avant tout déploiement réel.
 
 ---
 
-**BLOCKHash** — Formation & Cybersécurité
+**BLOCKHash**- Formation & Cybersécurité
