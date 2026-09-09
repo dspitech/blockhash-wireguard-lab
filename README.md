@@ -323,15 +323,15 @@ Le script :
 
 **Poste desktop (Windows/macOS/Linux) :**
 
-1. **Installer l'application WireGuard sur Windows** — téléchargez l'installeur officiel sur [wireguard.com/install](https://www.wireguard.com/install/) (lien "Windows"), puis lancez-le. C'est un simple `.exe`, aucune configuration nécessaire à l'installation.
-2. **Récupérer le fichier `.conf` généré sur le serveur** — ce fichier a déjà été créé par le script `02-add-client.sh` sur la VM (ex. `ordinateur-alice.conf`). Depuis Windows, ouvrez PowerShell (Windows 10/11 embarque `scp`) et tapez :
+1. **Installer l'application WireGuard sur Windows** -téléchargez l'installeur officiel sur [wireguard.com/install](https://www.wireguard.com/install/) (lien "Windows"), puis lancez-le. C'est un simple `.exe`, aucune configuration nécessaire à l'installation.
+2. **Récupérer le fichier `.conf` généré sur le serveur** -ce fichier a déjà été créé par le script `02-add-client.sh` sur la VM (ex. `ordinateur-alice.conf`). Depuis Windows, ouvrez PowerShell (Windows 10/11 embarque `scp`) et tapez :
 ```powershell
    scp wgadmin@<FQDN>:/etc/wireguard/clients/ordinateur-alice.conf C:\Users\VotreNom\Desktop\
 ```
-   — ou utilisez [WinSCP](https://winscp.net/) si vous préférez une interface graphique.
-3. **Importer le fichier dans l'application WireGuard** — ouvrez WireGuard, cliquez sur **"Import tunnel(s) from file"**, puis sélectionnez le fichier `.conf` récupéré à l'étape précédente. Le tunnel apparaît automatiquement dans la liste à gauche : rien à créer ou configurer manuellement, l'import fait tout.
-4. **Activer le tunnel** — sélectionnez le tunnel dans la liste et cliquez sur **"Activate"** (ou basculez l'interrupteur). La connexion VPN démarre immédiatement.
-5. **Vérifier que ça fonctionne** — ouvrez un navigateur et allez sur [whatismyipaddress.com](https://whatismyipaddress.com), ou dans PowerShell tapez `curl ifconfig.me`. L'IP affichée doit être celle du serveur (Azure ou votre box), pas votre IP personnelle habituelle.
+   -ou utilisez [WinSCP](https://winscp.net/) si vous préférez une interface graphique.
+3. **Importer le fichier dans l'application WireGuard** -ouvrez WireGuard, cliquez sur **"Import tunnel(s) from file"**, puis sélectionnez le fichier `.conf` récupéré à l'étape précédente. Le tunnel apparaît automatiquement dans la liste à gauche : rien à créer ou configurer manuellement, l'import fait tout.
+4. **Activer le tunnel** -sélectionnez le tunnel dans la liste et cliquez sur **"Activate"** (ou basculez l'interrupteur). La connexion VPN démarre immédiatement.
+5. **Vérifier que ça fonctionne** -ouvrez un navigateur et allez sur [whatismyipaddress.com](https://whatismyipaddress.com), ou dans PowerShell tapez `curl ifconfig.me`. L'IP affichée doit être celle du serveur (Azure ou votre box), pas votre IP personnelle habituelle.
 
 <img width="1435" height="987" alt="image" src="https://github.com/user-attachments/assets/8489a755-287c-458e-84dd-fe7fc71c70e1" />
 
@@ -638,9 +638,9 @@ $SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/bac
 #### 7.8.4 Export d'audit : contenu et sensibilité
 
 Le zip généré contient :
-- `clients/*.conf` — configuration complète de chaque client, **clé privée incluse** (rappel : ce LAB conserve les clés privées client côté serveur pour la simplicité, voir section 6) ;
-- `wg0.conf` — configuration serveur complète (clé privée serveur incluse) ;
-- `manifest.csv` — un résumé non sensible (nom, clé publique, IP, statut) pour un usage d'audit léger sans manipuler les clés privées.
+- `clients/*.conf` -configuration complète de chaque client, **clé privée incluse** (rappel : ce LAB conserve les clés privées client côté serveur pour la simplicité, voir section 6) ;
+- `wg0.conf` -configuration serveur complète (clé privée serveur incluse) ;
+- `manifest.csv` -un résumé non sensible (nom, clé publique, IP, statut) pour un usage d'audit léger sans manipuler les clés privées.
 
 **Ce zip est aussi sensible que l'ensemble de `/etc/wireguard/`** : à traiter avec les mêmes précautions (transfert chiffré, pas de stockage sur un partage non protégé). Les fichiers d'export sont écrits dans `/tmp/blockhash-exports/` et purgés automatiquement au bout d'une heure.
 
