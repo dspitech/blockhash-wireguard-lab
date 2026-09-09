@@ -21,7 +21,7 @@ fi
 
 echo "== 1. Installation des dependances systeme =="
 apt update
-apt install -y python3 python3-venv python3-pip
+apt install -y python3 python3-venv python3-pip python3-dev gcc
 
 echo "== 2. Copie de l'application vers $APP_DIR =="
 mkdir -p "$APP_DIR"
@@ -39,10 +39,28 @@ if [ ! -f /etc/blockhash/dashboard.env ]; then
   cat > /etc/blockhash/dashboard.env <<EOF
 DASHBOARD_TOKEN=$TOKEN
 WG_INTERFACE=wg0
+WG_DIR=/etc/wireguard
 WG_CONF_PATH=/etc/wireguard/wg0.conf
 WG_LOG_CSV=/var/log/wireguard/tunnels.csv
 FRONTEND_DIR=$APP_DIR/frontend
 PORT=$DASHBOARD_PORT
+# Passez a "false" pour repasser le dashboard en lecture seule (aucune
+# regle sudoers wgctl.py necessaire) - voir README section 7.6.1.
+CLIENT_MANAGEMENT_ENABLED=true
+# Monitoring / alerting avances (voir README section 7.7)
+METRICS_DB_PATH=/var/log/wireguard/blockhash.db
+METRICS_DB_GROUP=$SERVICE_USER
+SETTINGS_PATH=/etc/blockhash/dashboard-settings.json
+ALERTS_CONFIG_PATH=/etc/blockhash/alerts-config.json
+# Administration systeme avancee (voir README section 7.8) : sauvegardes,
+# rotation de cles serveur, redemarrage du tunnel, export d'audit.
+# Passez a "false" pour desactiver separement de CLIENT_MANAGEMENT_ENABLED
+# (rayon d'impact plus large : redemarrage du service, rotation de cles).
+SYSTEM_OPS_ENABLED=true
+WG_EXPORT_DIR=/tmp/blockhash-exports
+WG_MAX_BACKUPS=50
+REPORTS_CONFIG_PATH=/etc/blockhash/reports-config.json
+SERVERS_CONFIG_PATH=/etc/blockhash/servers.json
 EOF
   chmod 600 /etc/blockhash/dashboard.env
 fi
@@ -58,25 +76,137 @@ cat > "$APP_DIR/frontend/js/config.js" <<EOF
 window.__BLOCKHASH_TOKEN__ = "${TOKEN_VALUE}";
 EOF
 
-echo "== 5. Autorisation sudo restreinte pour lire l'etat WireGuard =="
-# gunicorn tourne sous www-data ; on l'autorise UNIQUEMENT a executer 'wg show'
-cat > /etc/sudoers.d/blockhash-dashboard <<EOF
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/wg show wg0 dump
-EOF
-chmod 440 /etc/sudoers.d/blockhash-dashboard
+echo "== 4ter. Reglages et configuration d'alertes (fichiers vides par defaut) =="
+# Crees ici (pas seulement au premier appel de l'API) pour que les permissions
+# soient correctes des le depart, meme si personne ne visite jamais l'onglet
+# Parametres du dashboard.
+if [ ! -f /etc/blockhash/dashboard-settings.json ]; then
+  echo '{"online_threshold_sec": 180}' > /etc/blockhash/dashboard-settings.json
+fi
+if [ ! -f /etc/blockhash/alerts-config.json ]; then
+  "$APP_DIR/venv/bin/python3" - <<PY
+import json
+json.dump(
+    {"enabled": False, "rules": {"inactive_days": 7, "bandwidth_alert_mb_5min": None, "service_down": True}},
+    open("/etc/blockhash/alerts-config.json", "w"),
+    indent=2,
+)
+PY
+fi
+if [ ! -f /etc/blockhash/reports-config.json ]; then
+  echo '{"weekly_enabled": false, "to_addr": ""}' > /etc/blockhash/reports-config.json
+fi
+if [ ! -f /etc/blockhash/servers.json ]; then
+  echo '[]' > /etc/blockhash/servers.json
+fi
+chgrp "$SERVICE_USER" /etc/blockhash
+chmod 770 /etc/blockhash
+chown "$SERVICE_USER":"$SERVICE_USER" /etc/blockhash/dashboard-settings.json /etc/blockhash/alerts-config.json /etc/blockhash/reports-config.json /etc/blockhash/servers.json
+chmod 640 /etc/blockhash/dashboard-settings.json /etc/blockhash/reports-config.json
+chmod 600 /etc/blockhash/alerts-config.json /etc/blockhash/servers.json
 
-# Alternative plus simple pour un LAB : autoriser www-data a lire wg0.conf
-# et donner la capacite CAP_NET_ADMIN au binaire wg (voir README section 11).
-setcap cap_net_admin+ep /usr/bin/wg || true
-
-echo "== 6. Attribution des permissions =="
+echo "== 4quater. Attribution des permissions =="
+# IMPORTANT : ce chown -R doit avoir lieu AVANT le verrouillage de wgctl.py
+# ci-dessous (etape 5), sinon il ecraserait le root:root necessaire a la
+# regle sudoers et redonnerait www-data en ecriture sur son propre script
+# privilegie (elevation de privileges triviale).
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
 chgrp "$SERVICE_USER" /etc/wireguard || true
 chmod 750 /etc/wireguard || true
 chgrp "$SERVICE_USER" /etc/wireguard/wg0.conf || true
 chmod 640 /etc/wireguard/wg0.conf || true
+# La base de metriques (samples de debit long terme) est ecrite par le cron
+# root de 04-logging-monitoring.sh et lue par www-data (Flask) -> le groupe
+# du fichier est ajuste apres chaque ecriture par store.py lui-meme
+# (voir METRICS_DB_GROUP), mais on prepare le repertoire des maintenant.
+mkdir -p /var/log/wireguard
+chgrp "$SERVICE_USER" /var/log/wireguard || true
+chmod 750 /var/log/wireguard || true
+
+echo "== 5. Autorisation sudo pour la lecture ET la gestion des clients =="
+# gunicorn tourne sous www-data. Trois regles distinctes :
+#  a) lecture seule : 'wg show wg0 dump' (etat live, non destructif)
+#  b) gestion des clients : execution de wgctl.py en root, SEUL point
+#     d'entree autorise a ecrire dans wg0.conf / appeler `wg set` / `tc`.
+#  c) operations systeme : execution de wgops.py en root, SEUL point
+#     d'entree autorise pour les sauvegardes/restaurations, la rotation
+#     des cles serveur et le redemarrage du tunnel (voir README 7.8.1).
+#     Rayon d'impact plus large que (b) -> desactivable separement via
+#     SYSTEM_OPS_ENABLED, voir dashboard.env.
+#     wgctl.py et wgops.py valident eux-memes chaque parametre et
+#     n'acceptent que des actions connues : www-data ne peut donc pas
+#     executer de commande arbitraire, seulement les operations exposees
+#     par ces deux scripts.
+# -> Voir README section 7.6.1 pour le detail des risques et alternatives
+#    si vous preferez garder le dashboard strictement en lecture seule.
+cat > /etc/sudoers.d/blockhash-dashboard <<EOF
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/wg show wg0 dump
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 $APP_DIR/backend/wgctl.py *
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 $APP_DIR/backend/wgops.py *
+EOF
+chmod 440 /etc/sudoers.d/blockhash-dashboard
+visudo -cf /etc/sudoers.d/blockhash-dashboard
+
+# wgctl.py et wgops.py doivent appartenir a root et ne JAMAIS etre
+# inscriptibles par www-data, sinon les regles sudoers ci-dessus
+# permettraient a www-data de modifier le script qu'il execute ensuite
+# en root (elevation de privileges triviale).
+chown root:root "$APP_DIR/backend/wgctl.py" "$APP_DIR/backend/wgops.py"
+chmod 750 "$APP_DIR/backend/wgctl.py" "$APP_DIR/backend/wgops.py"
+
+# Alternative plus simple pour un LAB : autoriser www-data a lire wg0.conf
+# et donner la capacite CAP_NET_ADMIN au binaire wg (voir README section 11).
+setcap cap_net_admin+ep /usr/bin/wg || true
+
+echo "== 5bis. Dependances pour la limitation de bande passante (tc / ifb, optionnel) =="
+apt install -y iproute2 || true
+modprobe ifb numifbs=1 2>/dev/null || true
+grep -qxF "ifb" /etc/modules 2>/dev/null || echo "ifb" >> /etc/modules
+
+echo "== 5ter. Verification automatique des expirations (cron quotidien) =="
+# Appelle directement wgctl.py (deploye avec le dashboard) : desactive tout
+# client dont la date d'expiration est depassee. Voir aussi
+# scripts/07-check-expirations.sh pour lancer la meme verification a la main.
+mkdir -p /var/log/wireguard
+cat > /etc/cron.d/blockhash-expirations <<EOF
+0 3 * * * root python3 $APP_DIR/backend/wgctl.py check-expirations >> /var/log/wireguard/expirations.log 2>&1
+EOF
+chmod 644 /etc/cron.d/blockhash-expirations
+
+echo "== 5quater. Evaluation des regles d'alerte (cron toutes les 5 minutes) =="
+# N'envoie rien tant que l'alerting n'est pas active (voir README 7.7.4 et
+# l'onglet Alertes du dashboard) - la regle sudoers ci-dessus n'est PAS
+# necessaire pour cette fonctionnalite (alerts.py ne fait que lire l'etat
+# WireGuard deja autorise + son propre fichier de config sous /etc/blockhash).
+cat > /etc/cron.d/blockhash-alerts <<EOF
+*/5 * * * * root python3 $APP_DIR/backend/alerts.py check >> /var/log/wireguard/alerts.log 2>&1
+EOF
+chmod 644 /etc/cron.d/blockhash-alerts
+
+echo "== 6. Verification finale des permissions sensibles =="
+# Re-verifie apres coup que rien n'a pu regagner un droit d'ecriture sur
+# les scripts privilegies (defense en profondeur si ce script est relance).
+chown root:root "$APP_DIR/backend/wgctl.py" "$APP_DIR/backend/wgops.py"
+chmod 750 "$APP_DIR/backend/wgctl.py" "$APP_DIR/backend/wgops.py"
+
+echo "== 6bis. Rapport hebdomadaire par e-mail (cron, desactive par defaut) =="
+# N'envoie rien tant que "weekly_enabled" n'est pas active depuis l'onglet
+# Alertes du dashboard (voir README 7.9.3) - reutilise le canal e-mail deja
+# configure pour les alertes, aucune regle sudoers supplementaire requise.
+cat > /etc/cron.d/blockhash-weekly-report <<EOF
+0 8 * * 1 root python3 $APP_DIR/backend/reports.py send-weekly >> /var/log/wireguard/reports.log 2>&1
+EOF
+chmod 644 /etc/cron.d/blockhash-weekly-report
 
 echo "== 7. Creation du service systemd (gunicorn) =="
+# --worker-class gthread --threads 4 (au lieu du sync worker par defaut) :
+# necessaire pour le flux temps reel Server-Sent Events (/api/events/stream,
+# voir README 7.10.3). Une connexion SSE reste ouverte plusieurs secondes ;
+# avec des workers "sync" classiques, 2 onglets dashboard ouverts en meme
+# temps suffiraient a saturer les 2 workers (-w 2) et a bloquer TOUTES les
+# autres requetes (y compris les assets statiques). gthread permet a chaque
+# worker de gerer plusieurs connexions concurrentes via des threads, sans
+# dependance supplementaire (contrairement a gevent/eventlet).
 cat > /etc/systemd/system/blockhash-dashboard.service <<EOF
 [Unit]
 Description=BLOCKHash - Dashboard de supervision WireGuard
@@ -88,7 +218,7 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$APP_DIR/backend
 EnvironmentFile=/etc/blockhash/dashboard.env
-ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 -b 0.0.0.0:$DASHBOARD_PORT app:app
+ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 --worker-class gthread --threads 4 --timeout 120 -b 0.0.0.0:$DASHBOARD_PORT app:app
 Restart=always
 RestartSec=3
 
@@ -118,4 +248,18 @@ echo "   dans le NSG Terraform (variable admin_source_ip) et dans ufw."
 echo " - Le jeton ci-dessus n'est utile que si vous appelez l'API"
 echo "   directement (curl -H \"X-API-Token: ...\"). Le frontend web"
 echo "   fonctionne sans jeton depuis la meme origine par defaut."
+echo " - La gestion des clients (ajout/activation/revocation/etc.) est"
+echo "   activee depuis le dashboard. Les droits sudo de www-data ont ete"
+echo "   etendus a wgctl.py (voir README section 7.6.1) - relisez cette"
+echo "   section avant tout deploiement expose sur Internet."
 echo " - Verifiez le service avec : sudo systemctl status blockhash-dashboard"
+echo " - Monitoring avance (débit long terme, système, anomalies) et alerting"
+echo "   configurable (email/Slack/Discord/Telegram) sont disponibles dans"
+echo "   les onglets Monitoring et Alertes du dashboard - voir README 7.7."
+echo "   L'alerting est DESACTIVE par defaut (rien n'est envoye tant que"
+echo "   vous ne l'activez pas explicitement)."
+echo " - Administration système (sauvegardes/restauration, rotation des clés"
+echo "   serveur, redémarrage du tunnel, export d'audit, multi-serveurs) et"
+echo "   reporting (export PDF/CSV, rapport hebdomadaire, vue Conformité)"
+echo "   sont disponibles dans les onglets Système/Conformité - voir README"
+echo "   section 7.8 et 7.9. Le rapport hebdomadaire est désactivé par défaut."

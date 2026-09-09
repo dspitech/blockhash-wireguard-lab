@@ -1,2 +1,4 @@
 Flask==3.0.3
 gunicorn==22.0.0
+psutil==6.0.0
+fpdf2==2.7.9
