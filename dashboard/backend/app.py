@@ -27,9 +27,11 @@ Laisser DASHBOARD_TOKEN vide desactive l'authentification (LAB/demo uniquement).
 """
 
 import json
+import logging
 import os
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +80,76 @@ app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 # ------------------------------------------------------------------
 # Authentification
 # ------------------------------------------------------------------
+# SECURITE : un DASHBOARD_TOKEN vide desactive purement et simplement
+# l'authentification (voir check_auth ci-dessous) - pratique en lab mais
+# catastrophique si ca arrive par erreur en production (ex: fichier .env
+# mal genere, variable ecrasee par un outil de deploiement). On refuse
+# donc de demarrer dans ce cas, sauf si l'operateur l'assume explicitement
+# via ALLOW_NO_AUTH=true (documente README 7.10.6).
+ALLOW_NO_AUTH = os.environ.get("ALLOW_NO_AUTH", "false").lower() == "true"
+if not DASHBOARD_TOKEN and not ALLOW_NO_AUTH:
+    sys.exit(
+        "ERREUR FATALE : DASHBOARD_TOKEN est vide. Le dashboard refuse de "
+        "demarrer sans authentification (voir /etc/blockhash/dashboard.env). "
+        "Pour lancer volontairement sans jeton (lab/demo isole uniquement), "
+        "definissez ALLOW_NO_AUTH=true dans le fichier d'environnement."
+    )
+
+# Journal d'audit dedie, separe des logs applicatifs generaux : trace qui a
+# declenche une action qui MODIFIE l'etat du tunnel ou des clients (creation,
+# revocation, activation/desactivation, rotation de cles, redemarrage...).
+# Volontairement minimaliste (pas de dependance externe) - un simple fichier
+# append-only, un evenement par ligne, lisible par `journalctl`/`grep`.
+AUDIT_LOG_PATH = Path(os.environ.get("AUDIT_LOG_PATH", "/var/log/wireguard/audit.log"))
+audit_logger = logging.getLogger("blockhash.audit")
+audit_logger.setLevel(logging.INFO)
+if not audit_logger.handlers:
+    try:
+        _audit_handler = logging.FileHandler(AUDIT_LOG_PATH)
+        _audit_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        audit_logger.addHandler(_audit_handler)
+    except OSError:
+        # Repertoire pas encore prepare (permissions) : on degrade vers
+        # stderr plutot que de faire planter l'appli pour un souci de log.
+        audit_logger.addHandler(logging.StreamHandler())
+
+
+def audit(action, **fields):
+    detail = " ".join(f"{k}={v!r}" for k, v in fields.items())
+    audit_logger.info("ip=%s action=%s %s", request.remote_addr, action, detail)
+
+
+# Verrouillage anti force-brute, en memoire (process unique gunicorn -w 2 ->
+# approximatif entre workers mais suffisant : l'objectif est de ralentir un
+# script, pas de garantir une precision distribuee). Cle = IP source.
+_FAILED_AUTH = {}  # ip -> {"count": int, "locked_until": float}
+AUTH_MAX_ATTEMPTS = int(os.environ.get("AUTH_MAX_ATTEMPTS", "8"))
+AUTH_LOCKOUT_SECONDS = int(os.environ.get("AUTH_LOCKOUT_SECONDS", "300"))
+
+
+def _record_auth_failure(ip):
+    entry = _FAILED_AUTH.setdefault(ip, {"count": 0, "locked_until": 0.0})
+    entry["count"] += 1
+    if entry["count"] >= AUTH_MAX_ATTEMPTS:
+        entry["locked_until"] = time.time() + AUTH_LOCKOUT_SECONDS
+        audit("auth_lockout", attempts=entry["count"], lockout_seconds=AUTH_LOCKOUT_SECONDS)
+
+
+def _record_auth_success(ip):
+    _FAILED_AUTH.pop(ip, None)
+
+
+def _is_locked_out(ip):
+    entry = _FAILED_AUTH.get(ip)
+    if not entry:
+        return False
+    if entry["locked_until"] and time.time() < entry["locked_until"]:
+        return True
+    if entry["locked_until"] and time.time() >= entry["locked_until"]:
+        _FAILED_AUTH.pop(ip, None)  # periode ecoulee : on reinitialise
+    return False
+
+
 def check_auth():
     if not DASHBOARD_TOKEN:
         return True
@@ -87,7 +159,8 @@ def check_auth():
     # accepte le jeton en parametre de requete UNIQUEMENT pour ce endpoint
     # precis. Compromis documente (README 7.10.3) : un jeton en query string
     # peut se retrouver dans des logs d'acces - acceptable ici car l'acces
-    # au port du dashboard est deja restreint au niveau reseau (section 7.3).
+    # au dashboard est de toute facon restreint au tunnel WireGuard
+    # (voir scripts/03-install-dashboard.sh, etape 7bis).
     if request.path == "/api/events/stream" and request.args.get("token") == DASHBOARD_TOKEN:
         return True
     return False
@@ -95,8 +168,34 @@ def check_auth():
 
 @app.before_request
 def enforce_auth():
-    if request.path.startswith("/api/") and not check_auth():
+    if not request.path.startswith("/api/"):
+        return None
+    ip = request.remote_addr
+    if _is_locked_out(ip):
+        return jsonify({"error": "too_many_attempts", "retry_after_seconds": AUTH_LOCKOUT_SECONDS}), 429
+    if not check_auth():
+        _record_auth_failure(ip)
         return jsonify({"error": "unauthorized"}), 401
+    _record_auth_success(ip)
+    return None
+
+
+# Capture generique de toute action MUTANTE (POST/PATCH/DELETE) sur l'API,
+# plutot qu'un appel audit() manuel route par route : garantit qu'aucune
+# route actuelle ou future (creation client, rotation de cles, restauration
+# de sauvegarde...) n'echappe au journal, meme en cas d'oubli lors d'un
+# prochain developpement. Les routes en lecture (GET) ne sont pas journalisees
+# ici pour ne pas noyer le signal utile dans du bruit de consultation.
+@app.after_request
+def log_mutations(response):
+    if request.path.startswith("/api/") and request.method in ("POST", "PATCH", "DELETE"):
+        audit(
+            "api_mutation",
+            method=request.method,
+            path=request.path,
+            status=response.status_code,
+        )
+    return response
 
 
 # ------------------------------------------------------------------

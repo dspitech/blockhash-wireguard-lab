@@ -41,10 +41,9 @@ def load_peer_config():
         return peers
 
     try:
-    import subprocess
-    content = subprocess.check_output(["sudo", "cat", str(WG_CONF_PATH)], stderr=subprocess.DEVNULL, text=True)
-except subprocess.CalledProcessError:
-    content = ""
+        content = WG_CONF_PATH.read_text()
+    except (OSError, PermissionError):
+        content = ""
     lines = content.splitlines()
     starts = [i for i, ln in enumerate(lines) if re.match(r"^#{0,2}\[Peer\]\s*$", ln)]
 

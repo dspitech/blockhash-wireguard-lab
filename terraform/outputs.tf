@@ -14,6 +14,6 @@ output "ssh_command" {
 }
 
 output "dashboard_url" {
-  description = "URL du dashboard BLOCKHash"
-  value       = "http://${module.compute.fqdn}:${var.dashboard_port}"
+  description = "URL du dashboard BLOCKHash - joignable UNIQUEMENT une fois connecte au VPN WireGuard (voir scripts/03-install-dashboard.sh, etape 7bis : gunicorn en loopback, Caddy expose en TLS sur l'IP privee du tunnel). Le certificat est auto-signe (tls internal) : le navigateur demandera une confirmation la premiere fois. Port TLS par defaut : 443 (variable DASHBOARD_TLS_PORT du script d'installation)."
+  value       = "https://10.66.66.1"
 }

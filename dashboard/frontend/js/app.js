@@ -1,1866 +1,995 @@
+"use strict";
 /* ==========================================================
-   BLOCKHash — Dashboard WireGuard
-   Récupère /api/overview (backend Flask) ; si indisponible,
-   bascule automatiquement sur data/sample-data.json (mode démo).
+   BLOCKHash — app.js
+   Console vanilla JS : pas de framework, un seul fichier chargé
+   après config.js (jeton) et les vendors (Chart.js, Leaflet).
    ========================================================== */
 
-const REFRESH_INTERVAL_MS = 30000;
-const API_URL = "/api/overview";
+// ---------------------------------------------------------------
+// État global
+// ---------------------------------------------------------------
+const STATE = {
+  demoMode: null,          // null = inconnu, true/false une fois déterminé
+  theme: localStorage.getItem("blockhash_theme") || "light",
+  collapsed: localStorage.getItem("blockhash_sidebar_collapsed") === "1",
+  currentView: "overview",
+  overview: null,
+  peers: [],
+  clientsFilter: { status: "all", search: "" },
+  journal: { offset: 0, limit: 50, search: "", status: "all", total: 0 },
+  throughputRange: "24h",
+  clientManagementEnabled: false,
+  charts: {},
+  map: null,
+  mapMarkers: [],
+  sse: null,
+};
+
 const DEMO_URL = "data/sample-data.json";
 
-const state = {
-  data: null,
-  isDemo: false,
-  sort: { key: "timestamp", dir: "desc" },
-  statusFilter: "all",
-  search: "",
-  clientSearch: "",
-  clientManagementEnabled: true,
-  throughputRange: "24h",
-  journal: { page: 0, pageSize: 50, total: 0 },
-};
-
-const els = {
-  clock: document.getElementById("clock"),
-  connPill: document.getElementById("conn-pill"),
-  connLabel: document.getElementById("conn-label"),
-  demoBanner: document.getElementById("demo-banner"),
-  refreshBtn: document.getElementById("refresh-btn"),
-  viewTitle: document.getElementById("view-title"),
-  viewSubtitle: document.getElementById("view-subtitle"),
-  heroThroughput: document.getElementById("hero-throughput"),
-  kpiActive: document.getElementById("kpi-active"),
-  kpiActiveDetail: document.getElementById("kpi-active-detail"),
-  kpiRx: document.getElementById("kpi-rx"),
-  kpiTx: document.getElementById("kpi-tx"),
-  kpiAlerts: document.getElementById("kpi-alerts"),
-  recentEvents: document.getElementById("recent-events"),
-  distributionLegend: document.getElementById("distribution-legend"),
-  logTableBody: document.getElementById("log-table-body"),
-  logEmpty: document.getElementById("log-empty"),
-  logSearch: document.getElementById("log-search"),
-  statusFilters: document.getElementById("status-filters"),
-  clientGrid: document.getElementById("client-grid"),
-  clientSearch: document.getElementById("client-search"),
-  addClientBtn: document.getElementById("add-client-btn"),
-  mgmtDisabledNote: document.getElementById("mgmt-disabled-note"),
-  modalOverlay: document.getElementById("modal-overlay"),
-  modalTitle: document.getElementById("modal-title"),
-  modalBody: document.getElementById("modal-body"),
-  modalClose: document.getElementById("modal-close"),
-  drawerOverlay: document.getElementById("drawer-overlay"),
-  drawerTitle: document.getElementById("drawer-title"),
-  drawerBody: document.getElementById("drawer-body"),
-  drawerClose: document.getElementById("drawer-close"),
-  toastStack: document.getElementById("toast-stack"),
-  rangeSelector: document.getElementById("range-selector"),
-  rangeChartCanvas: document.getElementById("range-chart"),
-  systemStats: document.getElementById("system-stats"),
-  anomaliesList: document.getElementById("anomalies-list"),
-  formSettings: document.getElementById("form-settings"),
-  alertsEnabledToggle: document.getElementById("alerts-enabled-toggle"),
-  formAlertRules: document.getElementById("form-alert-rules"),
-  formAlertChannels: document.getElementById("form-alert-channels"),
-  alertsHistoryList: document.getElementById("alerts-history-list"),
-  dedupList: document.getElementById("dedup-list"),
-  dedupClearAllBtn: document.getElementById("dedup-clear-all-btn"),
-  exportLogCsvBtn: document.getElementById("export-log-csv"),
-  exportLogPdfBtn: document.getElementById("export-log-pdf"),
-  formWeeklyReport: document.getElementById("form-weekly-report"),
-  sendWeeklyNowBtn: document.getElementById("send-weekly-now-btn"),
-  complianceTableBody: document.getElementById("compliance-table-body"),
-  complianceEmpty: document.getElementById("compliance-empty"),
-  exportComplianceCsvBtn: document.getElementById("export-compliance-csv"),
-  exportCompliancePdfBtn: document.getElementById("export-compliance-pdf"),
-  backupsList: document.getElementById("backups-list"),
-  createBackupBtn: document.getElementById("create-backup-btn"),
-  rotateKeysBtn: document.getElementById("rotate-keys-btn"),
-  restartTunnelBtn: document.getElementById("restart-tunnel-btn"),
-  exportAuditBtn: document.getElementById("export-audit-btn"),
-  serversList: document.getElementById("servers-list"),
-  addServerBtn: document.getElementById("add-server-btn"),
-  globalSearch: document.getElementById("global-search"),
-  globalSearchResults: document.getElementById("global-search-results"),
-  themeToggleBtn: document.getElementById("theme-toggle-btn"),
-  themeIconDark: document.getElementById("theme-icon-dark"),
-  themeIconLight: document.getElementById("theme-icon-light"),
-  nocModeBtn: document.getElementById("noc-mode-btn"),
-  journalPaginationInfo: document.getElementById("journal-pagination-info"),
-  journalPageSize: document.getElementById("journal-page-size"),
-  journalPrevPage: document.getElementById("journal-prev-page"),
-  journalNextPage: document.getElementById("journal-next-page"),
-  hamburgerBtn: document.getElementById("hamburger-btn"),
-  sidebarBackdrop: document.getElementById("sidebar-backdrop"),
-  sidebar: document.querySelector(".sidebar"),
-};
-
-const VIEW_META = {
-  overview: { title: "Vue d'ensemble", subtitle: "État en temps réel des tunnels VPN BLOCKHash" },
-  journal: { title: "Journal des connexions", subtitle: "Historique des handshakes et volumes échangés par tunnel" },
-  clients: { title: "Clients WireGuard", subtitle: "Statut détaillé de chaque pair configuré" },
-  monitoring: { title: "Monitoring avancé", subtitle: "Débit long terme, ressources serveur et anomalies détectées" },
-  alerts: { title: "Alertes", subtitle: "Seuils, canaux de notification et historique des alertes envoyées" },
-  compliance: { title: "Conformité", subtitle: "Clients inactifs, candidats à la révocation" },
-  system: { title: "Système", subtitle: "Sauvegardes, rotation de clés, maintenance et multi-serveurs" },
-};
-
-let throughputChart = null;
-let distributionChart = null;
-
 // ---------------------------------------------------------------
-// Utilitaires de formatage
+// Couche API
 // ---------------------------------------------------------------
-function formatBytes(bytes) {
-  if (!bytes || bytes < 1) return "0 o";
-  const units = ["o", "Ko", "Mo", "Go", "To"];
-  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function formatRelativeTime(isoString) {
-  if (!isoString) return "jamais";
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
-  if (seconds < 60) return `il y a ${seconds}s`;
-  if (seconds < 3600) return `il y a ${Math.floor(seconds / 60)} min`;
-  if (seconds < 86400) return `il y a ${Math.floor(seconds / 3600)} h`;
-  return `il y a ${Math.floor(seconds / 86400)} j`;
-}
-
-function statusLabel(status) {
-  return { online: "En ligne", idle: "Inactif", never: "Jamais connecté", disabled: "Désactivé" }[status] || status;
-}
-
-function formatDate(isoDate) {
-  if (!isoDate) return null;
-  const d = new Date(isoDate);
-  return Number.isNaN(d.getTime()) ? isoDate : d.toLocaleDateString("fr-FR");
-}
-
-function expiryState(expires) {
-  if (!expires) return null;
-  const days = Math.ceil((new Date(expires).getTime() - Date.now()) / 86400000);
-  if (days < 0) return "expired";
-  if (days <= 7) return "soon";
-  return "ok";
-}
-
-// ---------------------------------------------------------------
-// Chargement des données (API réelle -> repli sur démo)
-// ---------------------------------------------------------------
-async function loadData() {
-  try {
-    const res = await fetch(API_URL, { headers: buildHeaders(), cache: "no-store" });
-    if (!res.ok) throw new Error("api unreachable");
-    state.data = await res.json();
-    state.isDemo = false;
-    // /api/overview ne renvoie pas ce flag (il vient de /api/clients en pratique,
-    // mais on suppose la gestion active tant que le serveur ne dit pas le contraire).
-    state.clientManagementEnabled = state.data.client_management_enabled !== false;
-  } catch (err) {
-    const res = await fetch(DEMO_URL, { cache: "no-store" });
-    state.data = await res.json();
-    state.isDemo = true;
-    state.clientManagementEnabled = false; // pas de backend en mode demo -> lecture seule
-  }
-  render();
-}
-
-function buildHeaders(json = false) {
+function authHeaders() {
   const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem("blockhash_dashboard_token");
-  const headers = token ? { "X-API-Token": token } : {};
-  if (json) headers["Content-Type"] = "application/json";
-  return headers;
+  return token ? { "X-API-Token": token } : {};
 }
 
-// ---------------------------------------------------------------
-// Appels API de gestion des clients (POST/PATCH/DELETE)
-// ---------------------------------------------------------------
-async function apiRequest(method, url, body) {
-  const res = await fetch(url, {
+async function apiGet(path) {
+  const res = await fetch(path, { headers: authHeaders(), cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Erreur API (${res.status})`);
+  }
+  return res.json();
+}
+
+async function apiSend(method, path, body) {
+  const res = await fetch(path, {
     method,
-    headers: buildHeaders(true),
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  let payload = null;
-  try {
-    payload = await res.json();
-  } catch (err) {
-    /* reponse vide (ex. 204) -> ignore */
-  }
-  if (!res.ok) {
-    throw new Error((payload && payload.error) || `Erreur ${res.status}`);
-  }
-  return payload;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Erreur API (${res.status})`);
+  return data;
+}
+
+async function loadDemoOverview() {
+  const res = await fetch(DEMO_URL, { cache: "no-store" });
+  return res.json();
 }
 
 // ---------------------------------------------------------------
-// Notifications (toasts)
+// Formatage
 // ---------------------------------------------------------------
-function showToast(message, variant = "success") {
-  const toast = document.createElement("div");
-  toast.className = `toast toast--${variant}`;
-  toast.textContent = message;
-  els.toastStack.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("is-visible"));
-  setTimeout(() => {
-    toast.classList.remove("is-visible");
-    setTimeout(() => toast.remove(), 300);
-  }, 4200);
+function fmtBytes(n) {
+  if (n === null || n === undefined) return "—";
+  const units = ["o", "Ko", "Mo", "Go", "To"];
+  let v = n, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// ---------------------------------------------------------------
-// Modale generique (formulaires clients)
-// ---------------------------------------------------------------
-function openModal(title, bodyHtml) {
-  els.modalTitle.textContent = title;
-  els.modalBody.innerHTML = bodyHtml;
-  els.modalOverlay.hidden = false;
-  document.body.classList.add("no-scroll");
-}
-
-function closeModal() {
-  els.modalOverlay.hidden = true;
-  els.modalBody.innerHTML = "";
-}
-
-els.modalClose.addEventListener("click", closeModal);
-els.modalOverlay.addEventListener("click", (e) => {
-  if (e.target === els.modalOverlay) closeModal();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    closeModal();
-    closeDrawer();
+function parseTs(iso) {
+  // Accepte à la fois l'ISO 8601 ("...T...") et le format "YYYY-MM-DD HH:MM:SS"
+  // renvoyé par _row_to_log_dict (voir wgstate.py) : Safari/Firefox n'analysent
+  // pas ce second format sans le "T", d'où la normalisation ici.
+  if (typeof iso === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(iso)) {
+    return new Date(iso.replace(" ", "T") + "Z");
   }
-});
-
-// ---------------------------------------------------------------
-// Tiroir de detail / historique client
-// ---------------------------------------------------------------
-let historyChart = null;
-
-function closeDrawer() {
-  els.drawerOverlay.hidden = true;
-  els.drawerBody.innerHTML = "";
-  if (historyChart) {
-    historyChart.destroy();
-    historyChart = null;
-  }
+  return new Date(iso);
 }
 
-els.drawerClose.addEventListener("click", closeDrawer);
-els.drawerOverlay.addEventListener("click", (e) => {
-  if (e.target === els.drawerOverlay) closeDrawer();
-});
-
-async function openClientHistory(name) {
-  els.drawerTitle.textContent = name;
-  els.drawerOverlay.hidden = false;
-  els.drawerBody.innerHTML = `<p class="drawer-loading">Chargement de l'historique…</p>`;
-
-  try {
-    const history = await apiRequest("GET", `/api/clients/${encodeURIComponent(name)}/history`);
-    els.drawerBody.innerHTML = `
-      <div class="drawer-stats">
-        <div><span>Reconnexions estimées</span><strong>${history.reconnect_count}</strong></div>
-        <div><span>Dernier endpoint vu</span><strong>${history.last_endpoint || "—"}</strong></div>
-      </div>
-      <h4>Débit dédié</h4>
-      <canvas id="history-chart" height="160"></canvas>
-      <h4>Dernières connexions</h4>
-      <ul class="event-list" id="history-events"></ul>
-    `;
-
-    const series = history.throughput_series || [];
-    const ctx = document.getElementById("history-chart");
-    historyChart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: series.map((p) => p.t),
-        datasets: [
-          { label: "Reçu", data: series.map((p) => p.rx), borderColor: "#4C7FFF", backgroundColor: "rgba(76,127,255,0.12)", fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2 },
-          { label: "Émis", data: series.map((p) => p.tx), borderColor: "#34D399", backgroundColor: "rgba(52,211,153,0.10)", fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2 },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: true, labels: { color: "#8A96AD", boxWidth: 10, font: { size: 11 } } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: "#5B6785", font: { size: 10 }, autoSkip: true, maxTicksLimit: 10, maxRotation: 0 } },
-          y: { grid: { color: "#1C2740" }, ticks: { color: "#5B6785", font: { size: 10 }, callback: (v) => formatBytes(v) } },
-        },
-      },
-    });
-
-    const eventsList = document.getElementById("history-events");
-    eventsList.innerHTML = (history.logs || [])
-      .slice(0, 20)
-      .map(
-        (log) => `
-        <li>
-          <span class="event-dot"></span>
-          <div class="event-main">
-            <strong>${log.endpoint || "endpoint inconnu"}</strong>
-            <span>${formatBytes(log.rx_bytes)} reçus · ${formatBytes(log.tx_bytes)} émis</span>
-          </div>
-          <span class="event-time">${log.timestamp}</span>
-        </li>`
-      )
-      .join("") || `<li><div class="event-main"><span>Aucune connexion enregistrée.</span></div></li>`;
-  } catch (err) {
-    els.drawerBody.innerHTML = `<p class="drawer-loading">Erreur : ${err.message}</p>`;
-  }
+function fmtRelative(iso) {
+  if (!iso) return "Jamais";
+  const then = parseTs(iso).getTime();
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return `il y a ${diffSec}s`;
+  if (diffSec < 3600) return `il y a ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `il y a ${Math.floor(diffSec / 3600)} h`;
+  return `il y a ${Math.floor(diffSec / 86400)} j`;
 }
 
-// ---------------------------------------------------------------
-// Rendu global
-// ---------------------------------------------------------------
-function render() {
-  document.body.classList.remove("is-loading");
-  renderConnectionStatus();
-  renderKpis();
-  safeRender("throughput chart", renderThroughputChart);
-  safeRender("recent events", renderRecentEvents);
-  safeRender("distribution chart", renderDistributionChart);
-  safeRender("client grid", renderClientGrid);
-  if (document.querySelector('[data-view="journal"]').classList.contains("is-active")) {
-    safeRender("journal", loadJournalPage);
-  }
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = parseTs(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function safeRender(label, fn) {
-  try {
-    fn();
-  } catch (err) {
-    console.error(`Erreur d'affichage (${label}) :`, err);
-  }
+function initials(name) {
+  return (name || "?").split(/[-_ ]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join("");
 }
 
-function renderConnectionStatus() {
-  els.demoBanner.hidden = !state.isDemo;
-  els.connPill.classList.toggle("is-online", !state.isDemo);
-  els.connPill.classList.toggle("is-demo", state.isDemo);
-  els.connLabel.textContent = state.isDemo ? "Mode démonstration" : "API connectée";
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function renderKpis() {
-  const { stats } = state.data;
-  els.kpiActive.textContent = stats.active_tunnels;
-  els.kpiActiveDetail.textContent = `sur ${stats.total_peers} pairs configurés`;
-  els.kpiRx.textContent = formatBytes(stats.total_rx_bytes);
-  els.kpiTx.textContent = formatBytes(stats.total_tx_bytes);
-  els.kpiAlerts.textContent = stats.alerts;
-
-  const lastPoint = state.data.throughput_series?.at(-1);
-  if (lastPoint) {
-    const mbps = ((lastPoint.rx + lastPoint.tx) * 8) / (300 * 1_000_000); // approx sur 5 min
-    els.heroThroughput.textContent = mbps.toFixed(1);
-  }
-}
-
-function renderThroughputChart() {
-  const series = state.data.throughput_series || [];
-  const ctx = document.getElementById("throughput-chart");
-  const cfg = {
-    type: "line",
-    data: {
-      labels: series.map((p) => p.t),
-      datasets: [
-        {
-          label: "Réception",
-          data: series.map((p) => p.rx),
-          borderColor: "#4C7FFF",
-          backgroundColor: "rgba(76,127,255,0.12)",
-          fill: true,
-          tension: 0.35,
-          pointRadius: 0,
-          borderWidth: 2,
-        },
-        {
-          label: "Émission",
-          data: series.map((p) => p.tx),
-          borderColor: "#34D399",
-          backgroundColor: "rgba(52,211,153,0.10)",
-          fill: true,
-          tension: 0.35,
-          pointRadius: 0,
-          borderWidth: 2,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 600 },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.dataset.label} : ${formatBytes(c.raw)}` } } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#5B6785", font: { family: "JetBrains Mono", size: 10 }, autoSkip: true, maxTicksLimit: 10, maxRotation: 0 } },
-        y: { grid: { color: "#1C2740" }, ticks: { color: "#5B6785", font: { family: "JetBrains Mono", size: 10 }, callback: (v) => formatBytes(v) } },
-      },
-    },
+function statusBadge(status) {
+  const map = {
+    online: ["success", "En ligne"],
+    idle: ["warning", "Inactif"],
+    never: ["neutral", "Jamais connecté"],
+    disabled: ["danger", "Désactivé"],
   };
+  const [cls, label] = map[status] || ["neutral", status || "Inconnu"];
+  return `<span class="badge ${cls}"><span class="dot"></span>${label}</span>`;
+}
 
-  if (throughputChart) {
-    throughputChart.data = cfg.data;
-    throughputChart.update();
-  } else {
-    throughputChart = new Chart(ctx, cfg);
+function peerStatus(peer) {
+  if (!peer.enabled) return "disabled";
+  return peer.status;
+}
+
+// ---------------------------------------------------------------
+// Toasts
+// ---------------------------------------------------------------
+function toast(kind, title, message) {
+  const stack = document.getElementById("toast-stack");
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.innerHTML = `<div class="feed-body"><strong>${escapeHtml(title)}</strong>${message ? `<span>${escapeHtml(message)}</span>` : ""}</div>`;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .2s"; setTimeout(() => el.remove(), 200); }, 5000);
+}
+
+// ---------------------------------------------------------------
+// Connexion / thème / sidebar
+// ---------------------------------------------------------------
+function setConnPill(mode) {
+  const pill = document.getElementById("conn-pill");
+  const label = document.getElementById("conn-label");
+  const envBadge = document.getElementById("env-badge");
+  pill.classList.remove("is-live", "is-demo", "is-down");
+  if (mode === "live") { pill.classList.add("is-live"); label.textContent = "API connectée"; envBadge.textContent = "Production"; }
+  else if (mode === "demo") { pill.classList.add("is-demo"); label.textContent = "Mode démonstration"; envBadge.textContent = "Démo"; }
+  else { pill.classList.add("is-down"); label.textContent = "API injoignable"; envBadge.textContent = "Hors ligne"; }
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", STATE.theme);
+  const icon = document.getElementById("theme-icon");
+  icon.innerHTML = STATE.theme === "dark"
+    ? '<path d="M10 3v1.5M10 15.5V17M17 10h-1.5M4.5 10H3M14.8 5.2l-1 1M6.2 13.8l-1 1M14.8 14.8l-1-1M6.2 6.2l-1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="10" r="3.4" stroke="currentColor" stroke-width="1.5"/>'
+    : '<path d="M16.5 11.8A6.5 6.5 0 0 1 8.2 3.5 6.5 6.5 0 1 0 16.5 11.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
+}
+
+function applySidebar() {
+  document.getElementById("shell").classList.toggle("is-collapsed", STATE.collapsed);
+}
+
+// ---------------------------------------------------------------
+// Router de vues
+// ---------------------------------------------------------------
+const VIEW_TITLES = {
+  overview: "Vue d'ensemble", clients: "Clients", journal: "Journal des connexions",
+  monitoring: "Monitoring", alerts: "Alertes", compliance: "Conformité",
+  system: "Système", settings: "Réglages",
+};
+
+function switchView(view) {
+  STATE.currentView = view;
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("is-active", v.id === `view-${view}`));
+  document.querySelectorAll(".nav-item[data-view]").forEach(b => b.classList.toggle("is-active", b.dataset.view === view));
+  document.getElementById("topbar-title").textContent = VIEW_TITLES[view] || view;
+  document.getElementById("shell").classList.remove("is-mobile-open");
+  loadView(view);
+}
+
+function loadView(view) {
+  switch (view) {
+    case "overview": return renderOverview();
+    case "clients": return renderClients();
+    case "journal": return renderJournal();
+    case "monitoring": return renderMonitoring();
+    case "alerts": return renderAlerts();
+    case "compliance": return renderCompliance();
+    case "system": return renderSystem();
+    case "settings": return renderSettings();
   }
 }
 
-function renderRecentEvents() {
-  const logs = (state.data.logs || []).slice(0, 6);
-  els.recentEvents.innerHTML = logs
-    .map(
-      (log) => `
-      <li>
-        <span class="event-dot"></span>
-        <div class="event-main">
-          <strong>${log.peer}</strong>
-          <span>${log.endpoint || "endpoint inconnu"} · ${formatBytes(log.rx_bytes)} reçus</span>
-        </div>
-        <span class="event-time">${log.timestamp}</span>
-      </li>`
-    )
-    .join("") || `<li><div class="event-main"><span>Aucun événement récent.</span></div></li>`;
+// ---------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------
+async function bootstrap() {
+  applyTheme();
+  applySidebar();
+
+  try {
+    const version = await apiGet("/api/version");
+    STATE.demoMode = false;
+    STATE.clientManagementEnabled = !!version.client_management_enabled;
+    document.getElementById("wg-if-name").textContent = version.wg_interface || "wg0";
+    setConnPill("live");
+    connectSSE();
+  } catch (err) {
+    try {
+      await apiGet("/api/health");
+      STATE.demoMode = false;
+      setConnPill("live");
+    } catch {
+      STATE.demoMode = true;
+      setConnPill("demo");
+    }
+  }
+
+  document.body.classList.remove("is-loading");
+  switchView("overview");
 }
 
-function renderDistributionChart() {
-  const peers = [...(state.data.peers || [])]
-    .map((p) => ({ name: p.name, total: p.rx_bytes + p.tx_bytes }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 5);
+function connectSSE() {
+  if (STATE.demoMode) return;
+  try {
+    const src = new EventSource("/api/events/stream");
+    src.addEventListener("peer_connected", e => {
+      const d = JSON.parse(e.data);
+      toast("success", `${d.name} connecté`, d.endpoint);
+      if (STATE.currentView === "overview") renderOverview();
+      if (STATE.currentView === "clients") renderClients();
+    });
+    src.addEventListener("peer_disconnected", e => {
+      const d = JSON.parse(e.data);
+      toast("info", `${d.name} déconnecté`);
+      if (STATE.currentView === "overview") renderOverview();
+      if (STATE.currentView === "clients") renderClients();
+    });
+    src.addEventListener("alert", e => {
+      const d = JSON.parse(e.data);
+      toast("danger", "Nouvelle alerte", d.message || d.rule_key || "");
+      bumpAlertBadge();
+    });
+    src.onerror = () => { /* le navigateur reconnecte automatiquement */ };
+    STATE.sse = src;
+  } catch { /* EventSource indisponible : dégrade silencieusement vers le polling */ }
+}
 
-  const palette = ["#4C7FFF", "#34D399", "#F5A623", "#8A96AD", "#EF4444"];
-  const ctx = document.getElementById("distribution-chart");
-  const cfg = {
+function bumpAlertBadge() {
+  const el = document.getElementById("nav-alert-badge");
+  const n = (parseInt(el.textContent, 10) || 0) + 1;
+  el.textContent = n;
+  el.hidden = false;
+}
+
+document.addEventListener("DOMContentLoaded", bootstrap);
+
+// ---------------------------------------------------------------
+// Chrome global : nav, thème, sidebar, recherche, refresh
+// ---------------------------------------------------------------
+document.querySelectorAll(".nav-item[data-view]").forEach(btn => {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+});
+document.querySelectorAll("[data-view-link]").forEach(btn => {
+  btn.addEventListener("click", () => switchView(btn.dataset.viewLink));
+});
+document.getElementById("btn-theme").addEventListener("click", () => {
+  STATE.theme = STATE.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("blockhash_theme", STATE.theme);
+  applyTheme();
+});
+document.getElementById("btn-collapse").addEventListener("click", () => {
+  STATE.collapsed = !STATE.collapsed;
+  localStorage.setItem("blockhash_sidebar_collapsed", STATE.collapsed ? "1" : "0");
+  applySidebar();
+});
+document.getElementById("btn-refresh").addEventListener("click", () => {
+  const btn = document.getElementById("btn-refresh");
+  btn.classList.remove("is-spinning");
+  void btn.offsetWidth; // force le redémarrage de l'animation CSS
+  btn.classList.add("is-spinning");
+  loadView(STATE.currentView);
+});
+document.getElementById("global-search").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.value.trim()) {
+    STATE.clientsFilter.search = e.target.value.trim();
+    switchView("clients");
+    document.getElementById("clients-search").value = e.target.value.trim();
+  }
+});
+document.querySelectorAll("[data-close-modal]").forEach(btn => {
+  btn.addEventListener("click", () => closeModal(btn.closest(".modal-overlay").id));
+});
+
+function openModal(id) { document.getElementById(id).classList.add("is-open"); }
+function closeModal(id) { document.getElementById(id).classList.remove("is-open"); }
+
+// ---------------------------------------------------------------
+// Chargement des données de fond (overview / peers), partagées par
+// plusieurs vues pour éviter de refaire l'appel à chaque bascule.
+// ---------------------------------------------------------------
+async function fetchOverview() {
+  if (STATE.demoMode) {
+    const demo = await loadDemoOverview();
+    STATE.overview = demo;
+    STATE.peers = demo.peers || [];
+    return demo;
+  }
+  const data = await apiGet("/api/overview");
+  STATE.overview = data;
+  STATE.peers = data.peers || [];
+  return data;
+}
+
+// ---------------------------------------------------------------
+// KPI cards
+// ---------------------------------------------------------------
+function kpiIcon(name) {
+  const icons = {
+    tunnels: '<path d="M4 10h12M4 6h8M4 14h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+    peers: '<circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    data: '<path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+    alerts: '<path d="M10 3c-3.5 4-4.5 6-4.5 9a4.5 4.5 0 0 0 9 0c0-3-1-5-4.5-9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  };
+  return icons[name] || "";
+}
+
+function renderKpiGrid(stats) {
+  const cards = [
+    { label: "Tunnels actifs", value: stats.active_tunnels, of: stats.total_peers, icon: "tunnels", tone: "accent" },
+    { label: "Total clients", value: stats.total_peers, icon: "peers", tone: "neutral" },
+    { label: "Volume total", value: (stats.total_rx_bytes || 0) + (stats.total_tx_bytes || 0), isBytes: true, icon: "data", tone: "success" },
+    { label: "Alertes actives", value: stats.alerts, icon: "alerts", tone: stats.alerts > 0 ? "danger" : "success" },
+  ];
+  document.getElementById("kpi-grid").innerHTML = cards.map((c, i) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" id="kpi-value-${i}" data-target="${c.value}" data-bytes="${!!c.isBytes}">0</div>
+      ${c.of !== undefined ? `<div class="kpi-delta flat">sur ${c.of} au total</div>` : ""}
+    </div>
+  `).join("");
+
+  // Compteurs animés : partent de 0 et montent vers la valeur réelle. Rejoué
+  // à chaque rendu de la vue (pas seulement au premier chargement) pour un
+  // effet "tableau de bord vivant" plutôt qu'un simple remplacement de texte.
+  cards.forEach((c, i) => {
+    const el = document.getElementById(`kpi-value-${i}`);
+    animateValue(el, c.value, c.isBytes);
+  });
+}
+
+function animateValue(el, target, isBytes, duration = 900) {
+  if (!el) return;
+  const start = performance.now();
+  el.classList.add("is-counting");
+  function tick(now) {
+    const progress = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const current = target * eased;
+    el.textContent = isBytes ? fmtBytes(current) : Math.round(current).toLocaleString("fr-FR");
+    if (progress < 1) requestAnimationFrame(tick);
+    else { el.textContent = isBytes ? fmtBytes(target) : Math.round(target).toLocaleString("fr-FR"); el.classList.remove("is-counting"); }
+  }
+  requestAnimationFrame(tick);
+}
+
+// ---------------------------------------------------------------
+// VUE : Overview
+// ---------------------------------------------------------------
+async function renderOverview() {
+  const root = document.getElementById("view-overview");
+  try {
+    const data = await fetchOverview();
+    document.getElementById("overview-updated").textContent = `mis à jour ${fmtRelative(data.generated_at)}`;
+    renderKpiGrid(data.stats);
+    renderThroughputChart(data.throughput_series || []);
+    renderActivityFeed(data.logs || []);
+    renderOverviewPeersTable(data.peers || []);
+    renderStatusDonut(data.peers || []);
+    renderExpiringFeed(data.peers || []);
+    if (STATE.demoMode) toast("info", "Mode démonstration", "L'API ne répond pas : données d'exemple affichées.");
+  } catch (err) {
+    toast("danger", "Impossible de charger la vue d'ensemble", err.message);
+  }
+}
+
+function renderStatusDonut(peers) {
+  const canvas = document.getElementById("chart-status-donut");
+  if (!canvas || typeof Chart === "undefined") return;
+  const buckets = { online: 0, idle: 0, never: 0, disabled: 0 };
+  peers.forEach(p => { buckets[peerStatus(p)] = (buckets[peerStatus(p)] || 0) + 1; });
+  const labels = { online: "En ligne", idle: "Inactif", never: "Jamais connecté", disabled: "Désactivé" };
+  const colors = { online: "#12878a", idle: "#d98a12", never: "#a9b6bc", disabled: "#ec1e79" };
+  const keys = Object.keys(buckets).filter(k => buckets[k] > 0);
+
+  document.getElementById("status-donut-total").textContent = `${peers.length} au total`;
+
+  if (STATE.charts["chart-status-donut"]) STATE.charts["chart-status-donut"].destroy();
+  if (!keys.length) {
+    document.getElementById("status-donut-legend").innerHTML = `<div class="empty-state"><strong>Aucun client</strong></div>`;
+    return;
+  }
+  STATE.charts["chart-status-donut"] = new Chart(canvas, {
     type: "doughnut",
     data: {
-      labels: peers.map((p) => p.name),
-      datasets: [{ data: peers.map((p) => p.total), backgroundColor: palette, borderWidth: 0 }],
+      labels: keys.map(k => labels[k]),
+      datasets: [{ data: keys.map(k => buckets[k]), backgroundColor: keys.map(k => colors[k]), borderWidth: 2, borderColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#fff" }],
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: "68%",
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label} : ${formatBytes(c.raw)}` } } },
+      responsive: true, maintainAspectRatio: false, cutout: "68%",
+      animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}` } } },
     },
-  };
-
-  if (distributionChart) {
-    distributionChart.data = cfg.data;
-    distributionChart.update();
-  } else {
-    distributionChart = new Chart(ctx, cfg);
-  }
-
-  els.distributionLegend.innerHTML = peers
-    .map(
-      (p, i) => `
-      <li>
-        <span class="dotname"><i style="background:${palette[i]}"></i>${p.name}</span>
-        <code>${formatBytes(p.total)}</code>
-      </li>`
-    )
-    .join("");
-}
-
-// ---------------------------------------------------------------
-// Journal : tri + filtres + recherche (100% côté client)
-// ---------------------------------------------------------------
-function getPeerStatus(peerName) {
-  const peer = (state.data.peers || []).find((p) => p.name === peerName);
-  return peer ? peer.status : "idle";
-}
-
-// ---------------------------------------------------------------
-// Journal : pagination REELLE cote serveur (voir /api/logs)
-// ---------------------------------------------------------------
-async function loadJournalPage() {
-  if (state.isDemo) {
-    // Mode demo : pas de backend -> on retombe sur les logs embarques dans sample-data.json,
-    // pagines cote client pour garder une UI coherente sans API reelle.
-    let rows = [...(state.data.logs || [])];
-    if (state.statusFilter !== "all") rows = rows.filter((r) => getPeerStatus(r.peer) === state.statusFilter);
-    if (state.search) {
-      const q = state.search.toLowerCase();
-      rows = rows.filter((r) => [r.peer, r.endpoint, r.allowed_ips].some((v) => (v || "").toLowerCase().includes(q)));
-    }
-    state.journal.total = rows.length;
-    const start = state.journal.page * state.journal.pageSize;
-    renderJournalRows(rows.slice(start, start + state.journal.pageSize));
-    return;
-  }
-
-  try {
-    const params = new URLSearchParams({
-      limit: state.journal.pageSize,
-      offset: state.journal.page * state.journal.pageSize,
-      sort_key: state.sort.key,
-      sort_dir: state.sort.dir,
-    });
-    if (state.search) params.set("search", state.search);
-    if (state.statusFilter !== "all") params.set("status", state.statusFilter);
-
-    const result = await apiRequest("GET", `/api/logs?${params.toString()}`);
-    state.journal.total = result.total;
-    renderJournalRows(result.rows);
-  } catch (err) {
-    showToast(`Journal indisponible : ${err.message}`, "error");
-  }
-}
-
-function renderJournalRows(rows) {
-  state.journal.currentRows = rows;
-  els.logEmpty.hidden = rows.length > 0;
-
-  els.logTableBody.innerHTML = rows
-    .map(
-      (r) => `
-      <tr>
-        <td>${r.timestamp}</td>
-        <td>${r.peer}</td>
-        <td>${r.endpoint || "—"}</td>
-        <td>${r.allowed_ips || "—"}</td>
-        <td>${formatBytes(r.rx_bytes)}</td>
-        <td>${formatBytes(r.tx_bytes)}</td>
-      </tr>`
-    )
-    .join("");
-
-  document.querySelectorAll("#log-table thead th").forEach((th) => {
-    th.classList.toggle("is-sorted", th.dataset.sort === state.sort.key);
-    th.classList.toggle("asc", th.dataset.sort === state.sort.key && state.sort.dir === "asc");
   });
 
-  const { page, pageSize, total } = state.journal;
-  const from = total === 0 ? 0 : page * pageSize + 1;
-  const to = Math.min(total, (page + 1) * pageSize);
-  els.journalPaginationInfo.textContent = `${from}–${to} sur ${total}`;
-  els.journalPrevPage.disabled = page === 0;
-  els.journalNextPage.disabled = to >= total;
+  document.getElementById("status-donut-legend").innerHTML = keys.map(k => `
+    <div class="row-flex" style="justify-content:space-between;font-size:var(--fs-sm);">
+      <span class="row-flex" style="gap:8px;"><i style="width:9px;height:9px;border-radius:2px;background:${colors[k]};display:inline-block;"></i>${labels[k]}</span>
+      <span class="cell-primary mono">${buckets[k]}</span>
+    </div>`).join("");
 }
 
-function getFilteredSortedLogs() {
-  // Reutilise pour les exports CSV/PDF : exporte la page actuellement
-  // affichee (coherent avec "ce que vous voyez est ce que vous exportez",
-  // voir README 7.9.1). Pour un export complet, augmenter la taille de
-  // page avant d'exporter.
-  return state.journal.currentRows || [];
-}
+function renderExpiringFeed(peers) {
+  const el = document.getElementById("expiring-feed");
+  const now = Date.now();
+  const soon = peers
+    .filter(p => p.enabled && p.expires)
+    .map(p => ({ ...p, daysLeft: Math.ceil((new Date(p.expires).getTime() - now) / 86400000) }))
+    .filter(p => p.daysLeft <= 14)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 
-// ---------------------------------------------------------------
-// Clients : grille de cartes + actions de gestion
-// ---------------------------------------------------------------
-function renderClientGrid() {
-  els.mgmtDisabledNote.hidden = state.clientManagementEnabled;
-  els.addClientBtn.disabled = !state.clientManagementEnabled;
-
-  let peers = [...(state.data.peers || [])];
-  if (state.clientSearch) {
-    const q = state.clientSearch.toLowerCase();
-    peers = peers.filter((p) => p.name.toLowerCase().includes(q));
+  if (!soon.length) {
+    el.innerHTML = `<div class="empty-state"><strong>Rien à signaler</strong><span>Aucune expiration dans les 14 prochains jours.</span></div>`;
+    return;
   }
-
-  els.clientGrid.innerHTML = peers
-    .map((p) => {
-      const exp = expiryState(p.expires);
-      const bw = p.bw_up_mbit || p.bw_down_mbit
-        ? `↑${p.bw_up_mbit ?? "∞"} / ↓${p.bw_down_mbit ?? "∞"} Mb/s`
-        : null;
-      const mgmt = state.clientManagementEnabled;
-
-      return `
-      <div class="client-card" data-name="${p.name}">
-        <div class="client-card-head">
-          <span class="client-name">${p.name}</span>
-          <span class="status-badge status-badge--${p.status}"><span class="dot"></span>${statusLabel(p.status)}</span>
-        </div>
-        <div class="client-meta">
-          <span>Tunnel : <strong>${p.allowed_ips}</strong></span>
-          <span>Endpoint : <strong>${p.endpoint || "—"}</strong></span>
-          <span>Dernier handshake : <strong>${formatRelativeTime(p.last_handshake)}</strong></span>
-          ${p.expires ? `<span class="exp exp--${exp}">Expire le ${formatDate(p.expires)}${exp === "expired" ? " (expiré)" : ""}</span>` : ""}
-          ${bw ? `<span>Débit limité : <strong>${bw}</strong></span>` : ""}
-        </div>
-        <div class="client-transfer">
-          <div><span>Reçu</span><strong>${formatBytes(p.rx_bytes)}</strong></div>
-          <div><span>Émis</span><strong>${formatBytes(p.tx_bytes)}</strong></div>
-        </div>
-        <div class="client-actions">
-          <button class="chip-btn" data-action="history" title="Historique et débit dédié">Historique</button>
-          <button class="chip-btn" data-action="config" title="Revoir la config / le QR code">QR / Config</button>
-          ${mgmt ? `
-          <button class="chip-btn" data-action="${p.enabled ? "disable" : "enable"}">${p.enabled ? "Désactiver" : "Activer"}</button>
-          <button class="chip-btn" data-action="rename">Renommer</button>
-          <button class="chip-btn" data-action="expiry">Expiration</button>
-          <button class="chip-btn" data-action="bandwidth">Bande passante</button>
-          <button class="chip-btn" data-action="regenerate">Régénérer</button>
-          <button class="chip-btn chip-btn--danger" data-action="revoke">Révoquer</button>
-          ` : ""}
-        </div>
-      </div>`;
-    })
-    .join("") || `<p class="table-empty">Aucun client ne correspond à votre recherche.</p>`;
+  el.innerHTML = soon.slice(0, 6).map(p => {
+    const expired = p.daysLeft < 0;
+    const tone = expired ? "danger" : p.daysLeft <= 3 ? "warning" : "accent";
+    return `
+    <div class="feed-item">
+      <div class="feed-icon" style="background:var(--${tone}-dim);color:var(--${tone});">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="feed-body">
+        <div class="feed-title">${escapeHtml(p.name)}</div>
+        <div class="feed-meta">${expired ? "Expiré" : `Expire dans ${p.daysLeft} j`} · ${fmtDate(p.expires)}</div>
+      </div>
+    </div>`;
+  }).join("");
 }
 
-// ---------------------------------------------------------------
-// Formulaires de gestion (modale) : ajout, renommage, expiration, debit
-// ---------------------------------------------------------------
-function showClientConfigResult(title, result) {
-  const qrSrc = `data:image/png;base64,${result.qr_base64}`;
-  const blob = new Blob([result.conf_text], { type: "text/plain" });
-  const downloadUrl = URL.createObjectURL(blob);
-  openModal(title, `
-    <div class="qr-result">
-      <img src="${qrSrc}" alt="QR code de configuration WireGuard" width="220" height="220" />
-      <p class="qr-hint">Scannez avec l'app mobile WireGuard, ou téléchargez le fichier <code>.conf</code> pour l'importer sur desktop.</p>
-      <a class="btn btn-primary" href="${downloadUrl}" download="${result.name || "client"}.conf">Télécharger le .conf</a>
+function renderThroughputChart(series) {
+  const ctx = document.getElementById("chart-throughput");
+  const labels = series.map(p => new Date(p.ts || p.t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+  const rx = series.map(p => p.rx_bytes ?? p.rx ?? 0);
+  const tx = series.map(p => p.tx_bytes ?? p.tx ?? 0);
+  buildLineChart("chart-throughput", labels, [
+    { label: "Rx", data: rx, color: "#0e3a46" },
+    { label: "Tx", data: tx, color: "#ec1e79" },
+  ]);
+}
+
+function renderActivityFeed(logs) {
+  const el = document.getElementById("activity-feed");
+  if (!logs.length) {
+    el.innerHTML = `<div class="empty-state"><strong>Aucune activité récente</strong><span>Les connexions apparaîtront ici.</span></div>`;
+    return;
+  }
+  el.innerHTML = logs.slice(0, 8).map(l => `
+    <div class="feed-item">
+      <div class="feed-icon" style="background:var(--accent-dim);color:var(--accent);">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="4" stroke="currentColor" stroke-width="1.6"/></svg>
+      </div>
+      <div class="feed-body">
+        <div class="feed-title">${escapeHtml(l.peer || l.name || "Client")}</div>
+        <div class="feed-meta">${escapeHtml(l.endpoint || "")} · ${fmtRelative(l.timestamp)}</div>
+      </div>
     </div>
-  `);
+  `).join("");
 }
 
-function openAddClientModal() {
-  openModal("Ajouter un client", `
-    <form id="form-add-client" class="form">
-      <label>Nom du client
-        <input type="text" name="name" placeholder="ex. laptop-marie" maxlength="32" pattern="[A-Za-z0-9_-]+" required autofocus />
-      </label>
-      <label>Expiration (optionnel)
-        <select name="expires_days">
-          <option value="">Pas d'expiration</option>
-          <option value="1">1 jour</option>
-          <option value="7">7 jours</option>
-          <option value="30">30 jours</option>
-          <option value="90">90 jours</option>
-        </select>
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Créer le client</button>
-      </div>
-    </form>
-  `);
+function renderOverviewPeersTable(peers) {
+  const tbody = document.querySelector("#table-overview-peers tbody");
+  const online = peers.filter(p => p.status === "online").concat(peers.filter(p => p.status !== "online")).slice(0, 8);
+  if (!online.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>Aucun client</strong></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = online.map(p => `
+    <tr>
+      <td class="row-flex"><span class="peer-avatar">${initials(p.name)}</span><span class="cell-primary">${escapeHtml(p.name)}</span></td>
+      <td>${statusBadge(peerStatus(p))}</td>
+      <td class="mono cell-muted">${escapeHtml(p.endpoint || "—")}</td>
+      <td class="cell-muted">${fmtRelative(p.last_handshake)}</td>
+      <td class="mono cell-muted">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</td>
+    </tr>
+  `).join("");
+}
 
-  document.getElementById("form-add-client").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = new FormData(e.target);
-    try {
-      const result = await apiRequest("POST", "/api/clients", {
-        name: form.get("name").trim(),
-        expires_days: form.get("expires_days") || null,
-      });
-      showToast(`Client « ${result.name} » créé.`);
-      showClientConfigResult(`Client « ${result.name} » créé`, result);
-      await loadData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+// ---------------------------------------------------------------
+// Graphiques (Chart.js)
+// ---------------------------------------------------------------
+function chartTextColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--text-tertiary").trim() || "#8b9ab8";
+}
+function chartGridColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--border-subtle").trim() || "#1c2740";
+}
+
+function buildLineChart(canvasId, labels, datasets) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx || typeof Chart === "undefined") return;
+  if (STATE.charts[canvasId]) STATE.charts[canvasId].destroy();
+  STATE.charts[canvasId] = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: datasets.map(d => ({
+        label: d.label, data: d.data, borderColor: d.color, backgroundColor: d.color + "22",
+        borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, fill: true,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtBytes(c.parsed.y)}` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxTicksLimit: 8 } },
+        y: { grid: { color: chartGridColor() }, ticks: { color: chartTextColor(), font: { size: 10 }, callback: v => fmtBytes(v) } },
+      },
+    },
   });
 }
 
-function openRenameModal(name) {
-  openModal(`Renommer « ${name} »`, `
-    <form id="form-rename" class="form">
-      <label>Nouveau nom
-        <input type="text" name="new_name" value="${name}" maxlength="32" pattern="[A-Za-z0-9_-]+" required autofocus />
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Renommer</button>
-      </div>
-    </form>
-  `);
+// ---------------------------------------------------------------
+// VUE : Clients
+// ---------------------------------------------------------------
+async function renderClients() {
+  try {
+    if (!STATE.overview) await fetchOverview();
+    else await fetchOverview(); // toujours rafraîchi pour rester à jour
+    document.getElementById("clients-count").textContent = STATE.peers.length;
+    drawClientsTable();
+  } catch (err) {
+    toast("danger", "Impossible de charger les clients", err.message);
+  }
+}
 
-  document.getElementById("form-rename").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const newName = new FormData(e.target).get("new_name").trim();
-    try {
-      await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, { new_name: newName });
-      showToast(`Client renommé en « ${newName} ».`);
-      closeModal();
-      await loadData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
+function drawClientsTable() {
+  const { status, search } = STATE.clientsFilter;
+  let rows = STATE.peers.slice();
+  if (status !== "all") rows = rows.filter(p => peerStatus(p) === status);
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(p => (p.name || "").toLowerCase().includes(q) || (p.allowed_ips || "").includes(q) || (p.endpoint || "").includes(q));
+  }
+  const tbody = document.querySelector("#table-clients tbody");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.4"/></svg>
+      <strong>Aucun client ne correspond</strong><span>Ajustez les filtres ou ajoutez un nouveau client.</span>
+    </div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(p => `
+    <tr>
+      <td class="row-flex"><span class="peer-avatar">${initials(p.name)}</span><span class="cell-primary">${escapeHtml(p.name)}</span></td>
+      <td>${statusBadge(peerStatus(p))}</td>
+      <td class="mono cell-muted">${escapeHtml(p.allowed_ips || "—")}</td>
+      <td class="mono cell-muted">${escapeHtml(p.endpoint || "—")}</td>
+      <td class="mono cell-muted">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</td>
+      <td class="cell-muted">${fmtDate(p.created)}</td>
+      <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "—"}</td>
+      <td>
+        <div style="display:flex;gap:6px;">
+          <button class="btn ghost sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}">${p.enabled ? "Désactiver" : "Activer"}</button>
+          <button class="btn ghost sm" data-action="revoke" data-name="${escapeHtml(p.name)}" title="Révoquer">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
+  tbody.querySelectorAll('[data-action="revoke"]').forEach(btn => btn.addEventListener("click", () => revokeClient(btn.dataset.name)));
+}
+
+async function toggleClient(name, currentlyEnabled) {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
+  try {
+    await apiSend("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: !currentlyEnabled });
+    toast("success", `${name} ${!currentlyEnabled ? "activé" : "désactivé"}`);
+    renderClients();
+  } catch (err) { toast("danger", "Échec de l'opération", err.message); }
+}
+
+async function revokeClient(name) {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
+  if (!confirm(`Révoquer définitivement « ${name} » ? Cette action supprime sa configuration WireGuard.`)) return;
+  try {
+    await apiSend("DELETE", `/api/clients/${encodeURIComponent(name)}`);
+    toast("success", `${name} révoqué`);
+    renderClients();
+  } catch (err) { toast("danger", "Échec de la révocation", err.message); }
+}
+
+document.querySelectorAll("#clients-status-filter .chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#clients-status-filter .chip").forEach(c => c.classList.remove("is-active"));
+    chip.classList.add("is-active");
+    STATE.clientsFilter.status = chip.dataset.status;
+    drawClientsTable();
   });
-}
-
-function openExpiryModal(name, currentExpires) {
-  openModal(`Expiration — ${name}`, `
-    <form id="form-expiry" class="form">
-      <label>Date d'expiration (laisser vide = pas d'expiration)
-        <input type="date" name="expires" value="${currentExpires || ""}" />
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Enregistrer</button>
-      </div>
-    </form>
-  `);
-
-  document.getElementById("form-expiry").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const expires = new FormData(e.target).get("expires") || null;
-    try {
-      await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, { expires });
-      showToast(`Expiration mise à jour pour « ${name} ».`);
-      closeModal();
-      await loadData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  });
-}
-
-function openBandwidthModal(name, upMbit, downMbit) {
-  openModal(`Bande passante — ${name}`, `
-    <form id="form-bandwidth" class="form">
-      <p class="form-hint">Limitation avancée (tc/HTB), best effort — laisser vide pour aucune limite.</p>
-      <label>Débit montant max (Mb/s, upload client)
-        <input type="number" name="bw_up_mbit" min="1" max="1000" value="${upMbit ?? ""}" />
-      </label>
-      <label>Débit descendant max (Mb/s, download client)
-        <input type="number" name="bw_down_mbit" min="1" max="1000" value="${downMbit ?? ""}" />
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Appliquer</button>
-      </div>
-    </form>
-  `);
-
-  document.getElementById("form-bandwidth").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = new FormData(e.target);
-    try {
-      const result = await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, {
-        bw_up_mbit: form.get("bw_up_mbit") || null,
-        bw_down_mbit: form.get("bw_down_mbit") || null,
-      });
-      const applied = result.results?.bandwidth?.tc_applied;
-      showToast(
-        applied === false
-          ? `Limite enregistrée pour « ${name} », mais tc n'a pas pu l'appliquer (voir logs serveur).`
-          : `Bande passante mise à jour pour « ${name} ».`,
-        applied === false ? "error" : "success"
-      );
-      closeModal();
-      await loadData();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  });
-}
-
-async function handleClientAction(action, name, peer) {
+});
+document.getElementById("clients-search").addEventListener("input", e => {
+  STATE.clientsFilter.search = e.target.value.trim();
+  drawClientsTable();
+});
+document.getElementById("btn-add-client").addEventListener("click", () => {
+  document.getElementById("modal-client-title").textContent = "Ajouter un client";
+  document.getElementById("field-client-name").value = "";
+  document.getElementById("field-client-expires").value = "";
+  openModal("modal-client");
+});
+document.getElementById("btn-confirm-client").addEventListener("click", async () => {
+  const name = document.getElementById("field-client-name").value.trim();
+  const expiresDate = document.getElementById("field-client-expires").value;
+  if (!name) return toast("danger", "Nom requis");
+  if (STATE.demoMode) { closeModal("modal-client"); return toast("info", "Mode démonstration", "Création indisponible sans API connectée."); }
   try {
-    switch (action) {
-      case "history":
-        await openClientHistory(name);
-        return;
-      case "config": {
-        const result = await apiRequest("GET", `/api/clients/${encodeURIComponent(name)}/config`);
-        showClientConfigResult(`Configuration — ${name}`, { ...result, name });
-        return;
-      }
-      case "rename":
-        openRenameModal(name);
-        return;
-      case "expiry":
-        openExpiryModal(name, peer.expires);
-        return;
-      case "bandwidth":
-        openBandwidthModal(name, peer.bw_up_mbit, peer.bw_down_mbit);
-        return;
-      case "enable":
-        await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: true });
-        showToast(`Client « ${name} » activé.`);
-        await loadData();
-        return;
-      case "disable":
-        await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: false });
-        showToast(`Client « ${name} » désactivé.`);
-        await loadData();
-        return;
-      case "regenerate": {
-        if (!confirm(`Régénérer les clés de « ${name} » ? L'ancienne configuration cessera immédiatement de fonctionner.`)) return;
-        const result = await apiRequest("POST", `/api/clients/${encodeURIComponent(name)}/regenerate`);
-        showToast(`Clés régénérées pour « ${name} ».`);
-        showClientConfigResult(`Nouvelle configuration — ${name}`, result);
-        await loadData();
-        return;
-      }
-      case "revoke": {
-        if (!confirm(`Révoquer définitivement « ${name} » ? Cette action est irréversible.`)) return;
-        await apiRequest("DELETE", `/api/clients/${encodeURIComponent(name)}`);
-        showToast(`Client « ${name} » révoqué.`);
-        await loadData();
-        return;
-      }
-    }
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-}
-
-els.clientGrid.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-action]");
-  if (!btn) return;
-  const card = e.target.closest(".client-card");
-  const name = card?.dataset.name;
-  const peer = (state.data.peers || []).find((p) => p.name === name);
-  if (name && peer) handleClientAction(btn.dataset.action, name, peer);
-});
-
-els.addClientBtn.addEventListener("click", () => {
-  if (state.clientManagementEnabled) openAddClientModal();
-});
-
-els.clientSearch.addEventListener("input", (e) => {
-  state.clientSearch = e.target.value.trim();
-  renderClientGrid();
+    let expiresDays;
+    if (expiresDate) expiresDays = Math.max(1, Math.ceil((new Date(expiresDate) - new Date()) / 86400000));
+    await apiSend("POST", "/api/clients", { name, expires_days: expiresDays });
+    toast("success", `Client ${name} créé`);
+    closeModal("modal-client");
+    renderClients();
+  } catch (err) { toast("danger", "Échec de la création", err.message); }
 });
 
 // ---------------------------------------------------------------
-// Monitoring avancé : débit long terme, système, anomalies
+// VUE : Journal
 // ---------------------------------------------------------------
-let rangeChart = null;
-
-async function loadMonitoringView() {
-  if (state.isDemo) {
-    els.systemStats.innerHTML = `<p class="table-empty">Indisponible en mode démonstration (nécessite le backend).</p>`;
-    els.anomaliesList.innerHTML = "";
-    document.getElementById("geoip-empty").hidden = false;
-    document.getElementById("geoip-empty").textContent = "Indisponible en mode démonstration.";
-    return;
-  }
-  await Promise.all([loadRangeChart(), loadSystemStats(), loadAnomalies(), loadGeoipMap()]);
-}
-
-let geoipMap = null;
-let geoipMarkers = [];
-
-async function loadGeoipMap() {
-  const mapEl = document.getElementById("geoip-map");
-  const emptyEl = document.getElementById("geoip-empty");
+async function renderJournal() {
   try {
-    const data = await apiRequest("GET", "/api/geoip");
-    const points = data.points || [];
-
-    if (!geoipMap) {
-      geoipMap = L.map(mapEl, { worldCopyJump: true }).setView([20, 10], 2);
-      L.Icon.Default.mergeOptions({
-        iconUrl: "css/images/marker-icon.png",
-        iconRetinaUrl: "css/images/marker-icon-2x.png",
-        shadowUrl: "css/images/marker-shadow.png",
-      });
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap",
-        maxZoom: 18,
-      }).addTo(geoipMap);
-    }
-
-    geoipMarkers.forEach((m) => geoipMap.removeLayer(m));
-    geoipMarkers = points.map((p) => {
-      const marker = L.marker([p.lat, p.lon]).addTo(geoipMap);
-      marker.bindPopup(
-        `<div class="geoip-popup"><strong>${p.name}</strong>${p.city || "Ville inconnue"}, ${p.country || "?"}<br>${p.ip} · ${statusLabel(p.status)}</div>`
-      );
-      return marker;
-    });
-
-    emptyEl.hidden = points.length > 0;
-    if (points.length > 0) {
-      geoipMap.invalidateSize();
-      const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lon]));
-      geoipMap.fitBounds(bounds.pad(0.3), { maxZoom: 6 });
-    }
-  } catch (err) {
-    emptyEl.hidden = false;
-    emptyEl.textContent = `Carte indisponible : ${err.message}`;
-  }
-}
-
-async function loadRangeChart() {
-  try {
-    const data = await apiRequest("GET", `/api/throughput?range=${state.throughputRange}`);
-    const series = data.series || [];
-    const ctx = els.rangeChartCanvas;
-    const cfg = {
-      type: "line",
-      data: {
-        labels: series.map((p) => p.t),
-        datasets: [
-          { label: "Reçu", data: series.map((p) => p.rx), borderColor: "#4C7FFF", backgroundColor: "rgba(76,127,255,0.12)", fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-          { label: "Émis", data: series.map((p) => p.tx), borderColor: "#34D399", backgroundColor: "rgba(52,211,153,0.10)", fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: true, labels: { color: "#8A96AD", boxWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label} : ${formatBytes(c.raw)}` } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: "#5B6785", font: { size: 10 }, autoSkip: true, maxTicksLimit: 10, maxRotation: 0 } },
-          y: { grid: { color: "#1C2740" }, ticks: { color: "#5B6785", font: { size: 10 }, callback: (v) => formatBytes(v) } },
-        },
-      },
-    };
-    if (rangeChart) {
-      rangeChart.data = cfg.data;
-      rangeChart.update();
-    } else {
-      rangeChart = new Chart(ctx, cfg);
-    }
-  } catch (err) {
-    showToast(`Débit long terme indisponible : ${err.message}`, "error");
-  }
-}
-
-async function loadSystemStats() {
-  try {
-    const sys = await apiRequest("GET", "/api/system");
-    const serviceRow = (unit, status) => `
-      <div class="system-card">
-        <span class="system-label">${unit}</span>
-        <span class="status-badge status-badge--${status === "active" ? "online" : "never"}">
-          <span class="dot"></span>${status}
-        </span>
-      </div>`;
-
-    const metricCard = (label, value, percent) => `
-      <div class="system-card">
-        <span class="system-label">${label}</span>
-        <span class="system-value">${value}</span>
-        ${percent != null ? `<div class="system-bar"><div class="system-bar-fill" style="width:${Math.min(100, percent)}%"></div></div>` : ""}
-      </div>`;
-
-    let html = "";
-    if (sys.psutil_available) {
-      html += metricCard("CPU", sys.cpu_percent != null ? `${sys.cpu_percent.toFixed(0)} %` : "—", sys.cpu_percent);
-      html += metricCard("Mémoire", `${sys.memory.percent.toFixed(0)} %`, sys.memory.percent);
-      html += metricCard("Disque (/)", `${sys.disk.percent.toFixed(0)} %`, sys.disk.percent);
-      html += metricCard("Uptime", formatUptime(sys.uptime_seconds), null);
-    } else {
-      html += `<p class="table-empty">psutil non installé côté serveur.</p>`;
-    }
-    Object.entries(sys.services).forEach(([unit, status]) => {
-      html += serviceRow(unit, status);
-    });
-    els.systemStats.innerHTML = html;
-  } catch (err) {
-    els.systemStats.innerHTML = `<p class="table-empty">Erreur : ${err.message}</p>`;
-  }
-}
-
-function formatUptime(seconds) {
-  if (!seconds) return "—";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  return days > 0 ? `${days} j ${hours} h` : `${hours} h`;
-}
-
-async function loadAnomalies() {
-  try {
-    const data = await apiRequest("GET", "/api/anomalies");
-    const findings = data.anomalies || [];
-    els.anomaliesList.innerHTML = findings
-      .map(
-        (a) => `
-        <li>
-          <span class="event-dot event-dot--${a.severity}"></span>
-          <div class="event-main">
-            <strong>${a.peer}</strong>
-            <span>${a.message}</span>
-          </div>
-        </li>`
-      )
-      .join("") || `<li><div class="event-main"><span>Aucune anomalie détectée.</span></div></li>`;
-  } catch (err) {
-    els.anomaliesList.innerHTML = `<li><div class="event-main"><span>Erreur : ${err.message}</span></div></li>`;
-  }
-}
-
-els.rangeSelector.addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  document.querySelectorAll("#range-selector .chip").forEach((c) => c.classList.remove("is-active"));
-  chip.classList.add("is-active");
-  state.throughputRange = chip.dataset.range;
-  loadRangeChart();
-});
-
-// ---------------------------------------------------------------
-// Alertes : réglages, règles, canaux (secrets masqués), historique
-// ---------------------------------------------------------------
-async function loadAlertsView() {
-  if (state.isDemo) {
-    [els.formSettings, els.formAlertRules, els.formAlertChannels].forEach((f) => {
-      f.querySelectorAll("input, button").forEach((el) => (el.disabled = true));
-    });
-    els.alertsHistoryList.innerHTML = `<li><div class="event-main"><span>Indisponible en mode démonstration.</span></div></li>`;
-    els.dedupList.innerHTML = `<li><div class="event-main"><span>Indisponible en mode démonstration.</span></div></li>`;
-    els.dedupClearAllBtn.disabled = true;
-    return;
-  }
-
-  try {
-    const settings = await apiRequest("GET", "/api/settings");
-    els.formSettings.online_threshold_sec.value = settings.online_threshold_sec;
-  } catch (err) {
-    showToast(`Réglages indisponibles : ${err.message}`, "error");
-  }
-
-  try {
-    const config = await apiRequest("GET", "/api/alerts/config");
-    els.alertsEnabledToggle.checked = !!config.enabled;
-    els.formAlertRules.inactive_days.value = config.rules.inactive_days ?? "";
-    els.formAlertRules.bandwidth_alert_mb_5min.value = config.rules.bandwidth_alert_mb_5min ?? "";
-    els.formAlertRules.service_down.checked = !!config.rules.service_down;
-
-    const ch = config.channels;
-    const f = els.formAlertChannels;
-    f.email_enabled.checked = !!ch.email.enabled;
-    f.smtp_host.value = ch.email.smtp_host || "";
-    f.smtp_port.value = ch.email.smtp_port || "";
-    f.smtp_user.value = ch.email.smtp_user || "";
-    f.smtp_password.value = ch.email.smtp_password || "";
-    f.from_addr.value = ch.email.from_addr || "";
-    f.to_addr.value = ch.email.to_addr || "";
-    f.slack_webhook_url.value = ch.slack_webhook_url || "";
-    f.discord_webhook_url.value = ch.discord_webhook_url || "";
-    f.telegram_bot_token.value = ch.telegram.bot_token || "";
-    f.telegram_chat_id.value = ch.telegram.chat_id || "";
-  } catch (err) {
-    showToast(`Configuration d'alertes indisponible : ${err.message}`, "error");
-  }
-
-  loadAlertsHistory();
-  loadDedupList();
-}
-
-function formatDuration(seconds) {
-  if (seconds < 60) return `${seconds} s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h`;
-  return `${Math.floor(seconds / 86400)} j`;
-}
-
-async function loadDedupList() {
-  try {
-    const entries = await apiRequest("GET", "/api/alerts/dedup");
-    els.dedupList.innerHTML = entries
-      .map(
-        (e) => `
-        <li>
-          <span class="event-dot"></span>
-          <div class="event-main">
-            <strong>${e.rule_key}</strong>
-            <span>Dernière notification il y a ${formatDuration(e.age_sec)}</span>
-          </div>
-          <button class="chip-btn" data-clear-rule="${e.rule_key}">Réinitialiser</button>
-        </li>`
-      )
-      .join("") || `<li><div class="event-main"><span>Aucune règle en pause actuellement.</span></div></li>`;
-  } catch (err) {
-    els.dedupList.innerHTML = `<li><div class="event-main"><span>Erreur : ${err.message}</span></div></li>`;
-  }
-}
-
-els.dedupList.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-clear-rule]");
-  if (!btn) return;
-  const ruleKey = btn.dataset.clearRule;
-  try {
-    await apiRequest("DELETE", `/api/alerts/dedup/${encodeURIComponent(ruleKey)}`);
-    showToast(`Déduplication réinitialisée pour « ${ruleKey} ».`);
-    loadDedupList();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.dedupClearAllBtn.addEventListener("click", async () => {
-  if (!confirm("Réinitialiser la déduplication de TOUTES les règles d'alerte ?")) return;
-  try {
-    const result = await apiRequest("DELETE", "/api/alerts/dedup");
-    showToast(`${result.deleted} règle(s) réinitialisée(s).`);
-    loadDedupList();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-async function loadAlertsHistory() {
-  try {
-    const history = await apiRequest("GET", "/api/alerts/history?limit=30");
-    els.alertsHistoryList.innerHTML = history
-      .map(
-        (a) => `
-        <li>
-          <span class="event-dot event-dot--${a.level === "critical" ? "critical" : "warning"}"></span>
-          <div class="event-main">
-            <strong>${a.source}</strong>
-            <span>${a.message}</span>
-          </div>
-          <span class="event-time">${new Date(a.ts * 1000).toLocaleString("fr-FR")}</span>
-        </li>`
-      )
-      .join("") || `<li><div class="event-main"><span>Aucune alerte envoyée pour le moment.</span></div></li>`;
-  } catch (err) {
-    els.alertsHistoryList.innerHTML = `<li><div class="event-main"><span>Erreur : ${err.message}</span></div></li>`;
-  }
-}
-
-els.formSettings.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try {
-    await apiRequest("PATCH", "/api/settings", {
-      online_threshold_sec: Number(els.formSettings.online_threshold_sec.value),
-    });
-    showToast("Réglages enregistrés.");
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.alertsEnabledToggle.addEventListener("change", async () => {
-  try {
-    await apiRequest("PATCH", "/api/alerts/config", { enabled: els.alertsEnabledToggle.checked });
-    showToast(els.alertsEnabledToggle.checked ? "Alerting activé." : "Alerting désactivé.");
-  } catch (err) {
-    showToast(err.message, "error");
-    els.alertsEnabledToggle.checked = !els.alertsEnabledToggle.checked;
-  }
-});
-
-els.formAlertRules.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  try {
-    await apiRequest("PATCH", "/api/alerts/config", {
-      rules: {
-        inactive_days: f.get("inactive_days") ? Number(f.get("inactive_days")) : null,
-        bandwidth_alert_mb_5min: f.get("bandwidth_alert_mb_5min") ? Number(f.get("bandwidth_alert_mb_5min")) : null,
-        service_down: f.get("service_down") === "on",
-      },
-    });
-    showToast("Règles d'alerte enregistrées.");
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.formAlertChannels.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  try {
-    await apiRequest("PATCH", "/api/alerts/config", {
-      channels: {
-        email: {
-          enabled: f.get("email_enabled") === "on",
-          smtp_host: f.get("smtp_host") || "",
-          smtp_port: f.get("smtp_port") ? Number(f.get("smtp_port")) : 587,
-          smtp_user: f.get("smtp_user") || "",
-          smtp_password: f.get("smtp_password") || "",
-          from_addr: f.get("from_addr") || "",
-          to_addr: f.get("to_addr") || "",
-        },
-        slack_webhook_url: f.get("slack_webhook_url") || "",
-        discord_webhook_url: f.get("discord_webhook_url") || "",
-        telegram: {
-          bot_token: f.get("telegram_bot_token") || "",
-          chat_id: f.get("telegram_chat_id") || "",
-        },
-      },
-    });
-    showToast("Canaux de notification enregistrés.");
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.formAlertChannels.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-test-channel]");
-  if (!btn) return;
-  const channel = btn.dataset.testChannel;
-  btn.disabled = true;
-  try {
-    await apiRequest("POST", "/api/alerts/test", { channel });
-    showToast(`Notification de test envoyée sur ${channel}.`);
-  } catch (err) {
-    showToast(`Échec du test ${channel} : ${err.message}`, "error");
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-// ---------------------------------------------------------------
-// Export CSV/PDF génériques
-// ---------------------------------------------------------------
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function exportCsv(columns, rows, filename) {
-  const escape = (v) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [columns.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))];
-  downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" }), filename);
-}
-
-async function exportPdf(title, subtitle, columns, rows, filename) {
-  try {
-    const res = await fetch("/api/reports/pdf", {
-      method: "POST",
-      headers: buildHeaders(true),
-      body: JSON.stringify({ title, subtitle, columns, rows }),
-    });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
-      throw new Error(payload.error || `Erreur ${res.status}`);
-    }
-    downloadBlob(await res.blob(), filename);
-  } catch (err) {
-    showToast(`Export PDF impossible : ${err.message}`, "error");
-  }
-}
-
-els.exportLogCsvBtn.addEventListener("click", () => {
-  const rows = getFilteredSortedLogs();
-  exportCsv(
-    ["Horodatage", "Client", "Endpoint", "IP tunnel", "Reçu (octets)", "Émis (octets)"],
-    rows.map((r) => [r.timestamp, r.peer, r.endpoint || "", r.allowed_ips || "", r.rx_bytes, r.tx_bytes]),
-    "blockhash-journal.csv"
-  );
-});
-
-els.exportLogPdfBtn.addEventListener("click", () => {
-  const rows = getFilteredSortedLogs();
-  const subtitle = `Filtre : ${state.statusFilter === "all" ? "Tous" : state.statusFilter}${state.search ? ` · recherche "${state.search}"` : ""} · ${rows.length} ligne(s)`;
-  exportPdf(
-    "Journal des connexions - BLOCKHash",
-    subtitle,
-    ["Horodatage", "Client", "Endpoint", "IP tunnel", "Reçu", "Émis"],
-    rows.map((r) => [r.timestamp, r.peer, r.endpoint || "—", r.allowed_ips || "—", formatBytes(r.rx_bytes), formatBytes(r.tx_bytes)]),
-    "blockhash-journal.pdf"
-  );
-});
-
-// ---------------------------------------------------------------
-// Rapport hebdomadaire
-// ---------------------------------------------------------------
-async function loadWeeklyReportConfig() {
-  try {
-    const cfg = await apiRequest("GET", "/api/reports/weekly-config");
-    els.formWeeklyReport.weekly_enabled.checked = !!cfg.weekly_enabled;
-    els.formWeeklyReport.to_addr.value = cfg.to_addr || "";
-  } catch (err) {
-    showToast(`Réglages du rapport indisponibles : ${err.message}`, "error");
-  }
-}
-
-els.formWeeklyReport.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  try {
-    await apiRequest("PATCH", "/api/reports/weekly-config", {
-      weekly_enabled: f.get("weekly_enabled") === "on",
-      to_addr: f.get("to_addr") || "",
-    });
-    showToast("Réglages du rapport hebdomadaire enregistrés.");
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.sendWeeklyNowBtn.addEventListener("click", async () => {
-  els.sendWeeklyNowBtn.disabled = true;
-  try {
-    const result = await apiRequest("POST", "/api/reports/weekly-send");
-    if (result.sent) {
-      showToast(`Rapport envoyé à ${result.to}.`);
-    } else {
-      showToast(result.reason || "Rapport non envoyé.", "error");
-    }
-  } catch (err) {
-    showToast(err.message, "error");
-  } finally {
-    els.sendWeeklyNowBtn.disabled = false;
-  }
-});
-
-// ---------------------------------------------------------------
-// Conformité : clients inactifs, candidats à la révocation
-// ---------------------------------------------------------------
-let complianceCache = [];
-
-function bucketLabel(bucket) {
-  return bucket === "never" ? "Jamais connecté" : `≥ ${bucket} jours`;
-}
-
-async function loadComplianceView() {
-  if (state.isDemo) {
-    els.complianceTableBody.innerHTML = "";
-    els.complianceEmpty.hidden = false;
-    els.complianceEmpty.textContent = "Indisponible en mode démonstration.";
-    return;
-  }
-  try {
-    const data = await apiRequest("GET", "/api/compliance");
-    complianceCache = data.clients || [];
-    els.complianceEmpty.hidden = complianceCache.length > 0;
-    els.complianceTableBody.innerHTML = complianceCache
-      .map(
-        (c) => `
-        <tr>
-          <td>${c.name}</td>
-          <td>${c.allowed_ips || "—"}</td>
-          <td>${formatDate(c.created) || "—"}</td>
-          <td>${c.last_handshake ? formatRelativeTime(c.last_handshake) : "Jamais"}</td>
-          <td><span class="exp exp--${c.bucket === "never" || c.bucket >= 30 ? "expired" : "soon"}">${bucketLabel(c.bucket)}</span></td>
-          <td class="client-actions" style="border:none; margin:0; padding:0;">
-            <button class="chip-btn" data-compliance-action="disable" data-name="${c.name}">Désactiver</button>
-            <button class="chip-btn chip-btn--danger" data-compliance-action="revoke" data-name="${c.name}">Révoquer</button>
-          </td>
-        </tr>`
-      )
-      .join("");
-  } catch (err) {
-    showToast(`Vue Conformité indisponible : ${err.message}`, "error");
-  }
-}
-
-els.complianceTableBody.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-compliance-action]");
-  if (!btn) return;
-  const name = btn.dataset.name;
-  const action = btn.dataset.complianceAction;
-  try {
-    if (action === "disable") {
-      await apiRequest("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: false });
-      showToast(`Client « ${name} » désactivé.`);
-    } else if (action === "revoke") {
-      if (!confirm(`Révoquer définitivement « ${name} » ? Cette action est irréversible.`)) return;
-      await apiRequest("DELETE", `/api/clients/${encodeURIComponent(name)}`);
-      showToast(`Client « ${name} » révoqué.`);
-    }
-    loadComplianceView();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.exportComplianceCsvBtn.addEventListener("click", () => {
-  exportCsv(
-    ["Client", "IP tunnel", "Créé le", "Dernier handshake", "Inactivité"],
-    complianceCache.map((c) => [c.name, c.allowed_ips, c.created, c.last_handshake || "jamais", bucketLabel(c.bucket)]),
-    "blockhash-conformite.csv"
-  );
-});
-
-els.exportCompliancePdfBtn.addEventListener("click", () => {
-  exportPdf(
-    "Conformité - clients inactifs",
-    `${complianceCache.length} client(s) candidat(s) à la révocation`,
-    ["Client", "IP tunnel", "Créé le", "Dernier handshake", "Inactivité"],
-    complianceCache.map((c) => [c.name, c.allowed_ips, formatDate(c.created) || "—", c.last_handshake || "Jamais", bucketLabel(c.bucket)]),
-    "blockhash-conformite.pdf"
-  );
-});
-
-// ---------------------------------------------------------------
-// Système : sauvegardes, rotation de clés, redémarrage, export, serveurs
-// ---------------------------------------------------------------
-async function loadSystemView() {
-  if (state.isDemo) {
-    els.backupsList.innerHTML = `<li><div class="event-main"><span>Indisponible en mode démonstration.</span></div></li>`;
-    els.serversList.innerHTML = "";
-    [els.createBackupBtn, els.rotateKeysBtn, els.restartTunnelBtn, els.exportAuditBtn, els.addServerBtn].forEach(
-      (b) => (b.disabled = true)
-    );
-    return;
-  }
-  loadBackupsList();
-  loadServersList();
-}
-
-async function loadBackupsList() {
-  try {
-    const result = await apiRequest("GET", "/api/system/backups");
-    const backups = result.backups || [];
-    els.backupsList.innerHTML = backups
-      .map(
-        (b) => `
-        <li>
-          <span class="event-dot"></span>
-          <div class="event-main">
-            <strong>${b.filename}</strong>
-            <span>${b.peer_count ?? "?"} pair(s) · ${(b.size_bytes / 1024).toFixed(1)} Ko</span>
-          </div>
-          <div class="event-trailing">
-            <span class="event-time">${new Date(b.modified).toLocaleString("fr-FR")}</span>
-            <button class="chip-btn" data-backup-action="diff" data-filename="${b.filename}">Diff</button>
-            <button class="chip-btn" data-backup-action="restore" data-filename="${b.filename}">Restaurer</button>
-          </div>
-        </li>`
-      )
-      .join("") || `<li><div class="event-main"><span>Aucune sauvegarde pour le moment.</span></div></li>`;
-  } catch (err) {
-    els.backupsList.innerHTML = `<li><div class="event-main"><span>Erreur : ${err.message}</span></div></li>`;
-  }
-}
-
-els.createBackupBtn.addEventListener("click", async () => {
-  try {
-    const result = await apiRequest("POST", "/api/system/backups", { label: "manuel" });
-    showToast(`Sauvegarde créée : ${result.filename}`);
-    loadBackupsList();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.backupsList.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-backup-action]");
-  if (!btn) return;
-  const filename = btn.dataset.filename;
-  const action = btn.dataset.backupAction;
-
-  if (action === "diff") {
-    try {
-      const result = await apiRequest("GET", `/api/system/backups/${encodeURIComponent(filename)}/diff`);
-      openModal(
-        `Diff — ${filename}`,
-        `<pre class="diff-view">${(result.diff || "Aucune différence avec wg0.conf actuel.").replace(/</g, "&lt;")}</pre>`
-      );
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  } else if (action === "restore") {
-    if (!confirm(`Restaurer « ${filename} » ? La configuration actuelle sera d'abord sauvegardée par sécurité.`)) return;
-    try {
-      const result = await apiRequest("POST", `/api/system/backups/${encodeURIComponent(filename)}/restore`);
-      showToast(`Configuration restaurée depuis « ${filename} » (sécurité : ${result.safety_backup}).`);
-      loadBackupsList();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }
-});
-
-els.rotateKeysBtn.addEventListener("click", async () => {
-  if (
-    !confirm(
-      "Générer de nouvelles clés serveur ? Chaque client existant sera régénéré et devra réimporter sa configuration. Une sauvegarde de sécurité sera créée avant toute modification."
-    )
-  )
-    return;
-  els.rotateKeysBtn.disabled = true;
-  try {
-    const result = await apiRequest("POST", "/api/system/rotate-server-keys");
-    showToast(`Clés serveur régénérées. ${result.regenerated_clients.length} client(s) mis à jour.`);
-    openModal(
-      "Rotation des clés terminée",
-      `<p>${result.warning}</p><p class="form-hint">Clients concernés : ${result.regenerated_clients.join(", ") || "aucun"}</p>
-       <p class="form-hint">Sauvegarde de sécurité : <code>${result.safety_backup}</code></p>`
-    );
-    loadBackupsList();
-    loadData();
-  } catch (err) {
-    showToast(err.message, "error");
-  } finally {
-    els.rotateKeysBtn.disabled = false;
-  }
-});
-
-els.restartTunnelBtn.addEventListener("click", async () => {
-  if (!confirm("Redémarrer le tunnel WireGuard maintenant ? Une brève coupure est à prévoir.")) return;
-  els.restartTunnelBtn.disabled = true;
-  try {
-    await apiRequest("POST", "/api/system/restart-tunnel");
-    showToast("Tunnel redémarré.");
-  } catch (err) {
-    showToast(err.message, "error");
-  } finally {
-    els.restartTunnelBtn.disabled = false;
-  }
-});
-
-els.exportAuditBtn.addEventListener("click", async () => {
-  try {
-    const res = await fetch("/api/system/export", { headers: buildHeaders() });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
-      throw new Error(payload.error || `Erreur ${res.status}`);
-    }
-    downloadBlob(await res.blob(), "blockhash-audit-export.zip");
-  } catch (err) {
-    showToast(`Export impossible : ${err.message}`, "error");
-  }
-});
-
-async function loadServersList() {
-  try {
-    const servers = await apiRequest("GET", "/api/servers");
-    if (!servers.length) {
-      els.serversList.innerHTML = `<li><div class="event-main"><span>Aucun serveur distant enregistré.</span></div></li>`;
+    if (STATE.demoMode) {
+      const demo = STATE.overview || await fetchOverview();
+      renderJournalTable((demo.logs || []).map(l => ({ ts: l.ts, name: l.name, endpoint: l.endpoint, allowed_ips: l.allowed_ips, rx_bytes: l.rx_bytes, tx_bytes: l.tx_bytes })), 0);
       return;
     }
-    els.serversList.innerHTML = servers
-      .map(
-        (s) => `
-        <li data-server-row="${s.name}">
-          <span class="event-dot"></span>
-          <div class="event-main">
-            <strong>${s.name}</strong>
-            <span>${s.base_url} — <span class="server-status" data-server-status="${s.name}">vérification…</span></span>
-          </div>
-          <div class="event-trailing">
-            <a class="chip-btn" href="${s.base_url}" target="_blank" rel="noopener">Ouvrir</a>
-            <button class="chip-btn chip-btn--danger" data-remove-server="${s.name}">Retirer</button>
-          </div>
-        </li>`
-      )
-      .join("");
-
-    servers.forEach(async (s) => {
-      const el = els.serversList.querySelector(`[data-server-status="${CSS.escape(s.name)}"]`);
-      if (!el) return;
-      try {
-        const result = await apiRequest("GET", `/api/servers/${encodeURIComponent(s.name)}/overview`);
-        if (result.ok) {
-          const active = result.data.stats?.active_tunnels ?? "?";
-          const total = result.data.stats?.total_peers ?? "?";
-          el.textContent = `en ligne · ${active}/${total} tunnels actifs`;
-          el.classList.add("server-status--ok");
-        } else {
-          el.textContent = `injoignable (${result.error})`;
-          el.classList.add("server-status--error");
-        }
-      } catch (err) {
-        el.textContent = "injoignable";
-        el.classList.add("server-status--error");
-      }
-    });
-  } catch (err) {
-    els.serversList.innerHTML = `<li><div class="event-main"><span>Erreur : ${err.message}</span></div></li>`;
-  }
+    const { offset, limit, search, status } = STATE.journal;
+    const params = new URLSearchParams({ limit, offset, sort_key: "ts", sort_dir: "desc" });
+    if (search) params.set("search", search);
+    if (status !== "all") params.set("status", status);
+    const data = await apiGet(`/api/logs?${params.toString()}`);
+    STATE.journal.total = data.total ?? (data.rows || []).length;
+    renderJournalTable(data.rows || [], offset);
+  } catch (err) { toast("danger", "Impossible de charger le journal", err.message); }
 }
 
-els.serversList.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-remove-server]");
-  if (!btn) return;
-  const name = btn.dataset.removeServer;
-  if (!confirm(`Retirer le serveur « ${name} » de la liste ? (n'affecte pas le serveur lui-même)`)) return;
+function renderJournalTable(rows, offset) {
+  const tbody = document.querySelector("#table-journal tbody");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>Aucune entrée</strong><span>Aucune connexion ne correspond à ces filtres.</span></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(l => `
+    <tr>
+      <td class="mono cell-muted">${fmtDate(l.timestamp)}</td>
+      <td class="cell-primary">${escapeHtml(l.peer || l.name || "—")}</td>
+      <td class="mono cell-muted">${escapeHtml(l.endpoint || "—")}</td>
+      <td class="mono cell-muted">${escapeHtml(l.allowed_ips || "—")}</td>
+      <td class="mono cell-muted">${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</td>
+    </tr>
+  `).join("");
+}
+
+document.getElementById("journal-search").addEventListener("input", e => { STATE.journal.search = e.target.value.trim(); STATE.journal.offset = 0; renderJournal(); });
+document.getElementById("journal-status").addEventListener("change", e => { STATE.journal.status = e.target.value; STATE.journal.offset = 0; renderJournal(); });
+document.getElementById("journal-prev").addEventListener("click", () => { STATE.journal.offset = Math.max(0, STATE.journal.offset - STATE.journal.limit); renderJournal(); });
+document.getElementById("journal-next").addEventListener("click", () => { STATE.journal.offset += STATE.journal.limit; renderJournal(); });
+
+// ---------------------------------------------------------------
+// VUE : Monitoring (débit long terme, système, geoip, anomalies)
+// ---------------------------------------------------------------
+async function renderMonitoring() {
+  await Promise.all([renderLongTermChart(), renderSystemPanel(), renderGeoipMap(), renderAnomalies()]);
+}
+
+async function renderLongTermChart() {
   try {
-    await apiRequest("DELETE", `/api/servers/${encodeURIComponent(name)}`);
-    showToast(`Serveur « ${name} » retiré.`);
-    loadServersList();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-});
-
-els.addServerBtn.addEventListener("click", () => {
-  openModal(
-    "Ajouter un serveur",
-    `
-    <form id="form-add-server" class="form">
-      <label>Nom
-        <input type="text" name="name" placeholder="ex. site-lyon" maxlength="40" required autofocus />
-      </label>
-      <label>URL du dashboard distant
-        <input type="text" name="base_url" placeholder="https://vpn-lyon.entreprise.com" required />
-      </label>
-      <label>Jeton d'API (optionnel, celui du serveur distant)
-        <input type="password" name="api_token" placeholder="••••••••" />
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Ajouter</button>
-      </div>
-    </form>
-  `
-  );
-  document.getElementById("form-add-server").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    try {
-      await apiRequest("POST", "/api/servers", {
-        name: f.get("name").trim(),
-        base_url: f.get("base_url").trim(),
-        api_token: f.get("api_token") || "",
-      });
-      showToast(`Serveur « ${f.get("name")} » ajouté.`);
-      closeModal();
-      loadServersList();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  });
-});
-
-// ---------------------------------------------------------------
-// Navigation entre vues
-// ---------------------------------------------------------------
-function switchView(view) {
-  document.querySelectorAll(".nav-item").forEach((btn) => btn.classList.toggle("is-active", btn.dataset.view === view));
-  document.querySelectorAll(".view").forEach((sec) => sec.classList.toggle("is-active", sec.dataset.view === view));
-  els.viewTitle.textContent = VIEW_META[view].title;
-  els.viewSubtitle.textContent = VIEW_META[view].subtitle;
-  closeMobileMenu();
-
-  if (view === "monitoring") loadMonitoringView();
-  if (view === "journal") loadJournalPage();
-  if (view === "alerts") {
-    loadAlertsView();
-    loadWeeklyReportConfig();
-  }
-  if (view === "compliance") loadComplianceView();
-  if (view === "system") loadSystemView();
-}
-
-document.querySelectorAll(".nav-item").forEach((btn) => btn.addEventListener("click", () => switchView(btn.dataset.view)));
-document.querySelectorAll("[data-goto]").forEach((btn) => btn.addEventListener("click", () => switchView(btn.dataset.goto)));
-
-// ---------------------------------------------------------------
-// Interactions : recherche, filtres, tri, rafraîchissement
-// ---------------------------------------------------------------
-els.logSearch.addEventListener("input", (e) => {
-  state.search = e.target.value.trim();
-  state.journal.page = 0;
-  loadJournalPage();
-});
-
-els.statusFilters.addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  document.querySelectorAll("#status-filters .chip").forEach((c) => c.classList.remove("is-active"));
-  chip.classList.add("is-active");
-  state.statusFilter = chip.dataset.status;
-  state.journal.page = 0;
-  loadJournalPage();
-});
-
-document.querySelectorAll("#log-table thead th").forEach((th) => {
-  th.addEventListener("click", () => {
-    const key = th.dataset.sort;
-    if (state.sort.key === key) {
-      state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
+    let series;
+    if (STATE.demoMode) {
+      series = (STATE.overview?.throughput_series || []);
     } else {
-      state.sort = { key, dir: "desc" };
+      const data = await apiGet(`/api/throughput?range=${encodeURIComponent(STATE.throughputRange)}`);
+      series = data.series || [];
     }
-    state.journal.page = 0;
-    loadJournalPage();
+    const labels = series.map(p => {
+      const d = new Date(p.ts || p.t);
+      return STATE.throughputRange === "1h" || STATE.throughputRange === "24h"
+        ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+    });
+    buildLineChart("chart-longterm", labels, [
+      { label: "Rx", data: series.map(p => p.rx_bytes ?? p.rx ?? 0), color: "#0e3a46" },
+      { label: "Tx", data: series.map(p => p.tx_bytes ?? p.tx ?? 0), color: "#ec1e79" },
+    ]);
+  } catch (err) { toast("danger", "Débit indisponible", err.message); }
+}
+
+document.querySelectorAll("#throughput-range .chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#throughput-range .chip").forEach(c => c.classList.remove("is-active"));
+    chip.classList.add("is-active");
+    STATE.throughputRange = chip.dataset.range;
+    renderLongTermChart();
   });
 });
 
-els.journalPageSize.addEventListener("change", (e) => {
-  state.journal.pageSize = Number(e.target.value);
-  state.journal.page = 0;
-  loadJournalPage();
-});
-
-els.journalPrevPage.addEventListener("click", () => {
-  if (state.journal.page > 0) {
-    state.journal.page -= 1;
-    loadJournalPage();
-  }
-});
-
-els.journalNextPage.addEventListener("click", () => {
-  if ((state.journal.page + 1) * state.journal.pageSize < state.journal.total) {
-    state.journal.page += 1;
-    loadJournalPage();
-  }
-});
-
-els.refreshBtn.addEventListener("click", () => {
-  els.refreshBtn.classList.add("is-spinning");
-  loadData().finally(() => setTimeout(() => els.refreshBtn.classList.remove("is-spinning"), 400));
-});
-
-// ---------------------------------------------------------------
-// Menu mobile (hamburger)
-// ---------------------------------------------------------------
-function openMobileMenu() {
-  els.sidebar.classList.add("is-open");
-  els.sidebarBackdrop.classList.add("is-open");
-}
-function closeMobileMenu() {
-  els.sidebar.classList.remove("is-open");
-  els.sidebarBackdrop.classList.remove("is-open");
-}
-els.hamburgerBtn.addEventListener("click", openMobileMenu);
-els.sidebarBackdrop.addEventListener("click", closeMobileMenu);
-
-// ---------------------------------------------------------------
-// Thème clair/sombre
-// ---------------------------------------------------------------
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  els.themeIconDark.hidden = theme === "light";
-  els.themeIconLight.hidden = theme !== "light";
-  localStorage.setItem("blockhash_theme", theme);
-}
-
-els.themeToggleBtn.addEventListener("click", () => {
-  const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
-  applyTheme(current === "light" ? "dark" : "light");
-});
-
-applyTheme(localStorage.getItem("blockhash_theme") || "dark");
-
-// ---------------------------------------------------------------
-// Mode NOC / plein écran
-// ---------------------------------------------------------------
-els.nocModeBtn.addEventListener("click", async () => {
-  document.body.classList.add("noc-mode");
+async function renderSystemPanel() {
+  const el = document.getElementById("system-meters");
   try {
-    await document.documentElement.requestFullscreen();
-  } catch (err) {
-    // Plein ecran refuse par le navigateur (ex. iframe) -> le mode NOC visuel reste actif
-  }
-});
-
-document.addEventListener("fullscreenchange", () => {
-  if (!document.fullscreenElement) {
-    document.body.classList.remove("noc-mode");
-  }
-});
-
-// ---------------------------------------------------------------
-// Recherche globale (clients + journal)
-// ---------------------------------------------------------------
-let globalSearchDebounce = null;
-
-function renderGlobalSearchResults(clientMatches, logMatches, query) {
-  if (!clientMatches.length && !logMatches.length) {
-    els.globalSearchResults.innerHTML = `<div class="gsr-empty">Aucun résultat pour « ${query} ».</div>`;
-    els.globalSearchResults.hidden = false;
-    return;
-  }
-
-  let html = "";
-  if (clientMatches.length) {
-    html += `<div class="gsr-group-label">Clients</div>`;
-    html += clientMatches
-      .slice(0, 5)
-      .map((p) => `<div class="gsr-item" data-goto-client="${p.name}"><strong>${p.name}</strong><span>${p.allowed_ips} · ${statusLabel(p.status)}</span></div>`)
-      .join("");
-  }
-  if (logMatches.length) {
-    html += `<div class="gsr-group-label">Journal des connexions</div>`;
-    html += logMatches
-      .slice(0, 5)
-      .map((r) => `<div class="gsr-item" data-goto-journal="${query}"><strong>${r.peer}</strong><span>${r.endpoint || "—"} · ${r.timestamp}</span></div>`)
-      .join("");
-  }
-  els.globalSearchResults.innerHTML = html;
-  els.globalSearchResults.hidden = false;
-}
-
-els.globalSearch.addEventListener("input", (e) => {
-  const query = e.target.value.trim();
-  clearTimeout(globalSearchDebounce);
-  if (!query) {
-    els.globalSearchResults.hidden = true;
-    return;
-  }
-  globalSearchDebounce = setTimeout(async () => {
-    const q = query.toLowerCase();
-    const clientMatches = (state.data.peers || []).filter(
-      (p) => p.name.toLowerCase().includes(q) || (p.allowed_ips || "").includes(q) || (p.endpoint || "").includes(q)
-    );
-    let logMatches = [];
-    try {
-      const result = state.isDemo
-        ? { rows: (state.data.logs || []).filter((r) => [r.peer, r.endpoint, r.allowed_ips].some((v) => (v || "").toLowerCase().includes(q))) }
-        : await apiRequest("GET", `/api/logs?search=${encodeURIComponent(query)}&limit=5`);
-      logMatches = result.rows || [];
-    } catch (err) {
-      logMatches = [];
+    const snap = STATE.demoMode ? { psutil_available: false } : await apiGet("/api/system");
+    if (!snap.psutil_available) {
+      el.innerHTML = `<div class="empty-state"><strong>Métriques hôte indisponibles</strong><span>psutil n'est pas installé côté serveur, ou mode démonstration actif.</span></div>`;
+      return;
     }
-    renderGlobalSearchResults(clientMatches, logMatches, query);
-  }, 250);
-});
-
-els.globalSearchResults.addEventListener("click", (e) => {
-  const clientItem = e.target.closest("[data-goto-client]");
-  const journalItem = e.target.closest("[data-goto-journal]");
-  if (clientItem) {
-    switchView("clients");
-    els.clientSearch.value = clientItem.dataset.gotoClient;
-    state.clientSearch = clientItem.dataset.gotoClient;
-    renderClientGrid();
-  } else if (journalItem) {
-    switchView("journal");
-    els.logSearch.value = journalItem.dataset.gotoJournal;
-    state.search = journalItem.dataset.gotoJournal;
-    state.journal.page = 0;
-    loadJournalPage();
+    const rows = [
+      { label: "CPU", value: snap.cpu_percent, of: `${snap.cpu_count} cœurs` },
+      { label: "Mémoire", value: snap.memory?.percent, of: `${fmtBytes(snap.memory?.used_bytes)} / ${fmtBytes(snap.memory?.total_bytes)}` },
+      { label: "Disque", value: snap.disk?.percent, of: `${fmtBytes(snap.disk?.used_bytes)} / ${fmtBytes(snap.disk?.total_bytes)}` },
+    ];
+    el.innerHTML = rows.map(r => {
+      const pct = r.value === null || r.value === undefined ? 0 : r.value;
+      const tone = pct > 85 ? "danger" : pct > 65 ? "warn" : "";
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);margin-bottom:6px;">
+            <span style="font-weight:600;color:var(--text-secondary);">${r.label}</span>
+            <span class="cell-muted mono">${r.value === null || r.value === undefined ? "—" : r.value.toFixed(0) + "%"} · ${r.of}</span>
+          </div>
+          <div class="meter ${tone}"><i style="width:${pct}%"></i></div>
+        </div>`;
+    }).join("") + `
+      <div style="border-top:1px solid var(--border-subtle);padding-top:var(--sp-3);margin-top:var(--sp-1);">
+        <div class="kpi-label" style="margin-bottom:6px;">Services</div>
+        ${Object.entries(snap.services || {}).map(([svc, ok]) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:var(--fs-xs);">
+            <span class="mono">${escapeHtml(svc)}</span>${statusBadge(ok ? "online" : "disabled")}
+          </div>`).join("")}
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`;
   }
-  els.globalSearchResults.hidden = true;
-  els.globalSearch.value = "";
-});
+}
 
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".global-search-wrap")) {
-    els.globalSearchResults.hidden = true;
+async function renderGeoipMap() {
+  const mapEl = document.getElementById("geoip-map");
+  if (typeof L === "undefined") { mapEl.innerHTML = "Leaflet indisponible."; return; }
+  if (!STATE.map) {
+    STATE.map = L.map(mapEl, { worldCopyJump: true }).setView([20, 10], 2);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap, &copy; CARTO", maxZoom: 18,
+    }).addTo(STATE.map);
   }
-});
+  STATE.mapMarkers.forEach(m => STATE.map.removeLayer(m));
+  STATE.mapMarkers = [];
+
+  try {
+    let points = [];
+    if (!STATE.demoMode) {
+      const data = await apiGet("/api/geoip");
+      points = data.points || [];
+    }
+    if (!points.length) return;
+    points.forEach(pt => {
+      if (pt.lat === undefined || pt.lon === undefined) return;
+      const marker = L.circleMarker([pt.lat, pt.lon], {
+        radius: 6, color: "#ec1e79", fillColor: "#ec1e79", fillOpacity: 0.6, weight: 1.5,
+      }).bindTooltip(`${pt.name || pt.peer_name || "Client"} — ${pt.city || pt.country || ""}`);
+      marker.addTo(STATE.map);
+      STATE.mapMarkers.push(marker);
+    });
+    const group = L.featureGroup(STATE.mapMarkers);
+    if (STATE.mapMarkers.length) STATE.map.fitBounds(group.getBounds().pad(0.3));
+  } catch (err) { /* carte non bloquante */ }
+  setTimeout(() => STATE.map.invalidateSize(), 200);
+}
+
+async function renderAnomalies() {
+  const el = document.getElementById("anomalies-feed");
+  try {
+    if (STATE.demoMode) {
+      el.innerHTML = `<div class="empty-state"><strong>Mode démonstration</strong><span>La détection d'anomalies nécessite l'API connectée.</span></div>`;
+      return;
+    }
+    const data = await apiGet("/api/anomalies");
+    const findings = data.anomalies || [];
+    if (!findings.length) {
+      el.innerHTML = `<div class="empty-state"><strong>Aucune anomalie</strong><span>Tout est nominal.</span></div>`;
+      return;
+    }
+    el.innerHTML = findings.map(a => `
+      <div class="feed-item">
+        <div class="feed-icon" style="background:var(--warning-dim);color:var(--warning);">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 7v4M10 14h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div class="feed-body">
+          <div class="feed-title">${escapeHtml(a.title || a.type || "Anomalie")}</div>
+          <div class="feed-meta">${escapeHtml(a.detail || a.message || "")}</div>
+        </div>
+      </div>`).join("");
+  } catch (err) { el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`; }
+}
 
 // ---------------------------------------------------------------
-// Temps réel : Server-Sent Events (voir README 7.10.3)
-// Complète le rafraîchissement périodique par des notifications
-// quasi instantanées ; si la connexion SSE échoue (proxy qui la bloque,
-// navigateur ancien), le polling périodique ci-dessous reste le filet
-// de sécurité et continue de fonctionner normalement.
+// VUE : Alertes
 // ---------------------------------------------------------------
-function connectEventStream() {
-  if (state.isDemo || typeof EventSource === "undefined") return;
+async function renderAlerts() {
+  document.getElementById("nav-alert-badge").hidden = true;
+  document.getElementById("nav-alert-badge").textContent = "0";
+  try {
+    if (STATE.demoMode) {
+      document.querySelector("#table-alerts-history tbody").innerHTML =
+        `<tr><td colspan="4"><div class="empty-state"><strong>Mode démonstration</strong><span>Historique indisponible sans API connectée.</span></div></td></tr>`;
+      document.getElementById("dedup-list").innerHTML = "";
+      return;
+    }
+    const [history, dedup] = await Promise.all([
+      apiGet("/api/alerts/history?limit=50"),
+      apiGet("/api/alerts/dedup"),
+    ]);
+    renderAlertsHistory(history);
+    renderDedupList(dedup);
+  } catch (err) { toast("danger", "Impossible de charger les alertes", err.message); }
+}
 
-  const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem("blockhash_dashboard_token");
-  const url = token ? `/api/events/stream?token=${encodeURIComponent(token)}` : "/api/events/stream";
-  const source = new EventSource(url);
+function renderAlertsHistory(rows) {
+  const tbody = document.querySelector("#table-alerts-history tbody");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><strong>Aucune alerte</strong><span>Rien à signaler pour le moment.</span></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(a => `
+    <tr>
+      <td class="mono cell-muted">${fmtDate(a.ts || a.created_at)}</td>
+      <td class="cell-primary">${escapeHtml(a.rule_key || a.rule || "—")}</td>
+      <td>${statusBadge(a.severity === "critical" ? "disabled" : "idle")}</td>
+      <td class="cell-muted">${escapeHtml(a.message || a.detail || "—")}</td>
+    </tr>`).join("");
+}
 
-  source.addEventListener("peer_connected", (e) => {
-    const data = JSON.parse(e.data);
-    showToast(`« ${data.name} » vient de se connecter (${data.endpoint || "endpoint inconnu"}).`);
-    loadData();
-  });
+function renderDedupList(entries) {
+  const el = document.getElementById("dedup-list");
+  document.getElementById("dedup-hint").textContent = `${entries.length} règle(s) en cooldown`;
+  if (!entries.length) {
+    el.innerHTML = `<div class="empty-state"><strong>Aucune règle en cooldown</strong></div>`;
+    return;
+  }
+  el.innerHTML = entries.map(e => `
+    <div class="feed-item">
+      <div class="feed-body">
+        <div class="feed-title mono">${escapeHtml(e.rule_key)}</div>
+        <div class="feed-meta">Dernier envoi il y a ${Math.floor((e.age_sec || 0) / 60)} min</div>
+      </div>
+      <button class="btn ghost sm" data-clear="${escapeHtml(e.rule_key)}">Effacer</button>
+    </div>`).join("");
+  el.querySelectorAll("[data-clear]").forEach(btn => btn.addEventListener("click", async () => {
+    try { await apiSend("DELETE", `/api/alerts/dedup/${encodeURIComponent(btn.dataset.clear)}`); renderAlerts(); }
+    catch (err) { toast("danger", "Échec", err.message); }
+  }));
+}
 
-  source.addEventListener("peer_disconnected", (e) => {
-    const data = JSON.parse(e.data);
-    showToast(`« ${data.name} » s'est déconnecté.`);
-    loadData();
-  });
+document.getElementById("btn-alert-config").addEventListener("click", async () => {
+  try {
+    const cfg = STATE.demoMode ? null : await apiGet("/api/alerts/config");
+    renderAlertConfigForm(cfg);
+    openModal("modal-alert-config");
+  } catch (err) { toast("danger", "Impossible de charger la configuration", err.message); }
+});
 
-  source.addEventListener("alert", (e) => {
-    const data = JSON.parse(e.data);
-    showToast(data.message, data.level === "critical" ? "error" : "success");
-  });
+function renderAlertConfigForm(cfg) {
+  const c = cfg || { rules: { inactive_days: 7 }, channels: { email: {}, telegram: {} } };
+  document.getElementById("alert-config-body").innerHTML = `
+    <div class="field"><label>Inactivité (jours) avant alerte</label>
+      <input class="input" id="cfg-inactive-days" type="number" min="0" value="${c.rules?.inactive_days ?? 7}" /></div>
+    <div class="field"><label>Webhook Slack</label>
+      <input class="input" id="cfg-slack" placeholder="https://hooks.slack.com/…" value="${escapeHtml(c.channels?.slack_webhook_url || "")}" /></div>
+    <div class="field"><label>Webhook Discord</label>
+      <input class="input" id="cfg-discord" placeholder="https://discord.com/api/webhooks/…" value="${escapeHtml(c.channels?.discord_webhook_url || "")}" /></div>
+    <div class="field"><label>E-mail destinataire</label>
+      <input class="input" id="cfg-email-to" placeholder="ops@exemple.com" value="${escapeHtml(c.channels?.email?.to_addr || "")}" /></div>`;
+}
 
-  source.onerror = () => {
-    // EventSource retente seul la reconnexion (backoff natif du navigateur) ;
-    // rien a faire ici sinon laisser le polling classique prendre le relais.
+document.getElementById("btn-save-alert-config").addEventListener("click", async () => {
+  if (STATE.demoMode) { closeModal("modal-alert-config"); return toast("info", "Mode démonstration", "Enregistrement indisponible sans API connectée."); }
+  const body = {
+    rules: { inactive_days: parseInt(document.getElementById("cfg-inactive-days").value, 10) || 0 },
+    channels: {
+      slack_webhook_url: document.getElementById("cfg-slack").value.trim(),
+      discord_webhook_url: document.getElementById("cfg-discord").value.trim(),
+      email: { to_addr: document.getElementById("cfg-email-to").value.trim() },
+    },
   };
+  try {
+    await apiSend("PATCH", "/api/alerts/config", body);
+    toast("success", "Configuration enregistrée");
+    closeModal("modal-alert-config");
+  } catch (err) { toast("danger", "Échec de l'enregistrement", err.message); }
+});
+
+// ---------------------------------------------------------------
+// VUE : Conformité
+// ---------------------------------------------------------------
+async function renderCompliance() {
+  const el = document.getElementById("compliance-card");
+  try {
+    if (STATE.demoMode) {
+      el.innerHTML = `<div class="empty-state"><strong>Mode démonstration</strong><span>Les contrôles de conformité nécessitent l'API connectée.</span></div>`;
+      return;
+    }
+    const data = await apiGet("/api/compliance");
+    const clients = data.clients || [];
+    if (!clients.length) {
+      el.innerHTML = `<div class="empty-state"><strong>Tout est conforme</strong><span>Aucun client inactif au-delà des seuils configurés.</span></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Client</th><th>IP</th><th>Jours d'inactivité</th><th>Seuil dépassé</th><th>Créé le</th></tr></thead>
+      <tbody>${clients.map(c => `
+        <tr>
+          <td class="cell-primary">${escapeHtml(c.name)}</td>
+          <td class="mono cell-muted">${escapeHtml(c.allowed_ips || "—")}</td>
+          <td class="mono">${c.days_inactive ?? "—"}</td>
+          <td>${c.bucket === "never" ? statusBadge("disabled") : `<span class="badge warning"><span class="dot"></span>${c.bucket}+ j</span>`}</td>
+          <td class="cell-muted">${fmtDate(c.created)}</td>
+        </tr>`).join("")}</tbody>
+    </table></div>`;
+  } catch (err) { el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`; }
 }
 
 // ---------------------------------------------------------------
-// Horloge + rafraîchissement automatique
+// VUE : Système
 // ---------------------------------------------------------------
-function tickClock() {
-  els.clock.textContent = new Date().toLocaleTimeString("fr-FR");
+async function renderSystem() {
+  const tbody = document.querySelector("#table-backups tbody");
+  if (STATE.demoMode) {
+    tbody.innerHTML = `<tr><td colspan="2"><div class="empty-state"><strong>Mode démonstration</strong><span>Les opérations système nécessitent l'API connectée.</span></div></td></tr>`;
+    return;
+  }
+  try {
+    const data = await apiGet("/api/system/backups");
+    const backups = data.backups || data || [];
+    if (!backups.length) { tbody.innerHTML = `<tr><td colspan="2"><div class="empty-state"><strong>Aucune sauvegarde</strong></div></td></tr>`; return; }
+    tbody.innerHTML = backups.map(b => `<tr><td class="mono cell-primary">${escapeHtml(b.filename || b.name)}</td><td class="cell-muted">${fmtDate(b.created_at || b.date)}</td></tr>`).join("");
+  } catch (err) { tbody.innerHTML = `<tr><td colspan="2"><div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div></td></tr>`; }
 }
-setInterval(tickClock, 1000);
-tickClock();
 
-loadData().then(connectEventStream);
-setInterval(loadData, REFRESH_INTERVAL_MS);
+document.getElementById("btn-backup-create").addEventListener("click", async () => {
+  if (STATE.demoMode) return toast("info", "Mode démonstration");
+  try { await apiSend("POST", "/api/system/backups", { label: "manuel" }); toast("success", "Sauvegarde créée"); renderSystem(); }
+  catch (err) { toast("danger", "Échec", err.message); }
+});
+document.getElementById("btn-restart-tunnel").addEventListener("click", async () => {
+  if (STATE.demoMode) return toast("info", "Mode démonstration");
+  if (!confirm("Redémarrer le tunnel WireGuard maintenant ? Les clients seront brièvement déconnectés.")) return;
+  try { await apiSend("POST", "/api/system/restart-tunnel"); toast("success", "Tunnel redémarré"); }
+  catch (err) { toast("danger", "Échec", err.message); }
+});
+document.getElementById("btn-rotate-keys").addEventListener("click", async () => {
+  if (STATE.demoMode) return toast("info", "Mode démonstration");
+  if (!confirm("Régénérer les clés du serveur ? Tous les clients devront être reconfigurés.")) return;
+  try { await apiSend("POST", "/api/system/rotate-server-keys"); toast("success", "Clés régénérées"); }
+  catch (err) { toast("danger", "Échec", err.message); }
+});
+document.getElementById("btn-export").addEventListener("click", () => {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Export indisponible sans API connectée.");
+  window.location.href = "/api/system/export";
+});
+document.getElementById("qa-export")?.addEventListener("click", () => document.getElementById("btn-export").click());
+
+// ---------------------------------------------------------------
+// VUE : Réglages
+// ---------------------------------------------------------------
+async function renderSettings() {
+  try {
+    const s = STATE.demoMode ? { online_threshold_sec: 120 } : await apiGet("/api/settings");
+    document.getElementById("setting-online-threshold").value = s.online_threshold_sec ?? 120;
+  } catch (err) { toast("danger", "Impossible de charger les réglages", err.message); }
+}
+document.getElementById("btn-save-settings").addEventListener("click", async () => {
+  if (STATE.demoMode) return toast("info", "Mode démonstration");
+  const value = parseInt(document.getElementById("setting-online-threshold").value, 10);
+  try { await apiSend("PATCH", "/api/settings", { online_threshold_sec: value }); toast("success", "Réglages enregistrés"); }
+  catch (err) { toast("danger", "Échec", err.message); }
+});

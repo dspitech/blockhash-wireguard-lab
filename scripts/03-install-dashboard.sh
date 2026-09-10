@@ -50,6 +50,10 @@ CLIENT_MANAGEMENT_ENABLED=true
 # Monitoring / alerting avances (voir README section 7.7)
 METRICS_DB_PATH=/var/log/wireguard/blockhash.db
 METRICS_DB_GROUP=$SERVICE_USER
+AUDIT_LOG_PATH=/var/log/wireguard/audit.log
+# Verrouillage anti force-brute sur l'authentification (voir README 7.10.4)
+AUTH_MAX_ATTEMPTS=8
+AUTH_LOCKOUT_SECONDS=300
 SETTINGS_PATH=/etc/blockhash/dashboard-settings.json
 ALERTS_CONFIG_PATH=/etc/blockhash/alerts-config.json
 # Administration systeme avancee (voir README section 7.8) : sauvegardes,
@@ -71,8 +75,9 @@ echo "== 4bis. Injection du jeton dans le frontend (pour que le navigateur soit 
 cat > "$APP_DIR/frontend/js/config.js" <<EOF
 // Fichier genere automatiquement par 03-install-dashboard.sh
 // Permet au frontend d'appeler l'API sans configuration manuelle.
-// Le jeton n'apporte qu'une defense complementaire : l'acces au port
-// ${DASHBOARD_PORT} est deja restreint a votre IP admin par le NSG/ufw.
+// Le jeton n'apporte qu'une defense complementaire : le dashboard n'est
+// de toute facon joignable qu'en etant deja connecte au VPN WireGuard
+// (voir 7bis. Caddy ci-dessus - ecoute uniquement sur l'IP privee du tunnel).
 window.__BLOCKHASH_TOKEN__ = "${TOKEN_VALUE}";
 EOF
 
@@ -122,6 +127,13 @@ chmod 640 /etc/wireguard/wg0.conf || true
 mkdir -p /var/log/wireguard
 chgrp "$SERVICE_USER" /var/log/wireguard || true
 chmod 750 /var/log/wireguard || true
+# Journal d'audit des actions sensibles (creation/revocation client, rotation
+# de cles, redemarrage...) - pre-cree ici avec les bonnes permissions, sinon
+# www-data (groupe en lecture seule sur le dossier, voir chmod 750 ci-dessus)
+# ne pourrait pas creer ce fichier lui-meme au premier demarrage.
+touch /var/log/wireguard/audit.log
+chown "$SERVICE_USER":"$SERVICE_USER" /var/log/wireguard/audit.log
+chmod 640 /var/log/wireguard/audit.log
 
 echo "== 5. Autorisation sudo pour la lecture ET la gestion des clients =="
 # gunicorn tourne sous www-data. Trois regles distinctes :
@@ -207,6 +219,13 @@ echo "== 7. Creation du service systemd (gunicorn) =="
 # autres requetes (y compris les assets statiques). gthread permet a chaque
 # worker de gerer plusieurs connexions concurrentes via des threads, sans
 # dependance supplementaire (contrairement a gevent/eventlet).
+#
+# SECURITE (voir README 7.3bis) : gunicorn n'ecoute plus que sur 127.0.0.1.
+# Il n'est plus jamais joignable directement, ni depuis le reseau public, ni
+# meme depuis le tunnel WireGuard. Seul Caddy (etape 7bis) est autorise a
+# lui parler, en loopback. C'est Caddy qui expose le dashboard sur l'IP
+# privee du tunnel (10.66.66.1), avec TLS - donc uniquement accessible a
+# quelqu'un deja connecte au VPN.
 cat > /etc/systemd/system/blockhash-dashboard.service <<EOF
 [Unit]
 Description=BLOCKHash - Dashboard de supervision WireGuard
@@ -218,7 +237,7 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$APP_DIR/backend
 EnvironmentFile=/etc/blockhash/dashboard.env
-ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 --worker-class gthread --threads 4 --timeout 120 -b 0.0.0.0:$DASHBOARD_PORT app:app
+ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 --worker-class gthread --threads 4 --timeout 120 -b 127.0.0.1:$DASHBOARD_PORT app:app
 Restart=always
 RestartSec=3
 
@@ -230,8 +249,39 @@ systemctl daemon-reload
 systemctl enable blockhash-dashboard
 systemctl restart blockhash-dashboard
 
-echo "== 8. Ouverture du port dans le pare-feu local (ufw) =="
-ufw allow "$DASHBOARD_PORT"/tcp comment "BLOCKHash Dashboard - admin only"
+echo "== 7bis. Installation de Caddy (reverse proxy TLS, ecoute uniquement sur le tunnel WireGuard) =="
+# Le dashboard n'est plus expose que sur l'IP privee du serveur WireGuard
+# (WG_SERVER_IP, voir 01-install-wireguard-server.sh) : il faut donc etre
+# deja connecte au VPN pour meme atteindre le port TLS. "tls internal"
+# genere un certificat auto-signe localement (pas besoin de nom de domaine
+# public) - le navigateur demandera une confirmation la premiere fois.
+if ! command -v caddy >/dev/null 2>&1; then
+  apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  apt update
+  apt install -y caddy
+fi
+
+WG_TUNNEL_IP="${WG_TUNNEL_IP:-10.66.66.1}"
+DASHBOARD_TLS_PORT="${DASHBOARD_TLS_PORT:-443}"
+cat > /etc/caddy/Caddyfile <<EOF
+${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT} {
+	tls internal
+	reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+	encode gzip
+}
+EOF
+systemctl enable caddy
+systemctl restart caddy
+
+echo "== 8. Pare-feu local (ufw) =="
+# Plus aucune regle necessaire pour le port $DASHBOARD_PORT : gunicorn est
+# en loopback pur, ufw ne le voit meme pas. On autorise uniquement le port
+# TLS de Caddy, et seulement pour les paquets arrivant PAR l'interface wg0
+# (donc deja passes par le tunnel WireGuard - un attaquant sur le reseau
+# public ne peut pas usurper "vient de wg0").
+ufw allow in on wg0 to any port "$DASHBOARD_TLS_PORT" proto tcp comment "BLOCKHash Dashboard - VPN uniquement"
 
 SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
 

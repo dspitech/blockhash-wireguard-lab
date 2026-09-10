@@ -390,10 +390,16 @@ Le script :
 ### 7.3 Accès au Dashboard
 
 ```
-http://<FQDN_ou_IP_publique>:8080
+https://10.66.66.1
 ```
 
-> **Important :** le port du dashboard est déjà restreint à votre `admin_source_ip` au niveau du NSG Terraform (`modules/network`). Vérifiez également la règle `ufw` correspondante (`sudo ufw status`).
+> **Important — architecture VPN-only (voir 7.3bis) :** depuis la mise à jour sécurité, le dashboard n'est **plus jamais exposé publiquement**. `gunicorn` écoute uniquement sur `127.0.0.1` ; c'est `Caddy` qui expose l'interface en TLS, mais seulement sur l'IP privée du tunnel WireGuard (`10.66.66.1` par défaut). **Il faut donc être déjà connecté au VPN** pour atteindre le dashboard. Le certificat étant auto-signé (`tls internal`), le navigateur affichera un avertissement la première fois : c'est attendu, vérifiez simplement l'empreinte si vous voulez être rigoureux.
+
+### 7.3bis Pourquoi ce choix, et comment revenir en arrière
+
+- **Avant** : `gunicorn -b 0.0.0.0:8080`, en HTTP, avec une règle NSG restreignant l'accès à `admin_source_ip`. Fonctionnel, mais la NSG était la *seule* barrière — une erreur de configuration réseau exposait directement un service non chiffré.
+- **Maintenant** : `gunicorn` en loopback pur, `Caddy` en frontal TLS sur l'IP du tunnel. Même si le NSG était mal configuré ou l'`ufw` désactivé par erreur, le dashboard resterait injoignable depuis l'extérieur — il faut être *dans* le tunnel WireGuard, pas seulement avoir la bonne IP source.
+- **Si vous préférez l'ancien modèle** (par ex. accès direct sans passer par le VPN, avec un vrai nom de domaine et Let's Encrypt) : remplacez `${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT}` par votre domaine dans `/etc/caddy/Caddyfile`, retirez `tls internal` (Caddy gérera Let's Encrypt automatiquement dès qu'un domaine public est détecté), et rouvrez la règle NSG `AllowDashboard-Admin` (voir historique Git de `terraform/modules/network/main.tf`).
 
 ### 7.4 Personnalisation
 
@@ -405,8 +411,10 @@ http://<FQDN_ou_IP_publique>:8080
 
 ```bash
 sudo systemctl status blockhash-dashboard
+sudo systemctl status caddy
 sudo journalctl -u blockhash-dashboard -f
-curl -s http://localhost:8080/healthz
+curl -s http://127.0.0.1:8080/healthz          # depuis la VM uniquement (loopback)
+curl -sk https://10.66.66.1/healthz             # depuis un client déjà connecté au VPN
 ```
 
 <img width="1911" height="877" alt="image" src="https://github.com/user-attachments/assets/dd8e91e8-b821-4531-94e5-91932ffdbaf0" />
@@ -744,6 +752,12 @@ L'onglet Monitoring affiche une carte (Leaflet + fond de carte OpenStreetMap) pl
 - Les IP privées/réservées (RFC1918, loopback, lien-local) ne sont **jamais** envoyées à l'API externe - elles ne peuvent de toute façon pas être géolocalisées et sont simplement absentes de la carte.
 - Nécessite un accès Internet sortant depuis le serveur vers `ip-api.com` (HTTP) et `tile.openstreetmap.org` (HTTPS, chargé directement par le navigateur de l'utilisateur, pas par le serveur) - à vérifier si votre pare-feu sortant est restrictif.
 - Best effort : si l'API GeoIP est injoignable, la carte s'affiche quand même (fond de carte vide de marqueurs) plutôt que de faire échouer tout l'onglet Monitoring.
+
+#### 7.10.6 Authentification durcie (verrouillage, audit, refus de démarrage)
+
+- **Refus de démarrage sans jeton** : si `DASHBOARD_TOKEN` est vide, l'application ne démarre plus (`sys.exit`) au lieu de tourner sans authentification par erreur. Pour un lab isolé où c'est un choix assumé, définissez `ALLOW_NO_AUTH=true` dans `/etc/blockhash/dashboard.env`.
+- **Verrouillage anti force-brute** : après `AUTH_MAX_ATTEMPTS` échecs d'authentification depuis la même IP (8 par défaut), les requêtes suivantes reçoivent `429 Too Many Requests` pendant `AUTH_LOCKOUT_SECONDS` (300 par défaut, réglables dans `dashboard.env`). Le compteur est en mémoire process (approximatif entre les workers gunicorn) - suffisant pour ralentir un script automatisé, pas conçu comme une protection distribuée de niveau WAF.
+- **Journal d'audit** (`/var/log/wireguard/audit.log`, créé et permissionné par `03-install-dashboard.sh`) : chaque requête mutante (`POST`/`PATCH`/`DELETE` sur `/api/...`) y est tracée avec IP source, méthode, chemin et code de statut - capturé génériquement via un hook `@app.after_request` plutôt que des appels manuels route par route, pour qu'aucune route actuelle ou future ne puisse être oubliée.
 
 #### 7.10.6 Tests automatisés
 
