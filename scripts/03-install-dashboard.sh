@@ -240,14 +240,22 @@ EOF
 chmod 644 /etc/cron.d/blockhash-weekly-report
 
 echo "== 7. Creation du service systemd (gunicorn) =="
-# --worker-class gthread --threads 4 (au lieu du sync worker par defaut) :
-# necessaire pour le flux temps reel Server-Sent Events (/api/events/stream,
-# voir README 7.10.3). Une connexion SSE reste ouverte plusieurs secondes ;
-# avec des workers "sync" classiques, 2 onglets dashboard ouverts en meme
-# temps suffiraient a saturer les 2 workers (-w 2) et a bloquer TOUTES les
-# autres requetes (y compris les assets statiques). gthread permet a chaque
-# worker de gerer plusieurs connexions concurrentes via des threads, sans
-# dependance supplementaire (contrairement a gevent/eventlet).
+# --worker-class gevent --worker-connections 1000 (au lieu du sync worker par
+# defaut) : necessaire pour le flux temps reel Server-Sent Events
+# (/api/events/stream, voir README 7.10.3). Une connexion SSE reste ouverte
+# indefiniment (boucle while True + time.sleep(SSE_POLL_INTERVAL_SEC) dans
+# _event_stream).
+#
+# ATTENTION - NE PAS repasser a "--worker-class gthread --threads N" : gthread
+# a ete utilise en premiere version, mais chaque connexion SSE y monopolise un
+# thread OS pour toute sa duree de vie. Avec -w 2 workers, la limite (2 x N
+# threads) est vite atteinte des que plusieurs onglets dashboard restent
+# ouverts : tous les threads finissent bloques dans le time.sleep() de
+# _event_stream, et TOUTE nouvelle requete HTTP (meme /api/version) reste en
+# attente indefiniment au niveau du backlog TCP, sans reponse ni erreur - see
+# post-mortem 2026-09 (dashboard bloque sur "Connexion..."). gevent, lui,
+# rend ce time.sleep() cooperatif (monkey-patch) : un seul worker gere des
+# centaines de connexions SSE simultanees sans epuiser de threads OS.
 #
 # SECURITE (voir README 7.3bis) : gunicorn n'ecoute plus que sur 127.0.0.1.
 # Il n'est plus jamais joignable directement, ni depuis le reseau public, ni
@@ -266,7 +274,7 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$APP_DIR/backend
 EnvironmentFile=/etc/blockhash/dashboard.env
-ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 --worker-class gthread --threads 4 --timeout 120 -b 127.0.0.1:$DASHBOARD_PORT app:app
+ExecStart=$APP_DIR/venv/bin/gunicorn -w 2 --worker-class gevent --worker-connections 1000 --timeout 120 -b 127.0.0.1:$DASHBOARD_PORT app:app
 Restart=always
 RestartSec=3
 
