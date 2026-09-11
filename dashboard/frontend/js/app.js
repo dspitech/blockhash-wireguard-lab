@@ -26,12 +26,13 @@ const STATE = {
 };
 
 const DEMO_URL = "data/sample-data.json";
+const TOKEN_STORAGE_KEY = "blockhash_dashboard_token";
 
 // ---------------------------------------------------------------
 // Couche API
 // ---------------------------------------------------------------
 function authHeaders() {
-  const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem("blockhash_dashboard_token");
+  const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem(TOKEN_STORAGE_KEY);
   return token ? { "X-API-Token": token } : {};
 }
 
@@ -39,7 +40,9 @@ async function apiGet(path) {
   const res = await fetch(path, { headers: authHeaders(), cache: "no-store" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Erreur API (${res.status})`);
+    const err = new Error(body.error || `Erreur API (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -191,12 +194,88 @@ function loadView(view) {
 }
 
 // ---------------------------------------------------------------
+// Authentification (écran de connexion)
+// ---------------------------------------------------------------
+// Le dashboard est joignable directement via l'IP publique de la VM
+// (voir README 7.3bis) : on n'affiche donc plus le tableau de bord tant
+// qu'un jeton valide (obtenu via /api/login) n'est pas en localStorage.
+// window.__BLOCKHASH_TOKEN__ reste supporté pour compat/tests locaux mais
+// n'est plus injecté par le script d'installation (config.js le laisse vide).
+function hasStoredToken() {
+  return !!(window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem(TOKEN_STORAGE_KEY));
+}
+
+function showLoginScreen(message) {
+  document.body.classList.remove("is-loading");
+  document.getElementById("login-screen").hidden = false;
+  document.getElementById("shell").style.display = "none";
+  const errBox = document.getElementById("login-error");
+  if (message) {
+    errBox.textContent = message;
+    errBox.hidden = false;
+  } else {
+    errBox.hidden = true;
+  }
+  document.getElementById("login-username").focus();
+}
+
+function hideLoginScreen() {
+  document.getElementById("login-screen").hidden = true;
+  document.getElementById("shell").style.display = "";
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btn-login");
+  const username = document.getElementById("login-username").value.trim();
+  const password = document.getElementById("login-password").value;
+  btn.disabled = true;
+  btn.textContent = "Connexion…";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 429) {
+        const secs = body.retry_after_seconds || 300;
+        throw new Error(`Trop de tentatives échouées. Réessayez dans ${Math.ceil(secs / 60)} min.`);
+      }
+      throw new Error("Identifiant ou clé incorrect.");
+    }
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, body.token);
+    hideLoginScreen();
+    document.body.classList.add("is-loading");
+    await runDashboard();
+  } catch (err) {
+    document.getElementById("login-error").textContent = err.message;
+    document.getElementById("login-error").hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Se connecter";
+  }
+}
+
+function handleLogout() {
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  if (STATE.sse) { try { STATE.sse.close(); } catch { /* noop */ } }
+  STATE.demoMode = null;
+  showLoginScreen();
+}
+
+// ---------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------
-async function bootstrap() {
+async function runDashboard(forceDemo) {
   applyTheme();
   applySidebar();
 
+  if (forceDemo) {
+    STATE.demoMode = true;
+    setConnPill("demo");
+  } else {
   try {
     const version = await apiGet("/api/version");
     STATE.demoMode = false;
@@ -205,6 +284,14 @@ async function bootstrap() {
     setConnPill("live");
     connectSSE();
   } catch (err) {
+    if (err.status === 401) {
+      // Jeton présent mais invalide/expiré côté serveur (ex: dashboard.env
+      // régénéré) : on le purge et on renvoie au formulaire de connexion
+      // plutôt que de basculer silencieusement en mode démo.
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+      showLoginScreen("Session expirée, reconnectez-vous.");
+      return;
+    }
     try {
       await apiGet("/api/health");
       STATE.demoMode = false;
@@ -214,9 +301,27 @@ async function bootstrap() {
       setConnPill("demo");
     }
   }
+  }
 
+  document.getElementById("btn-logout").hidden = STATE.demoMode === true;
   document.body.classList.remove("is-loading");
   switchView("overview");
+}
+
+async function bootstrap() {
+  document.getElementById("login-form").addEventListener("submit", handleLoginSubmit);
+  document.getElementById("btn-login-demo").addEventListener("click", () => {
+    hideLoginScreen();
+    document.body.classList.add("is-loading");
+    runDashboard(true);
+  });
+  document.getElementById("btn-logout").addEventListener("click", handleLogout);
+
+  if (!hasStoredToken()) {
+    showLoginScreen();
+    return;
+  }
+  await runDashboard(false);
 }
 
 function connectSSE() {
@@ -572,8 +677,11 @@ function drawClientsTable() {
       <td class="cell-muted">${fmtDate(p.created)}</td>
       <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "—"}</td>
       <td>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn ghost sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}">${p.enabled ? "Désactiver" : "Activer"}</button>
+          <button class="btn ghost sm" data-action="edit" data-name="${escapeHtml(p.name)}" title="Renommer / expiration / bande passante">Modifier</button>
+          <button class="btn ghost sm" data-action="config" data-name="${escapeHtml(p.name)}" title="Télécharger la configuration (.conf) et le QR code">Config</button>
+          <button class="btn ghost sm" data-action="regenerate" data-name="${escapeHtml(p.name)}" title="Régénérer les clés (invalide l'ancienne configuration)">Régénérer</button>
           <button class="btn ghost sm" data-action="revoke" data-name="${escapeHtml(p.name)}" title="Révoquer">✕</button>
         </div>
       </td>
@@ -581,6 +689,9 @@ function drawClientsTable() {
   `).join("");
 
   tbody.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
+  tbody.querySelectorAll('[data-action="edit"]').forEach(btn => btn.addEventListener("click", () => openEditClientModal(btn.dataset.name)));
+  tbody.querySelectorAll('[data-action="config"]').forEach(btn => btn.addEventListener("click", () => downloadClientConfig(btn.dataset.name)));
+  tbody.querySelectorAll('[data-action="regenerate"]').forEach(btn => btn.addEventListener("click", () => regenerateClient(btn.dataset.name)));
   tbody.querySelectorAll('[data-action="revoke"]').forEach(btn => btn.addEventListener("click", () => revokeClient(btn.dataset.name)));
 }
 
@@ -591,6 +702,69 @@ async function toggleClient(name, currentlyEnabled) {
     toast("success", `${name} ${!currentlyEnabled ? "activé" : "désactivé"}`);
     renderClients();
   } catch (err) { toast("danger", "Échec de l'opération", err.message); }
+}
+
+function openEditClientModal(name) {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
+  const peer = STATE.peers.find(p => p.name === name);
+  document.getElementById("field-edit-name").value = name;
+  document.getElementById("field-edit-name").dataset.originalName = name;
+  document.getElementById("field-edit-expires").value = peer && peer.expires ? String(peer.expires).slice(0, 10) : "";
+  document.getElementById("field-edit-bandwidth").value = peer && peer.bw_down_mbit ? peer.bw_down_mbit : "";
+  openModal("modal-client-edit");
+}
+
+async function submitEditClient() {
+  const originalName = document.getElementById("field-edit-name").dataset.originalName;
+  const newName = document.getElementById("field-edit-name").value.trim();
+  const expires = document.getElementById("field-edit-expires").value; // "" ou "YYYY-MM-DD"
+  const bandwidth = document.getElementById("field-edit-bandwidth").value.trim();
+
+  const body = {};
+  if (newName && newName !== originalName) body.new_name = newName;
+  body.expires = expires || null;
+  if (bandwidth) {
+    body.bw_up_mbit = bandwidth;
+    body.bw_down_mbit = bandwidth;
+  } else {
+    body.bw_up_mbit = null;
+    body.bw_down_mbit = null;
+  }
+
+  try {
+    await apiSend("PATCH", `/api/clients/${encodeURIComponent(originalName)}`, body);
+    toast("success", `${newName || originalName} mis à jour`);
+    closeModal("modal-client-edit");
+    renderClients();
+  } catch (err) { toast("danger", "Échec de la mise à jour", err.message); }
+}
+document.getElementById("btn-confirm-client-edit").addEventListener("click", submitEditClient);
+
+async function downloadClientConfig(name) {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
+  try {
+    const data = await apiGet(`/api/clients/${encodeURIComponent(name)}/config`);
+    const blob = new Blob([data.conf_text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.conf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("success", `Configuration de ${name} téléchargée`, "Le QR code d'appairage est aussi disponible via l'API (/config).");
+  } catch (err) { toast("danger", "Échec du téléchargement", err.message); }
+}
+
+async function regenerateClient(name) {
+  if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
+  if (!confirm(`Régénérer les clés de « ${name} » ? L'ancienne configuration cessera de fonctionner immédiatement.`)) return;
+  try {
+    await apiSend("POST", `/api/clients/${encodeURIComponent(name)}/regenerate`);
+    toast("success", `Clés régénérées pour ${name}`, "Pensez à redistribuer la nouvelle configuration.");
+    renderClients();
+  } catch (err) { toast("danger", "Échec de la régénération", err.message); }
 }
 
 async function revokeClient(name) {

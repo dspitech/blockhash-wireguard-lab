@@ -21,9 +21,12 @@ scripts/03-install-dashboard.sh) :
   GET    /api/clients/<nom>/config      -> renvoie le .conf + QR existants
   GET    /api/clients/<nom>/history     -> historique dedie (trafic, endpoints, reconnexions)
 
-Authentification : header "X-API-Token" compare a la variable
-d'environnement DASHBOARD_TOKEN (voir /etc/blockhash/dashboard.env).
-Laisser DASHBOARD_TOKEN vide desactive l'authentification (LAB/demo uniquement).
+Authentification : ecran de connexion du frontend (identifiant + cle,
+voir /etc/blockhash/dashboard.env : DASHBOARD_USERNAME / DASHBOARD_PASSWORD_HASH).
+POST /api/login echange ces identifiants contre un jeton de session, envoye
+ensuite en en-tete "X-API-Token" sur chaque appel (compare a la variable
+d'environnement DASHBOARD_TOKEN). Laisser DASHBOARD_TOKEN vide desactive
+l'authentification (LAB/demo uniquement, via ALLOW_NO_AUTH=true).
 """
 
 import json
@@ -37,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from werkzeug.security import check_password_hash
 
 import alerts
 import anomalies
@@ -93,6 +97,26 @@ if not DASHBOARD_TOKEN and not ALLOW_NO_AUTH:
         "demarrer sans authentification (voir /etc/blockhash/dashboard.env). "
         "Pour lancer volontairement sans jeton (lab/demo isole uniquement), "
         "definissez ALLOW_NO_AUTH=true dans le fichier d'environnement."
+    )
+
+# Connexion utilisateur/mot de passe (ecran de login du frontend) : le
+# dashboard n'est plus expose uniquement sur le tunnel WireGuard (voir
+# scripts/03-install-dashboard.sh, etape 7bis) - il est donc joignable
+# directement via l'IP publique de la VM. DASHBOARD_TOKEN seul (auparavant
+# injecte automatiquement dans le HTML) ne suffit plus comme protection : il
+# faut desormais un identifiant + une cle que l'utilisateur saisit lui-meme.
+# /api/login echange (username, password) contre DASHBOARD_TOKEN, qui reste
+# ensuite utilise tel quel comme jeton de session (voir check_auth) - aucun
+# changement pour le reste de l'API.
+DASHBOARD_USERNAME = os.environ.get("DASHBOARD_USERNAME", "admin")
+DASHBOARD_PASSWORD_HASH = os.environ.get("DASHBOARD_PASSWORD_HASH", "")
+if DASHBOARD_TOKEN and not DASHBOARD_PASSWORD_HASH and not ALLOW_NO_AUTH:
+    sys.exit(
+        "ERREUR FATALE : DASHBOARD_PASSWORD_HASH est vide alors que "
+        "DASHBOARD_TOKEN est defini. L'ecran de connexion du dashboard n'a "
+        "aucun moyen de verifier un mot de passe (voir "
+        "/etc/blockhash/dashboard.env, genere par scripts/03-install-dashboard.sh). "
+        "Relancez ce script, ou definissez ALLOW_NO_AUTH=true pour un lab isole."
     )
 
 # Journal d'audit dedie, separe des logs applicatifs generaux : trace qui a
@@ -170,6 +194,12 @@ def check_auth():
 def enforce_auth():
     if not request.path.startswith("/api/"):
         return None
+    # /api/login est le seul endpoint joignable SANS jeton deja en main : il
+    # sert justement a en obtenir un a partir d'un identifiant + mot de passe.
+    # Il applique son propre controle (voir api_login), y compris le meme
+    # verrouillage anti force-brute que ci-dessous.
+    if request.path == "/api/login":
+        return None
     ip = request.remote_addr
     if _is_locked_out(ip):
         return jsonify({"error": "too_many_attempts", "retry_after_seconds": AUTH_LOCKOUT_SECONDS}), 429
@@ -178,6 +208,39 @@ def enforce_auth():
         return jsonify({"error": "unauthorized"}), 401
     _record_auth_success(ip)
     return None
+
+
+@app.post("/api/login")
+def api_login():
+    """Echange (username, password) contre le jeton de session (DASHBOARD_TOKEN).
+    Le frontend stocke ce jeton en localStorage (voir app.js:authHeaders) et
+    l'envoie ensuite en en-tete X-API-Token sur chaque appel, exactement comme
+    avant l'ajout de cet ecran de connexion."""
+    ip = request.remote_addr
+    if _is_locked_out(ip):
+        return jsonify({"error": "too_many_attempts", "retry_after_seconds": AUTH_LOCKOUT_SECONDS}), 429
+
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+
+    # NB : check_password_hash() leve une erreur si on lui passe un hash vide
+    # ou malforme (pas de "$" a splitter) - on ne l'appelle donc qu'avec le
+    # vrai hash configure, jamais avec une chaine vide de "remplissage".
+    valid = False
+    if DASHBOARD_TOKEN and DASHBOARD_PASSWORD_HASH and username and password:
+        try:
+            valid = username == DASHBOARD_USERNAME and check_password_hash(DASHBOARD_PASSWORD_HASH, password)
+        except ValueError:
+            valid = False
+    if not valid:
+        _record_auth_failure(ip)
+        audit("login_failed", username=username)
+        return jsonify({"error": "invalid_credentials"}), 401
+
+    _record_auth_success(ip)
+    audit("login_success", username=username)
+    return jsonify({"token": DASHBOARD_TOKEN, "username": DASHBOARD_USERNAME})
 
 
 # Capture generique de toute action MUTANTE (POST/PATCH/DELETE) sur l'API,

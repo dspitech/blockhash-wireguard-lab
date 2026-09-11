@@ -8,23 +8,39 @@ Ce document est un support de formation (TP) destiné aux professionnels et étu
 
 ## Sommaire
 
+Ce guide est organisé en deux parties : **suivez la Partie I dans l'ordre** pour déployer le LAB de bout en bout ; **consultez la Partie II au besoin**, une fois le LAB opérationnel, comme documentation de référence (fonctionnalités avancées, sécurité, dépannage, commandes).
+
+**Partie I — Guide de configuration (procédure pas à pas)**
+
 1. [Présentation du LAB](#1-présentation-du-lab)
 2. [Prérequis](#2-prérequis)
 3. [Architecture](#3-architecture)
-4. [Étape 1- Déploiement de l'infrastructure Azure](#4-étape-1--déploiement-de-linfrastructure-azure)
-5. [Étape 2- Installation du serveur WireGuard](#5-étape-2--installation-du-serveur-wireguard)
-6. [Étape 3- Création et distribution des clients](#6-étape-3--création-et-distribution-des-clients)
-7. [Étape 4- Dashboard de supervision](#7-étape-4--dashboard-de-supervision)
-8. [Étape 5- Journalisation et logs](#8-étape-5--journalisation-et-logs)
-9. [Étape 6- Tests et validation du tunnel](#9-étape-6--tests-et-validation-du-tunnel)
-10. [Commandes Linux de référence](#10-commandes-linux-de-référence)
-11. [Durcissement et bonnes pratiques de sécurité](#11-durcissement-et-bonnes-pratiques-de-sécurité)
-12. [Dépannage (Troubleshooting)](#12-dépannage-troubleshooting)
-13. [Nettoyage / destruction du LAB](#13-nettoyage--destruction-du-lab)
-14. [Annexe- Exercices pour les stagiaires](#14-annexe--exercices-pour-les-stagiaires)
-15. [Licence et conditions de diffusion](#15-licence-et-conditions-de-diffusion)
+4. [Étape 1 — Déploiement de l'infrastructure Azure](#4-étape-1--déploiement-de-linfrastructure-azure-terraform)
+5. [Étape 2 — Installation du serveur WireGuard](#5-étape-2--installation-du-serveur-wireguard)
+6. [Étape 3 — Création et distribution des clients](#6-étape-3--création-et-distribution-des-clients)
+7. [Étape 4 — Dashboard : installation et accès](#7-étape-4--dashboard-de-supervision-blockhash)
+8. [Étape 5 — Journalisation et logs](#8-étape-5--journalisation-et-logs)
+9. [Étape 6 — Tests et validation du tunnel](#9-étape-6--tests-et-validation-du-tunnel)
+
+**Partie II — Documentation de référence**
+
+10. [Dashboard BLOCKHash — Fonctionnalités avancées](#10-dashboard-blockhash--fonctionnalités-avancées)
+    - 10.1 Gestion des clients (activer/désactiver/renommer/expirer/limiter/régénérer/révoquer)
+    - 10.2 Monitoring et alerting avancés
+    - 10.3 Administration système
+    - 10.4 Reporting et export
+    - 10.5 Temps réel, journal SQLite et fiabilité
+    - 10.6 Interface utilisateur avancée
+11. [Commandes Linux de référence](#11-commandes-linux-de-référence)
+12. [Durcissement et bonnes pratiques de sécurité](#12-durcissement-et-bonnes-pratiques-de-sécurité)
+13. [Dépannage (Troubleshooting)](#13-dépannage-troubleshooting)
+14. [Nettoyage / destruction du LAB](#14-nettoyage--destruction-du-lab)
+15. [Annexe- Exercices pour les stagiaires](#15-annexe--exercices-pour-les-stagiaires)
+16. [Licence et conditions de diffusion](#16-licence-et-conditions-de-diffusion)
 
 ---
+
+# Partie I — Guide de configuration (à suivre dans l'ordre)
 
 ## 1. Présentation du LAB
 
@@ -128,14 +144,14 @@ blockhash-wireguard-lab/
 │   ├── 03-install-dashboard.sh    # Déploie le dashboard BLOCKHash (Flask + frontend)
 │   ├── 04-logging-monitoring.sh
 │   ├── 05-revoke-client.sh
-│   ├── 06-manage-client.sh        # CLI : activer/désactiver/renommer/expirer/limiter/régénérer/révoquer (voir 7.6)
+│   ├── 06-manage-client.sh        # CLI : activer/désactiver/renommer/expirer/limiter/régénérer/révoquer (voir 10.1)
 │   ├── 07-check-expirations.sh    # Cron : désactive les clients dont l'expiration est dépassée
-│   └── 09-check-alerts.sh         # Cron : évalue les règles d'alerte et notifie (voir 7.7.4)
+│   └── 09-check-alerts.sh         # Cron : évalue les règles d'alerte et notifie (voir 10.2.4)
 └── dashboard/                      # Dashboard web maison
     ├── backend/                    # API Flask (lit wg show + tunnels.csv, pilote wgctl.py)
     │   ├── app.py
-    │   ├── wgctl.py                # Logique privilégiée : gestion clients (voir 7.6.1)
-    │   ├── wgops.py                # Logique privilégiée : opérations système (voir 7.8.1)
+    │   ├── wgctl.py                # Logique privilégiée : gestion clients (voir 10.1.1)
+    │   ├── wgops.py                # Logique privilégiée : opérations système (voir 10.3.1)
     │   ├── wgstate.py              # Lecture wg0.conf/wg show partagée, sans Flask
     │   ├── store.py                # SQLite : métriques, JOURNAL DES CONNEXIONS, alertes, cache GeoIP
     │   ├── settings_store.py       # Réglages ajustables à chaud (seuil "en ligne", etc.)
@@ -143,16 +159,16 @@ blockhash-wireguard-lab/
     │   ├── anomalies.py            # Détection simple (pic de trafic, endpoint flapping)
     │   ├── alerts.py               # Moteur de notification (email/Slack/Discord/Telegram)
     │   ├── reports.py              # Export PDF générique + rapport hebdomadaire
-    │   ├── servers_store.py        # Registre multi-serveurs (voir 7.8.5)
-    │   ├── geoip.py                # Résolution IP -> position (carte des endpoints, voir 7.10.5)
-    │   ├── tests/                  # Suite pytest (voir 7.10.6)
+    │   ├── servers_store.py        # Registre multi-serveurs (voir 10.3.5)
+    │   ├── geoip.py                # Résolution IP -> position (carte des endpoints, voir 10.5.5)
+    │   ├── tests/                  # Suite pytest (voir 10.5.6)
     │   ├── pytest.ini
     │   ├── requirements.txt
     │   └── requirements-dev.txt    # + pytest, pour le développement/CI uniquement
     └── frontend/                    # HTML/CSS/JS statique, aucun framework
         ├── index.html
         ├── css/style.css
-        ├── css/leaflet.css          # Vendorisé (carte GeoIP, voir 7.10.5)
+        ├── css/leaflet.css          # Vendorisé (carte GeoIP, voir 10.5.5)
         ├── js/app.js
         ├── js/vendor/leaflet.js     # Vendorisé
         └── data/sample-data.json    # Jeu de données de démo (mode hors-ligne, lecture seule)
@@ -190,7 +206,7 @@ dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
 
 > **Bonne pratique :** en environnement de production, ne laissez jamais `admin_source_ip` en `*`. Restreignez systématiquement l'accès SSH et au dashboard à votre IP (ou à une plage d'IP d'entreprise / un VPN d'administration). Préférez également `use_ssh_key = true` avec une clé publique plutôt qu'un mot de passe.
 
-`terraform.tfvars` contient des secrets : ne le committez jamais dans un dépôt Git public (il est déjà exclu via `.gitignore`- voir section 15).
+`terraform.tfvars` contient des secrets : ne le committez jamais dans un dépôt Git public (il est déjà exclu via `.gitignore`- voir section 16).
 
 ### 4.2 Lancer le déploiement
 
@@ -390,24 +406,25 @@ Le script :
 ### 7.3 Accès au Dashboard
 
 ```
-https://10.66.66.1
+https://<IP-PUBLIQUE-DE-LA-VM>
 ```
 
-> **Important — architecture VPN-only (voir 7.3bis) :** depuis la mise à jour sécurité, le dashboard n'est **plus jamais exposé publiquement**. `gunicorn` écoute uniquement sur `127.0.0.1` ; c'est `Caddy` qui expose l'interface en TLS, mais seulement sur l'IP privée du tunnel WireGuard (`10.66.66.1` par défaut). **Il faut donc être déjà connecté au VPN** pour atteindre le dashboard. Le certificat étant auto-signé (`tls internal`), le navigateur affichera un avertissement la première fois : c'est attendu, vérifiez simplement l'empreinte si vous voulez être rigoureux.
+> **Important — accès direct par IP publique, protégé par identifiant + clé (voir 7.4) :** le dashboard est joignable directement depuis l'IP publique de la VM, **sans avoir besoin d'être connecté au VPN WireGuard au préalable**. `gunicorn` écoute toujours uniquement sur `127.0.0.1` ; c'est `Caddy` qui expose l'interface en TLS sur l'IP publique (port `443` par défaut). La protection repose sur un **écran de connexion (identifiant + clé)** généré à l'installation, plus un verrouillage anti force-brute — combinez-la avec une règle NSG/ufw restreinte à votre IP admin (`ADMIN_SOURCE_IP`) dès que possible. Le certificat étant auto-signé (`tls internal`), le navigateur affichera un avertissement la première fois : c'est attendu.
 
-### 7.3bis Pourquoi ce choix, et comment revenir en arrière
+### 7.4 Pourquoi ce choix, et comment revenir en arrière
 
-- **Avant** : `gunicorn -b 0.0.0.0:8080`, en HTTP, avec une règle NSG restreignant l'accès à `admin_source_ip`. Fonctionnel, mais la NSG était la *seule* barrière — une erreur de configuration réseau exposait directement un service non chiffré.
-- **Maintenant** : `gunicorn` en loopback pur, `Caddy` en frontal TLS sur l'IP du tunnel. Même si le NSG était mal configuré ou l'`ufw` désactivé par erreur, le dashboard resterait injoignable depuis l'extérieur — il faut être *dans* le tunnel WireGuard, pas seulement avoir la bonne IP source.
-- **Si vous préférez l'ancien modèle** (par ex. accès direct sans passer par le VPN, avec un vrai nom de domaine et Let's Encrypt) : remplacez `${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT}` par votre domaine dans `/etc/caddy/Caddyfile`, retirez `tls internal` (Caddy gérera Let's Encrypt automatiquement dès qu'un domaine public est détecté), et rouvrez la règle NSG `AllowDashboard-Admin` (voir historique Git de `terraform/modules/network/main.tf`).
+- **Avant (VPN-only)** : `gunicorn` en loopback pur, `Caddy` en frontal TLS uniquement sur l'IP privée du tunnel WireGuard (`10.66.66.1`) — il fallait être *dans* le tunnel pour même atteindre l'écran de connexion. C'est le modèle le plus étanche, mais il impose d'avoir déjà un client WireGuard configuré avant de pouvoir administrer quoi que ce soit (pratique gênante pour un lab qu'on veut piloter depuis un poste sans client VPN installé).
+- **Maintenant (accès direct)** : `Caddy` expose le dashboard en TLS sur toutes les interfaces (port `DASHBOARD_TLS_PORT`, 443 par défaut). La sécurité ne repose plus sur la position réseau du client mais sur l'authentification applicative (`/api/login`, identifiant + clé générés à l'installation, voir `/etc/blockhash/dashboard.env`) et sur le verrouillage anti force-brute (`AUTH_MAX_ATTEMPTS`/`AUTH_LOCKOUT_SECONDS`). Restreignez malgré tout qui peut *atteindre* l'écran de connexion via `ADMIN_SOURCE_IP` (passé en variable d'environnement à `scripts/03-install-dashboard.sh`, qui configure `ufw` en conséquence) et via la règle NSG Terraform `AllowDashboard-Admin` (variable `admin_source_ip` / `dashboard_tls_port`).
+- **Si vous préférez revenir au modèle VPN-only** : dans `scripts/03-install-dashboard.sh`, remplacez `:${DASHBOARD_TLS_PORT}` par `${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT}` dans le Caddyfile généré (étape 7bis), remplacez la règle `ufw` de l'étape 8 par `ufw allow in on wg0 to any port "$DASHBOARD_TLS_PORT" proto tcp`, et retirez la règle NSG `AllowDashboard-Admin` dans `terraform/modules/network/main.tf`.
+- **Identifiant et clé** : générés une seule fois par `scripts/03-install-dashboard.sh` (étape 4), affichés en clair **une seule fois** à la fin de l'installation. Seul le hash (`DASHBOARD_PASSWORD_HASH`) est conservé sur disque, dans `/etc/blockhash/dashboard.env`. Pour changer la clé après coup : régénérez un hash avec `"$APP_DIR/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('nouvelle-cle'))"` et remplacez la ligne `DASHBOARD_PASSWORD_HASH=` dans ce fichier, puis `sudo systemctl restart blockhash-dashboard`.
 
-### 7.4 Personnalisation
+### 7.5 Personnalisation
 
 - **Palette et identité visuelle** : `dashboard/frontend/css/style.css` (variables CSS en tête de fichier- couleurs, typographies) pour adapter aux couleurs d'un client si vous revendez ce LAB.
 - **Fréquence de rafraîchissement** : `REFRESH_INTERVAL_MS` dans `dashboard/frontend/js/app.js` (30 secondes par défaut).
 - **Seuil "en ligne"** : `HANDSHAKE_ONLINE_THRESHOLD_SEC` dans `dashboard/backend/app.py` (180 secondes par défaut).
 
-### 7.5 Vérification et logs applicatifs
+### 7.6 Vérification et logs applicatifs
 
 ```bash
 sudo systemctl status blockhash-dashboard
@@ -419,386 +436,8 @@ curl -sk https://10.66.66.1/healthz             # depuis un client déjà connec
 
 <img width="1911" height="877" alt="image" src="https://github.com/user-attachments/assets/dd8e91e8-b821-4531-94e5-91932ffdbaf0" />
 
-### 7.6 Gestion des clients depuis le dashboard
 
-Fichiers concernés : `dashboard/backend/wgctl.py` (logique privilégiée), `dashboard/backend/app.py` (endpoints `/api/clients/*`), `dashboard/frontend/js/app.js` (modales, tiroir d'historique), `scripts/06-manage-client.sh` et `scripts/07-check-expirations.sh` (équivalents CLI).
-
-Au-delà de la supervision en lecture seule (section 7), le dashboard permet désormais de **gérer le cycle de vie complet des clients WireGuard sans passer par SSH** :
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Activer / désactiver un client | Carte client → bouton *Activer*/*Désactiver* | Retire ou remet le `[Peer]` en direct **sans supprimer** sa configuration (voir 7.6.2) |
-| Révoquer définitivement | Carte client → *Révoquer* (confirmation requise) | Supprime le bloc `[Peer]`, archive les clés dans `clients/revoked/` |
-| Ajouter un client | Bouton *Ajouter un client* (vue Clients) | Formulaire nom + expiration optionnelle → génère les clés, écrit dans `wg0.conf`, affiche le QR code et propose le `.conf` en téléchargement |
-| Renommer un client | Carte client → *Renommer* | Met à jour le commentaire `# Client :` et renomme les fichiers `clients/<nom>.*` associés |
-| Expiration automatique | Carte client → *Expiration* | Date au-delà de laquelle le client est **désactivé automatiquement** (cron quotidien, voir 7.6.4) |
-| Limitation de bande passante | Carte client → *Bande passante* | Débit montant/descendant en Mb/s par pair (`tc`/HTB, voir 7.6.5 - fonctionnalité avancée, best effort) |
-| Régénérer la config/QR | Carte client → *Régénérer* | Nouvelles clés + PSK pour un client existant (même nom, même IP) ; utile en cas de suspicion de compromission |
-| Revoir la config/QR existants | Carte client → *QR / Config* | Réaffiche le `.conf` et le QR déjà générés, sans toucher aux clés |
-| Historique par client | Carte client → *Historique* | Tiroir dédié : graphique de débit propre au client, dernière IP endpoint vue, nombre de reconnexions estimé (voir 7.6.5) |
-
-#### 7.6.1 Sécurité : élévation des droits sudo
-
-Les fonctionnalités ci-dessus **nécessitent d'élargir les droits sudo** de `www-data` (l'utilisateur sous lequel tourne gunicorn), qui n'avait jusque-là que le droit d'exécuter `wg show wg0 dump` (lecture seule, non destructif).
-
-Plutôt que d'autoriser directement `wg set`, l'édition de `wg0.conf` ou `wg syncconf` en sudoers (ce qui reviendrait à donner à `www-data` un accès quasi-root à l'interface réseau), ce LAB introduit un **point d'entrée unique et privilégié** : `dashboard/backend/wgctl.py`.
-
-```bash
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/wg show wg0 dump
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgctl.py *
-```
-
-Ce choix de conception limite le risque de plusieurs façons :
-
-- **Surface d'attaque réduite** : `www-data` ne peut exécuter *que* les actions que `wgctl.py` expose (`add`, `enable`, `disable`, `rename`, `revoke`, `regenerate`, `set-expiry`, `set-bandwidth`, `check-expirations`, `list`), jamais une commande shell arbitraire.
-- **Validation systématique** : chaque nom de client est vérifié par une expression régulière stricte (`[A-Za-z0-9_-]{1,32}`) avant toute écriture disque, ce qui empêche l'injection de commande ou l'écriture en dehors de `/etc/wireguard/`.
-- **Fichier root:root, non inscriptible par www-data** : `03-install-dashboard.sh` verrouille `wgctl.py` en `root:root` / `chmod 750` **après** avoir donné la propriété du reste de l'application à `www-data`. C'est essentiel : si `www-data` pouvait modifier `wgctl.py`, la règle sudoers ci-dessus lui donnerait un accès root complet (élévation de privilèges triviale). Le script réapplique cette vérification une seconde fois en toute fin d'installation par sécurité.
-- **Écriture atomique** : `wg0.conf` est toujours réécrit dans un fichier temporaire puis déplacé (`os.replace`), jamais modifié en place, pour éviter une configuration à moitié écrite en cas de coupure.
-- **JSON uniquement sur stdout** : `wgctl.py` ne renvoie jamais de trace Python brute à l'appelant (donc au navigateur), afin de ne pas fuiter de détails d'implémentation en cas d'erreur.
-
-**Si vous préférez garder le dashboard strictement en lecture seule** (recommandé pour un dashboard exposé plus largement, ou en environnement de démonstration public) :
-
-```bash
-# /etc/blockhash/dashboard.env
-CLIENT_MANAGEMENT_ENABLED=false
-```
-
-puis `sudo systemctl restart blockhash-dashboard`. Le frontend détecte automatiquement ce mode et masque les actions de gestion (voir la bannière *"Gestion des clients indisponible"* dans la vue Clients). Vous pouvez alors soit retirer la règle sudoers `wgctl.py`, soit la laisser en place sans risque supplémentaire tant que le service ne l'utilise pas.
-
-Comme toujours dans ce LAB : **ne déployez pas ces droits élargis sur un serveur exposé directement à Internet sans restreindre l'accès au dashboard** (NSG/`ufw` + jeton d'API, voir sections 7.3 et 11).
-
-#### 7.6.2 Comment un client désactivé est représenté
-
-`wgctl.py` ne supprime jamais un bloc `[Peer]` lors d'une désactivation : il préfixe chacune de ses lignes d'un `#` supplémentaire, ce qui le rend invisible pour `wg-quick strip` (donc pour `wg syncconf`) sans le retirer du fichier :
-
-```conf
-[Peer]
-# Client : ordinateur-alice
-# Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
-PublicKey = ...
-PresharedKey = ...
-AllowedIPs = 10.66.66.2/32
-```
-
-devient, une fois désactivé :
-
-```conf
-#[Peer]
-## Client : ordinateur-alice
-## Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
-#PublicKey = ...
-#PresharedKey = ...
-#AllowedIPs = 10.66.66.2/32
-```
-
-Réactiver le client retire ce préfixe et relance `wg syncconf` : le pair revient **avec les mêmes clés et la même IP**, sans que l'utilisateur final ait besoin de réimporter son fichier `.conf`.
-
-#### 7.6.3 Utilisation en CLI (sans passer par le dashboard)
-
-Toutes ces actions restent disponibles en SSH via `scripts/06-manage-client.sh`, une fine couche au-dessus de `wgctl.py` :
-
-```bash
-sudo ./06-manage-client.sh add ordinateur-alice 30      # + 30 jours avant expiration
-sudo ./06-manage-client.sh disable ordinateur-alice
-sudo ./06-manage-client.sh enable ordinateur-alice
-sudo ./06-manage-client.sh rename ordinateur-alice pc-alice-rh
-sudo ./06-manage-client.sh expiry pc-alice-rh 2026-12-31
-sudo ./06-manage-client.sh bandwidth pc-alice-rh 20 50   # 20 Mb/s upload, 50 Mb/s download
-sudo ./06-manage-client.sh regenerate pc-alice-rh
-sudo ./06-manage-client.sh revoke pc-alice-rh
-sudo ./06-manage-client.sh list
-```
-
-#### 7.6.4 Expiration automatique (cron)
-
-`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-expirations`, qui exécute chaque nuit à 3h :
-
-```bash
-python3 /opt/blockhash-dashboard/backend/wgctl.py check-expirations
-```
-
-Tout client dont la date d'expiration est dépassée est désactivé (au sens de 7.6.2, pas révoqué) et journalisé dans `/var/log/wireguard/expirations.log`. Vous pouvez lancer la même vérification manuellement avec `sudo ./scripts/07-check-expirations.sh`.
-
-#### 7.6.5 Limites connues
-
-- **Bande passante (`tc`/HTB)** : fonctionnalité *avancée* et *best effort*, explicitement signalée comme telle dans l'énoncé de ce TP. Elle nécessite le module noyau `ifb` et `iproute2` (installés par `03-install-dashboard.sh`). Selon le noyau/la distribution, certaines commandes `tc` peuvent échouer silencieusement côté noyau : le dashboard vous le signale (`tc_applied: false` dans la réponse API, toast d'erreur côté UI) plutôt que de prétendre que la limite est active alors qu'elle ne l'est pas. La limite "logique" (Mb/s enregistrés) est de toute façon conservée dans `wg0.conf` même si `tc` échoue, pour ne pas perdre l'intention si vous corrigez le problème plus tard.
-- **Compteur de reconnexions** : le journal `tunnels.csv` est échantillonné toutes les 5 minutes (cron, voir section 8), pas événementiel. Le dashboard approxime les reconnexions en comptant les changements d'IP endpoint et les écarts de plus de 10 minutes entre deux captures consécutives- une heuristique raisonnable pour un LAB, pas un décompte exact au sens d'un pare-feu stateful.
-- **Régénération de clés** : régénérer un client change ses clés WireGuard ; l'ancien fichier `.conf` distribué au client cesse immédiatement de fonctionner et **doit être réimporté** (nouveau QR code/`.conf` fourni par le dashboard).
-
-### 7.7 Monitoring et alerting avancés
-
-Fichiers concernés : `dashboard/backend/store.py` (métriques long terme + historique d'alertes, SQLite), `dashboard/backend/system_monitor.py` (CPU/RAM/disque/services), `dashboard/backend/anomalies.py` (détection simple), `dashboard/backend/alerts.py` (moteur de notification), `dashboard/backend/settings_store.py` (réglages ajustables à chaud), `dashboard/backend/wgstate.py` (logique de lecture partagée, voir 7.7.1), `scripts/09-check-alerts.sh` (cron), onglets **Monitoring** et **Alertes** du dashboard.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Historique long terme du débit | Onglet Monitoring, sélecteur 1h/24h/7j/30j | Graphique dédié, alimenté par une petite base **SQLite** (pas le CSV) pour rester rapide même sur 30 jours |
-| Alertes configurables | Onglet Alertes | Email (SMTP), Slack, Discord, Telegram - règles : inactivité prolongée, seuil de débit, service down |
-| Seuil "en ligne" ajustable | Onglet Alertes → Réglages généraux | Remplace la constante `HANDSHAKE_ONLINE_THRESHOLD_SEC` figée en dur ; persistée dans un fichier JSON, prise en compte immédiatement (pas de redémarrage du service) |
-| Monitoring du serveur hôte | Onglet Monitoring → Système hôte | CPU, RAM, disque, uptime (via `psutil`) |
-| Détection d'anomalies simples | Onglet Monitoring → Anomalies détectées | Pic de trafic inhabituel (z-score sur le débit récent) ; endpoint qui change trop souvent (indice de clé compromise/partagée) |
-| Statut des services systemd | Onglet Monitoring (Système hôte) et Alertes (règle "service down") | `wg-quick@wg0` et `blockhash-dashboard`, via `systemctl is-active` |
-
-#### 7.7.1 Pourquoi une base SQLite en plus du CSV existant ?
-
-Le CSV (`tunnels.csv`, section 8) reste la source du journal brut et de l'heuristique de reconnexion : le relire intégralement pour un graphique sur 30 jours (des milliers de lignes par client) serait lent et fragile. `store.py` ajoute donc une petite base SQLite (`/var/log/wireguard/blockhash.db`) alimentée par un hook ajouté au **même** script de capture 5 minutes (`wg-log-snapshot.sh`, voir section 8) : rien de nouveau à surveiller, juste une écriture supplémentaire à chaque cycle déjà existant.
-
-**Point technique important** : les compteurs `rx_bytes`/`tx_bytes` renvoyés par `wg show` sont **cumulatifs depuis le démarrage de l'interface**, pas un débit instantané. `store.py` stocke les valeurs brutes puis calcule le **delta** entre deux échantillons consécutifs au moment de la requête (`store.query_series`), pour obtenir un vrai débit par intervalle. Le graphique historique de la vue Monitoring utilise cette méthode ; le petit graphique "Débit du tunnel" de la vue d'ensemble (Étape 4, section 7.3) reste basé sur le CSV et somme les compteurs bruts par fenêtre de 5 minutes - une simplification héritée, suffisante pour un coup d'œil rapide sur les 12 derniers points, mais moins rigoureuse que le nouveau graphique à sélecteur de plage.
-
-Pour eviter toute duplication de logique de lecture entre le service web (`app.py`, sous Flask/gunicorn) et les scripts cron indépendants (`alerts.py`), la lecture de `wg0.conf` et de `wg show` a été extraite dans `wgstate.py`, un module **sans aucune dépendance externe** (bibliothèque standard uniquement) que les deux réutilisent.
-
-#### 7.7.2 Détection d'anomalies : ce que ça fait (et ne fait pas)
-
-- **Pic de trafic** : compare le dernier bucket de débit (fenêtre 24h) à la moyenne et à l'écart-type des buckets précédents ; signale si le dernier dépasse `moyenne + 3×écart-type` (et un plancher minimal pour ne pas signaler du bruit sur un tunnel presque silencieux).
-- **Endpoint flapping** : réutilise l'heuristique de reconnexion déjà calculée pour l'historique par client (section 7.6) ; au-delà de 6 changements d'endpoint en 24h, le client est signalé - un indice possible de clé privée partagée entre plusieurs appareils, pas une certitude.
-
-Ce n'est **pas** un IDS : pas de machine learning, pas de base de référence par client, pas de whitelisting d'IP. C'est volontairement simple et lisible, pour un contexte pédagogique - libre à vous de le remplacer par une vraie stack d'observabilité (Prometheus + Grafana + Alertmanager, par exemple) si ce LAB grandit.
-
-#### 7.7.3 Sécurité de l'alerting
-
-Contrairement à la gestion des clients (section 7.6.1), **l'alerting ne nécessite aucune extension des droits sudo**. `alerts.py` ne fait que :
-- lire `wg0.conf` et `wg show wg0 dump` (déjà autorisé) ;
-- lire/écrire son propre fichier de configuration sous `/etc/blockhash/alerts-config.json` (appartient à `www-data`, `chmod 600` - ce fichier contient des secrets : mot de passe SMTP, URLs de webhook, jeton de bot Telegram) ;
-- effectuer des requêtes HTTP sortantes vers les webhooks/API de notification configurés.
-
-**Masquage des secrets** : `GET /api/alerts/config` ne renvoie jamais un secret en clair - un champ déjà configuré est renvoyé sous la forme `••••••••`. Le formulaire du dashboard renvoie cette même valeur telle quelle si vous ne la modifiez pas (voir `alerts.py:save_config`), donc resauvegarder le formulaire sans toucher au mot de passe SMTP ne l'efface pas. Si vous consultez ce fichier directement sur le serveur (`sudo cat /etc/blockhash/alerts-config.json`), les secrets y sont en clair - c'est un fichier de configuration serveur, pas une couche de chiffrement.
-
-**L'alerting est désactivé par défaut** (`enabled: false`) : aucune notification n'est envoyée tant que vous ne l'activez pas explicitement depuis l'onglet Alertes.
-
-#### 7.7.4 Activation du cron d'évaluation des règles
-
-`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-alerts`, qui exécute toutes les 5 minutes :
-
-```bash
-python3 /opt/blockhash-dashboard/backend/alerts.py check
-```
-
-Chaque règle a son propre délai de répétition (`cooldowns_sec` dans la config) pour éviter le spam : par défaut, 1 alerte d'inactivité par client et par jour, 1 alerte de débit par client et par heure, 1 alerte de service down toutes les 30 minutes tant que le problème persiste. Vous pouvez déclencher une vérification manuelle avec `sudo python3 /opt/blockhash-dashboard/backend/alerts.py check`, ou tester un canal précis sans attendre une vraie condition d'alerte avec le bouton *Tester* de chaque canal dans le dashboard.
-
-#### 7.7.6 Réinitialiser la déduplication (sans SSH)
-
-Chaque règle qui s'est déclenchée reste "en pause" pendant son `cooldowns_sec` (voir 7.7.4) : c'est voulu, pour éviter qu'un client resté inactif ne déclenche une notification à chaque passage du cron. Mais en phase de test - par exemple pour vérifier qu'un webhook Slack fonctionne vraiment en conditions réelles - attendre le cooldown est peu pratique.
-
-L'onglet **Alertes** affiche un panneau *Règles actuellement en pause (déduplication)* qui liste chaque règle en cooldown avec le temps écoulé depuis son dernier déclenchement, et permet de :
-- **Réinitialiser** une règle précise (le bouton en face de chaque ligne) ;
-- **Tout réinitialiser** (bouton en haut du panneau, avec confirmation).
-
-Techniquement, cela vide (entièrement ou une seule ligne selon le cas) la table `alert_state` de `store.py`, via `GET/DELETE /api/alerts/dedup` et `DELETE /api/alerts/dedup/<rule_key>`. Cette table ne stocke que des horodatages de dédup - la vider ne supprime ni l'historique des alertes déjà envoyées (table `alerts`, affichée juste en dessous), ni la configuration des règles/canaux.
-
-Pour les mêmes besoins en CLI (sans dashboard) :
-```bash
-python3 /opt/blockhash-dashboard/backend/store.py dedup-list
-python3 /opt/blockhash-dashboard/backend/store.py dedup-clear --rule-key "inactive:<clé_publique_du_client>"
-python3 /opt/blockhash-dashboard/backend/store.py dedup-clear   # sans --rule-key : reinitialise tout
-```
-
-#### 7.7.7 Limites connues
-
-- **Détection d'anomalies** : heuristiques simples (voir 7.7.2), pas un système de détection d'intrusion.
-- **Dédup des alertes** : si l'envoi d'une notification échoue (ex. webhook injoignable), la règle est quand même marquée comme "envoyée" pour la durée du cooldown - conçu pour un LAB, pas pour une garantie de livraison. Consultez `/var/log/wireguard/alerts.log` en cas de doute, ou réinitialisez la règle concernée depuis l'onglet Alertes (voir 7.7.6) une fois le problème corrigé.
-- **`cpu_percent` au premier appel** : `psutil.cpu_percent()` a besoin d'un point de comparaison ; le tout premier appel après le démarrage du service renvoie `null` plutôt qu'un chiffre trompeur (`0.0`).
-
-### 7.8 Administration système
-
-Fichiers concernés : `dashboard/backend/wgops.py` (opérations privilégiées), `dashboard/backend/servers_store.py` (registre multi-serveurs), onglet **Système** du dashboard.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Sauvegarde/restauration de `wg0.conf` | Onglet Système → *Sauvegardes* | Versionné sur disque (`/etc/wireguard/backups/`), avec **diff** avant application et sauvegarde de sécurité automatique avant toute restauration |
-| Rotation assistée des clés serveur | Onglet Système → *Rotation des clés serveur* | Régénère la paire de clés du serveur **et** le `.conf` de chaque client existant (leurs propres clés ne changent pas) en une seule opération atomique |
-| Redémarrage du tunnel | Onglet Système → *Maintenance du tunnel* | `systemctl restart wg-quick@wg0`, avec confirmation côté UI |
-| Export d'audit | Onglet Système → *Export d'audit* | Zip de tous les `.conf` clients + `wg0.conf` + un manifeste CSV non sensible (nom, clé publique, IP, statut) |
-| Multi-serveurs | Onglet Système → *Multi-serveurs* | Supervision agrégée de plusieurs instances BLOCKHash (voir 7.8.5) |
-
-#### 7.8.1 Sécurité : un second point d'entrée privilégié
-
-Comme pour la gestion des clients (section 7.6.1), ces opérations passent par un **point d'entrée unique et privilégié** : `dashboard/backend/wgops.py`, avec exactement les mêmes garanties que `wgctl.py` (root:root, `chmod 750`, validation stricte des paramètres, écriture atomique, jamais de trace Python brute renvoyée).
-
-Ce module est volontairement **séparé** de `wgctl.py` plutôt que d'y ajouter des actions, et contrôlé par un interrupteur dédié `SYSTEM_OPS_ENABLED` (distinct de `CLIENT_MANAGEMENT_ENABLED`) : la rotation des clés serveur et le redémarrage du tunnel ont un rayon d'impact bien plus large qu'ajouter ou révoquer un client - un exploitant peut vouloir activer la gestion des clients depuis le web sans exposer ces opérations plus sensibles.
-
-```bash
-# /etc/blockhash/dashboard.env
-SYSTEM_OPS_ENABLED=false   # masque ces actions sans toucher a CLIENT_MANAGEMENT_ENABLED
-```
-
-La règle sudoers ajoutée par `03-install-dashboard.sh` :
-```bash
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgops.py *
-```
-
-#### 7.8.2 Sauvegardes : ce qui est protégé
-
-- Chaque sauvegarde est un fichier horodaté (`wg0_AAAAMMJJ-HHMMSS_<label>.conf`) sous `/etc/wireguard/backups/`, avec une rotation automatique (50 sauvegardes conservées par défaut, réglable via `WG_MAX_BACKUPS`).
-- **Avant toute restauration**, une sauvegarde de l'état actuel est créée automatiquement (label `avant-restauration`) - une restauration malheureuse reste donc toujours réversible.
-- Le **diff** (`diff-backup`) utilise `difflib` (bibliothèque standard Python) pour comparer une sauvegarde au `wg0.conf` actuel, ligne par ligne, avant de décider de restaurer.
-- Les noms de fichiers de sauvegarde sont strictement validés côté serveur (regex + vérification que le chemin résolu reste dans le dossier des sauvegardes) pour empêcher tout traversal de chemin depuis l'API.
-
-#### 7.8.3 Rotation des clés serveur : ce qui se passe exactement
-
-1. Sauvegarde de sécurité de `wg0.conf` (label `avant-rotation-cles`).
-2. Nouvelle paire de clés générée (`wg genkey` / `wg pubkey`).
-3. `wg0.conf`, `server_private.key` et `server_public.key` mis à jour.
-4. `wg syncconf` recharge l'interface à chaud, sans couper les tunnels déjà établis.
-5. **Chaque** fichier `.conf` client sous `clients/*.conf` est réécrit : seule sa ligne `PublicKey` (celle qui pointe vers le **serveur**, dans le bloc `[Peer]` du fichier **client**) est remplacée par la nouvelle clé publique serveur. Les clés propres au client (sa `PrivateKey`, son `PresharedKey`, son IP) ne changent pas.
-6. Le dashboard affiche la liste des clients concernés et rappelle qu'ils doivent réimporter leur configuration (nouveau `.conf`/QR à redistribuer, voir section 7.6 pour régénérer un client individuellement si besoin).
-
-**Quand l'utiliser** : rotation périodique de routine (tous les 6-12 mois, voir section 11), ou en urgence si la clé privée du serveur est suspectée compromise.
-
-#### 7.8.4 Export d'audit : contenu et sensibilité
-
-Le zip généré contient :
-- `clients/*.conf` -configuration complète de chaque client, **clé privée incluse** (rappel : ce LAB conserve les clés privées client côté serveur pour la simplicité, voir section 6) ;
-- `wg0.conf` -configuration serveur complète (clé privée serveur incluse) ;
-- `manifest.csv` -un résumé non sensible (nom, clé publique, IP, statut) pour un usage d'audit léger sans manipuler les clés privées.
-
-**Ce zip est aussi sensible que l'ensemble de `/etc/wireguard/`** : à traiter avec les mêmes précautions (transfert chiffré, pas de stockage sur un partage non protégé). Les fichiers d'export sont écrits dans `/tmp/blockhash-exports/` et purgés automatiquement au bout d'une heure.
-
-#### 7.8.5 Multi-serveurs : portée et limites
-
-Le registre (`servers_store.py`) permet d'ajouter d'autres instances BLOCKHash (nom, URL, jeton d'API optionnel) et d'afficher un résumé agrégé (tunnels actifs, injoignabilité) sans quitter le dashboard courant. Techniquement :
-
-- Le jeton d'API de chaque serveur distant est stocké côté serveur uniquement (`/etc/blockhash/servers.json`, `chmod 600`) et **jamais transmis au navigateur** - c'est le backend de *cette* instance qui interroge `/api/overview` du serveur distant pour le compte de l'utilisateur, puis relaie le résultat.
-- **Ceci reste une supervision agrégée, pas une fédération complète** : gérer les clients, consulter le journal détaillé ou configurer les alertes d'un serveur distant se fait en ouvrant *son propre* dashboard (bouton *Ouvrir*), pas depuis cette instance. Étendre chaque vue (Clients, Journal, Monitoring...) pour qu'elle soit elle-même multi-serveur est un chantier plus large, volontairement hors scope de cette itération.
-- Un serveur injoignable (mauvaise URL, jeton invalide, pare-feu) est signalé sans faire échouer le reste de la vue.
-
-### 7.9 Reporting et export
-
-Fichiers concernés : `dashboard/backend/reports.py`, onglets Journal (export), Alertes (rapport hebdomadaire) et Conformité.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Export CSV du journal filtré | Onglet Journal → *Export CSV* | Reprend exactement les lignes actuellement affichées (filtre de statut + recherche + tri) |
-| Export PDF du journal filtré | Onglet Journal → *Export PDF* | Même principe, rendu en PDF tabulaire côté serveur |
-| Rapport hebdomadaire automatique | Onglet Alertes → *Rapport hebdomadaire par e-mail* | Résumé du trafic, des alertes et des clients inactifs, envoyé chaque lundi matin |
-| Vue Conformité | Onglet Conformité | Clients actifs sans connexion depuis 7/15/30/60/90 jours (ou jamais connectés), exportable en CSV/PDF |
-
-#### 7.9.1 Export CSV/PDF : cohérence avec ce qui est affiché
-
-L'export CSV est généré **côté navigateur**, directement à partir des lignes déjà filtrées/triées visibles à l'écran (aucun appel serveur supplémentaire) : ce que vous exportez est exactement ce que vous voyez. L'export PDF envoie ces mêmes lignes déjà filtrées au serveur (`POST /api/reports/pdf`), qui les met en forme avec `fpdf2` (bibliothèque Python pure, aucune dépendance système comme `wkhtmltopdf` ou un navigateur headless).
-
-Le même mécanisme (`build_table_pdf`, générique) est réutilisé pour l'export PDF de la vue Conformité - toute nouvelle vue tabulaire du dashboard peut s'en servir sans dupliquer de logique de mise en page.
-
-#### 7.9.2 Vue Conformité : règle de classement
-
-Un client **actif** (non désactivé) est listé s'il n'a pas de handshake depuis au moins 7 jours, ou s'il ne s'est **jamais** connecté. Chaque client est classé dans le plus grand seuil qu'il dépasse (90/60/30/15/7 jours), trié du plus inactif au moins inactif. Les actions *Désactiver*/*Révoquer* de cette vue appellent exactement les mêmes endpoints que l'onglet Clients (voir section 7.6) - la vue Conformité n'est qu'une présentation différente, filtrée, des mêmes données.
-
-#### 7.9.3 Rapport hebdomadaire : configuration
-
-Le rapport réutilise le **canal e-mail déjà configuré dans l'onglet Alertes** (section 7.7) - aucune configuration SMTP séparée. Deux champs propres au rapport :
-- **Envoyer chaque lundi matin** (interrupteur, désactivé par défaut) ;
-- **Destinataire** (optionnel - si vide, réutilise le destinataire e-mail déjà configuré pour les alertes).
-
-Le contenu du rapport (`reports.build_weekly_summary`) : nombre de clients actifs, volume cumulé, nombre d'alertes déclenchées dans la semaine (détail inclus), et liste des clients inactifs depuis plus de 7 jours. Le bouton *Envoyer maintenant* déclenche un envoi immédiat, utile pour vérifier la mise en forme sans attendre lundi.
-
-Le cron correspondant (`/etc/cron.d/blockhash-weekly-report`, installé par `03-install-dashboard.sh`) :
-```bash
-0 8 * * 1 root python3 /opt/blockhash-dashboard/backend/reports.py send-weekly
-```
-Il ne fait rien tant que l'interrupteur n'est pas activé - comme pour l'alerting (section 7.7.3), aucun envoi surprise après une simple installation.
-
-#### 7.9.4 Limites connues
-
-- **Export PDF** : mise en page volontairement simple (tableau + en-tête), pas un moteur de rapport avec graphiques intégrés - pour un besoin plus riche, générez le CSV et importez-le dans l'outil de reporting déjà utilisé par votre organisation.
-- **Rapport hebdomadaire** : format texte brut (pas de mise en forme HTML), pour rester lisible sur n'importe quel client e-mail sans dépendance à un moteur de templates supplémentaire.
-- **Vue Conformité** : se base sur le dernier handshake connu (`wg show`), pas sur un historique d'audit complet - un client désactivé puis réactivé repart avec un compteur d'inactivité à zéro dès sa prochaine connexion.
-
-### 7.10 Temps réel, journal SQLite et fiabilité
-
-Fichiers concernés : `dashboard/backend/store.py` (table `logs`), `dashboard/backend/geoip.py`, `dashboard/backend/tests/` (suite pytest), route `/api/events/stream` et `/healthz`/`/api/version` dans `app.py`.
-
-#### 7.10.1 Le journal des connexions n'est plus lu depuis le CSV
-
-Jusqu'ici, l'API relisait l'intégralité de `tunnels.csv` à chaque requête pour en extraire une page. Le journal est maintenant stocké dans la même base SQLite que les métriques long terme (table `logs` de `store.py`), avec pagination, filtrage et tri **au niveau SQL** (`LIMIT`/`OFFSET`/`WHERE`/`ORDER BY`) - l'API ne charge jamais plus que la page demandée en mémoire, quelle que soit la taille de l'historique.
-
-Le fichier `tunnels.csv` continue d'être écrit par le même cron 5 minutes (`04-logging-monitoring.sh`) : ce n'est plus l'API qui le lit, mais il reste disponible comme trace texte brute (`grep`/`tail` sans outillage, export vers un autre système) - voir le commentaire en tête de ce script pour le détail.
-
-`GET /api/logs` accepte désormais :
-```
-?limit=50&offset=0&search=<texte>&status=<online|idle|never>&sort_key=<timestamp|rx_bytes|tx_bytes|endpoint|allowed_ips>&sort_dir=<asc|desc>
-```
-et renvoie `{"total": N, "rows": [...]}`. Le filtre `status` (qui dépend de l'état **live** des pairs, pas d'une colonne de la table `logs`) est résolu côté serveur en une liste de clés publiques avant d'être combiné à la pagination SQL - un filtre de statut actif ne réduit donc jamais le nombre de lignes réellement disponibles par page, contrairement à un filtrage naïf après coup.
-
-#### 7.10.2 Pagination côté interface
-
-L'onglet Journal affiche désormais une vraie barre de pagination (taille de page 25/50/100/200, boutons Précédent/Suivant, compteur "X–Y sur Z"), remplaçant l'ancienne limite fixe de 100-200 entrées sans navigation. Les exports CSV/PDF (section 7.9.1) portent sur la page actuellement affichée.
-
-#### 7.10.3 Temps réel : Server-Sent Events
-
-`GET /api/events/stream` pousse trois types d'événements dès qu'ils se produisent, plutôt que d'attendre le prochain cycle de rafraîchissement (30 secondes) :
-- `peer_connected` / `peer_disconnected` (changement de statut live d'un pair) ;
-- `alert` (nouvelle ligne dans l'historique des alertes, section 7.7).
-
-Le frontend s'y connecte via `EventSource` au chargement du dashboard et affiche un toast pour chaque événement. **Le rafraîchissement périodique de 30 secondes reste actif en parallèle** : si la connexion SSE échoue (proxy qui la bloque, navigateur ancien), le dashboard continue de fonctionner normalement, juste avec une latence de mise à jour plus longue - SSE est une amélioration de réactivité, pas une dépendance dure.
-
-**Pourquoi pas de bus d'événements partagé entre workers ?** Chaque connexion SSE relit indépendamment l'état déjà partagé sur disque/dans le noyau (`wg show`, la table `alerts`) toutes les 3 secondes et ne pousse un événement que si quelque chose a changé depuis sa dernière lecture. Peu importe quel worker gunicorn traite quelle connexion : la source de vérité est le système de fichiers, pas une mémoire de process partagée - pas besoin de Redis ni d'une file de messages pour ce cas d'usage.
-
-**Point d'attention deploiement**, déjà pris en compte par `03-install-dashboard.sh` : une connexion SSE reste ouverte plusieurs secondes. Avec des workers gunicorn "sync" par défaut, quelques onglets dashboard ouverts simultanément suffiraient à saturer tous les workers et bloquer le reste du trafic (y compris les fichiers statiques). Le service est donc configuré avec `--worker-class gthread --threads 4`, qui permet à chaque worker de gérer plusieurs connexions concurrentes via des threads, sans dépendance supplémentaire (contrairement à gevent/eventlet).
-
-**Authentification SSE** : `EventSource` ne permet pas d'envoyer d'en-têtes personnalisés. Si `DASHBOARD_TOKEN` est configuré, le jeton est accepté en paramètre de requête (`?token=...`) **uniquement** pour cette route précise - un compromis documenté (un jeton en query string peut apparaître dans des logs d'accès), acceptable car l'accès au port du dashboard est déjà restreint au niveau réseau (section 7.3).
-
-#### 7.10.4 Healthcheck complet et `/api/version`
-
-`GET /healthz` ne se contente plus de vérifier que Flask répond : il vérifie aussi que `wg0.conf` est lisible, que `wg show` répond réellement, et que la base de métriques est accessible. Renvoie `503` (et le détail de chaque vérification) si l'un de ces points est en échec - utile derrière une sonde de supervision externe ou un load balancer, qui autrement verrait un service "up" alors que WireGuard lui-même est en panne.
-
-`GET /api/version` renvoie la version du dashboard et l'état des interrupteurs de fonctionnalités (`client_management_enabled`, `system_ops_enabled`) - pratique pour un script d'inventaire ou de compatibilité.
-
-Par ailleurs, un gestionnaire d'erreurs générique (`@app.errorhandler(Exception)`) garantit qu'**aucune** erreur inattendue ne renvoie une page d'erreur HTML Werkzeug ou une trace Python brute au client : toujours du JSON propre (`{"error": "..."}`), le détail complet restant dans les logs serveur (`journalctl -u blockhash-dashboard`) pour le diagnostic. C'est ce filet de sécurité qui a permis de détecter, pendant le développement, un cas réel où `sudo` absent du système faisait remonter une erreur 500 brute plutôt qu'un message clair - corrigé pour renvoyer une erreur 502 explicite.
-
-#### 7.10.5 Carte des endpoints clients (GeoIP)
-
-L'onglet Monitoring affiche une carte (Leaflet + fond de carte OpenStreetMap) plaçant chaque client connecté selon la géolocalisation approximative de son IP publique d'endpoint.
-
-- Résolution via l'API gratuite [ip-api.com](https://ip-api.com/docs) (pas de clé requise, 45 requêtes/minute en usage non commercial), en un seul appel groupé (`/batch`) pour toutes les IP à résoudre.
-- **Mise en cache** dans la base SQLite (table `geoip_cache`, 7 jours par défaut, réglable via `GEOIP_TTL_SEC`) : une même IP n'est réinterrogée qu'une fois la semaine passée, très loin de la limite de 45 requêtes/minute même avec de nombreux clients.
-- Les IP privées/réservées (RFC1918, loopback, lien-local) ne sont **jamais** envoyées à l'API externe - elles ne peuvent de toute façon pas être géolocalisées et sont simplement absentes de la carte.
-- Nécessite un accès Internet sortant depuis le serveur vers `ip-api.com` (HTTP) et `tile.openstreetmap.org` (HTTPS, chargé directement par le navigateur de l'utilisateur, pas par le serveur) - à vérifier si votre pare-feu sortant est restrictif.
-- Best effort : si l'API GeoIP est injoignable, la carte s'affiche quand même (fond de carte vide de marqueurs) plutôt que de faire échouer tout l'onglet Monitoring.
-
-#### 7.10.6 Authentification durcie (verrouillage, audit, refus de démarrage)
-
-- **Refus de démarrage sans jeton** : si `DASHBOARD_TOKEN` est vide, l'application ne démarre plus (`sys.exit`) au lieu de tourner sans authentification par erreur. Pour un lab isolé où c'est un choix assumé, définissez `ALLOW_NO_AUTH=true` dans `/etc/blockhash/dashboard.env`.
-- **Verrouillage anti force-brute** : après `AUTH_MAX_ATTEMPTS` échecs d'authentification depuis la même IP (8 par défaut), les requêtes suivantes reçoivent `429 Too Many Requests` pendant `AUTH_LOCKOUT_SECONDS` (300 par défaut, réglables dans `dashboard.env`). Le compteur est en mémoire process (approximatif entre les workers gunicorn) - suffisant pour ralentir un script automatisé, pas conçu comme une protection distribuée de niveau WAF.
-- **Journal d'audit** (`/var/log/wireguard/audit.log`, créé et permissionné par `03-install-dashboard.sh`) : chaque requête mutante (`POST`/`PATCH`/`DELETE` sur `/api/...`) y est tracée avec IP source, méthode, chemin et code de statut - capturé génériquement via un hook `@app.after_request` plutôt que des appels manuels route par route, pour qu'aucune route actuelle ou future ne puisse être oubliée.
-
-#### 7.10.6 Tests automatisés
-
-Une suite pytest (`dashboard/backend/tests/`) couvre la logique la plus sensible aux régressions silencieuses :
-- `wgstate.py` : parsing des blocs `[Peer]` (actifs/désactivés), fusion avec `wg show`, heuristique de reconnexion ;
-- `store.py` : calcul de **delta** (pas la somme brute des compteurs cumulatifs - la régression la plus facile à réintroduire par erreur), pagination/filtrage du journal, dédup des alertes ;
-- `alerts.py` : masquage des secrets, fusion de config, évaluation des règles avec dédup ;
-- `app.py` : forme des réponses API, codes d'erreur (403 quand une fonctionnalité est désactivée, 422 sur un nom de client invalide), combinaison filtre de statut + pagination.
-
-Chaque test tourne dans un environnement **entièrement isolé** (répertoire temporaire, faux binaire `wg`, variables d'environnement dédiées via la fixture `wg_env`) - aucun test ne touche jamais `/etc/wireguard` ou `/etc/blockhash` du système réel.
-
-```bash
-cd dashboard/backend
-pip install -r requirements-dev.txt --break-system-packages
-pytest                      # toute la suite
-pytest tests/test_store.py -v   # un seul fichier, verbeux
-```
-
-`requirements-dev.txt` est volontairement séparé de `requirements.txt` : pytest n'a aucune raison d'être installé sur le serveur de production, seulement dans un environnement de développement/CI.
-
-### 7.11 Interface utilisateur avancée
-
-Fichiers concernés : `dashboard/frontend/css/style.css` (variables de thème), `dashboard/frontend/js/app.js`, `dashboard/frontend/js/vendor/leaflet.js`.
-
-| Fonctionnalité | Détail |
-|---|---|
-| Thème clair/sombre | Bouton dans la barre supérieure ; préférence mémorisée (`localStorage`) et réappliquée au prochain chargement |
-| Recherche globale | Barre unique dans la barre supérieure, cherche simultanément dans les clients (déjà chargés) et le journal (requête `/api/logs?search=` limitée à 5 résultats) ; un clic sur un résultat bascule vers la bonne vue et applique le filtre correspondant |
-| Mode NOC / plein écran | Masque la barre latérale, agrandit les chiffres clés, demande le plein écran navigateur - pensé pour un affichage continu sur un écran de salle |
-| Chargement avec squelettes | Les cartes chiffrées affichent un effet de scintillement pendant le tout premier chargement, plutôt qu'un simple "–" statique |
-| Menu mobile en tiroir | En dessous de 720px de large, la barre latérale devient un tiroir (bouton hamburger, fond assombri, fermeture automatique après un clic de navigation) plutôt qu'une barre horizontale à défilement - voir 7.11.1 |
-
-#### 7.11.1 Un vrai bug mobile trouvé par le test visuel
-
-Avec l'ajout progressif des onglets Conformité et Système, la barre latérale mobile (jusque-là transformée en barre horizontale défilante) ne pouvait plus afficher que 2 des 7 éléments de navigation, sans indice visuel qu'il y avait plus d'options en faisant défiler. Un test dans un vrai navigateur (Chromium headless, capture d'écran à 375px de large) l'a révélé immédiatement - remplacé par un tiroir de navigation classique (voir tableau ci-dessus), un motif d'interface mobile bien plus robuste face à l'ajout futur d'onglets.
-
-#### 7.11.2 Limites connues
-
-- **Recherche globale** : cherche les clients par nom/IP/endpoint et le journal par endpoint/IP/clé publique ; ne cherche pas (encore) dans l'historique des alertes ni les sauvegardes.
-- **Mode NOC** : le plein écran navigateur peut être refusé silencieusement dans certains contextes (ex. iframe) - l'effet visuel (barre latérale masquée, textes agrandis) reste appliqué même si le vrai plein écran système échoue.
-- **Thème clair** : conçu par inversion des mêmes variables CSS que le thème sombre ; les graphiques Chart.js/Leaflet gardent des couleurs adaptées automatiquement, mais un futur composant qui coderait une couleur en dur (plutôt que via une variable CSS) casserait le thème clair pour ce composant seulement.
+> **Pour aller plus loin :** la gestion complète des clients (activer/désactiver/renommer/expirer/limiter/régénérer/révoquer), le monitoring et l'alerting avancés, l'administration système, le reporting et les détails techniques (temps réel, SQLite, UI avancée) sont documentés dans le **chapitre 10 — Dashboard BLOCKHash : fonctionnalités avancées** (Partie II).
 
 ---
 
@@ -889,7 +528,396 @@ iperf3 -c 10.66.66.1
 
 ---
 
-## 10. Commandes Linux de référence
+# Partie II — Documentation de référence
+
+## 10. Dashboard BLOCKHash — Fonctionnalités avancées
+
+> Ce chapitre complète le chapitre 7 (installation et accès de base au dashboard). Il documente les fonctionnalités que vous activerez au fur et à mesure des besoins : gestion complète du cycle de vie des clients, monitoring et alerting, administration système, reporting, et détails techniques (temps réel, SQLite, interface avancée). Rien ici n'est requis pour terminer l'installation du LAB (chapitres 1 à 9) — consultez cette section quand vous en avez besoin.
+
+### 10.1 Gestion des clients depuis le dashboard
+
+Fichiers concernés : `dashboard/backend/wgctl.py` (logique privilégiée), `dashboard/backend/app.py` (endpoints `/api/clients/*`), `dashboard/frontend/js/app.js` (modales, tiroir d'historique), `scripts/06-manage-client.sh` et `scripts/07-check-expirations.sh` (équivalents CLI).
+
+Au-delà de la supervision en lecture seule (section 7), le dashboard permet désormais de **gérer le cycle de vie complet des clients WireGuard sans passer par SSH** :
+
+| Fonctionnalité | Où | Détail |
+|---|---|---|
+| Activer / désactiver un client | Carte client → bouton *Activer*/*Désactiver* | Retire ou remet le `[Peer]` en direct **sans supprimer** sa configuration (voir 10.1.2) |
+| Révoquer définitivement | Carte client → *Révoquer* (confirmation requise) | Supprime le bloc `[Peer]`, archive les clés dans `clients/revoked/` |
+| Ajouter un client | Bouton *Ajouter un client* (vue Clients) | Formulaire nom + expiration optionnelle → génère les clés, écrit dans `wg0.conf`, affiche le QR code et propose le `.conf` en téléchargement |
+| Renommer un client | Carte client → *Renommer* | Met à jour le commentaire `# Client :` et renomme les fichiers `clients/<nom>.*` associés |
+| Expiration automatique | Carte client → *Expiration* | Date au-delà de laquelle le client est **désactivé automatiquement** (cron quotidien, voir 10.1.4) |
+| Limitation de bande passante | Carte client → *Bande passante* | Débit montant/descendant en Mb/s par pair (`tc`/HTB, voir 10.1.5 - fonctionnalité avancée, best effort) |
+| Régénérer la config/QR | Carte client → *Régénérer* | Nouvelles clés + PSK pour un client existant (même nom, même IP) ; utile en cas de suspicion de compromission |
+| Revoir la config/QR existants | Carte client → *QR / Config* | Réaffiche le `.conf` et le QR déjà générés, sans toucher aux clés |
+| Historique par client | Carte client → *Historique* | Tiroir dédié : graphique de débit propre au client, dernière IP endpoint vue, nombre de reconnexions estimé (voir 10.1.5) |
+
+#### 10.1.1 Sécurité : élévation des droits sudo
+
+Les fonctionnalités ci-dessus **nécessitent d'élargir les droits sudo** de `www-data` (l'utilisateur sous lequel tourne gunicorn), qui n'avait jusque-là que le droit d'exécuter `wg show wg0 dump` (lecture seule, non destructif).
+
+Plutôt que d'autoriser directement `wg set`, l'édition de `wg0.conf` ou `wg syncconf` en sudoers (ce qui reviendrait à donner à `www-data` un accès quasi-root à l'interface réseau), ce LAB introduit un **point d'entrée unique et privilégié** : `dashboard/backend/wgctl.py`.
+
+```bash
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/wg show wg0 dump
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgctl.py *
+```
+
+Ce choix de conception limite le risque de plusieurs façons :
+
+- **Surface d'attaque réduite** : `www-data` ne peut exécuter *que* les actions que `wgctl.py` expose (`add`, `enable`, `disable`, `rename`, `revoke`, `regenerate`, `set-expiry`, `set-bandwidth`, `check-expirations`, `list`), jamais une commande shell arbitraire.
+- **Validation systématique** : chaque nom de client est vérifié par une expression régulière stricte (`[A-Za-z0-9_-]{1,32}`) avant toute écriture disque, ce qui empêche l'injection de commande ou l'écriture en dehors de `/etc/wireguard/`.
+- **Fichier root:root, non inscriptible par www-data** : `03-install-dashboard.sh` verrouille `wgctl.py` en `root:root` / `chmod 750` **après** avoir donné la propriété du reste de l'application à `www-data`. C'est essentiel : si `www-data` pouvait modifier `wgctl.py`, la règle sudoers ci-dessus lui donnerait un accès root complet (élévation de privilèges triviale). Le script réapplique cette vérification une seconde fois en toute fin d'installation par sécurité.
+- **Écriture atomique** : `wg0.conf` est toujours réécrit dans un fichier temporaire puis déplacé (`os.replace`), jamais modifié en place, pour éviter une configuration à moitié écrite en cas de coupure.
+- **JSON uniquement sur stdout** : `wgctl.py` ne renvoie jamais de trace Python brute à l'appelant (donc au navigateur), afin de ne pas fuiter de détails d'implémentation en cas d'erreur.
+
+**Si vous préférez garder le dashboard strictement en lecture seule** (recommandé pour un dashboard exposé plus largement, ou en environnement de démonstration public) :
+
+```bash
+# /etc/blockhash/dashboard.env
+CLIENT_MANAGEMENT_ENABLED=false
+```
+
+puis `sudo systemctl restart blockhash-dashboard`. Le frontend détecte automatiquement ce mode et masque les actions de gestion (voir la bannière *"Gestion des clients indisponible"* dans la vue Clients). Vous pouvez alors soit retirer la règle sudoers `wgctl.py`, soit la laisser en place sans risque supplémentaire tant que le service ne l'utilise pas.
+
+Comme toujours dans ce LAB : **ne déployez pas ces droits élargis sur un serveur exposé directement à Internet sans restreindre l'accès au dashboard** (NSG/`ufw` + jeton d'API, voir sections 7.3 et 11).
+
+#### 10.1.2 Comment un client désactivé est représenté
+
+`wgctl.py` ne supprime jamais un bloc `[Peer]` lors d'une désactivation : il préfixe chacune de ses lignes d'un `#` supplémentaire, ce qui le rend invisible pour `wg-quick strip` (donc pour `wg syncconf`) sans le retirer du fichier :
+
+```conf
+[Peer]
+# Client : ordinateur-alice
+# Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
+PublicKey = ...
+PresharedKey = ...
+AllowedIPs = 10.66.66.2/32
+```
+
+devient, une fois désactivé :
+
+```conf
+#[Peer]
+## Client : ordinateur-alice
+## Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
+#PublicKey = ...
+#PresharedKey = ...
+#AllowedIPs = 10.66.66.2/32
+```
+
+Réactiver le client retire ce préfixe et relance `wg syncconf` : le pair revient **avec les mêmes clés et la même IP**, sans que l'utilisateur final ait besoin de réimporter son fichier `.conf`.
+
+#### 10.1.3 Utilisation en CLI (sans passer par le dashboard)
+
+Toutes ces actions restent disponibles en SSH via `scripts/06-manage-client.sh`, une fine couche au-dessus de `wgctl.py` :
+
+```bash
+sudo ./06-manage-client.sh add ordinateur-alice 30      # + 30 jours avant expiration
+sudo ./06-manage-client.sh disable ordinateur-alice
+sudo ./06-manage-client.sh enable ordinateur-alice
+sudo ./06-manage-client.sh rename ordinateur-alice pc-alice-rh
+sudo ./06-manage-client.sh expiry pc-alice-rh 2026-12-31
+sudo ./06-manage-client.sh bandwidth pc-alice-rh 20 50   # 20 Mb/s upload, 50 Mb/s download
+sudo ./06-manage-client.sh regenerate pc-alice-rh
+sudo ./06-manage-client.sh revoke pc-alice-rh
+sudo ./06-manage-client.sh list
+```
+
+#### 10.1.4 Expiration automatique (cron)
+
+`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-expirations`, qui exécute chaque nuit à 3h :
+
+```bash
+python3 /opt/blockhash-dashboard/backend/wgctl.py check-expirations
+```
+
+Tout client dont la date d'expiration est dépassée est désactivé (au sens de 10.1.2, pas révoqué) et journalisé dans `/var/log/wireguard/expirations.log`. Vous pouvez lancer la même vérification manuellement avec `sudo ./scripts/07-check-expirations.sh`.
+
+#### 10.1.5 Limites connues
+
+- **Bande passante (`tc`/HTB)** : fonctionnalité *avancée* et *best effort*, explicitement signalée comme telle dans l'énoncé de ce TP. Elle nécessite le module noyau `ifb` et `iproute2` (installés par `03-install-dashboard.sh`). Selon le noyau/la distribution, certaines commandes `tc` peuvent échouer silencieusement côté noyau : le dashboard vous le signale (`tc_applied: false` dans la réponse API, toast d'erreur côté UI) plutôt que de prétendre que la limite est active alors qu'elle ne l'est pas. La limite "logique" (Mb/s enregistrés) est de toute façon conservée dans `wg0.conf` même si `tc` échoue, pour ne pas perdre l'intention si vous corrigez le problème plus tard.
+- **Compteur de reconnexions** : le journal `tunnels.csv` est échantillonné toutes les 5 minutes (cron, voir section 8), pas événementiel. Le dashboard approxime les reconnexions en comptant les changements d'IP endpoint et les écarts de plus de 10 minutes entre deux captures consécutives- une heuristique raisonnable pour un LAB, pas un décompte exact au sens d'un pare-feu stateful.
+- **Régénération de clés** : régénérer un client change ses clés WireGuard ; l'ancien fichier `.conf` distribué au client cesse immédiatement de fonctionner et **doit être réimporté** (nouveau QR code/`.conf` fourni par le dashboard).
+
+### 10.2 Monitoring et alerting avancés
+
+Fichiers concernés : `dashboard/backend/store.py` (métriques long terme + historique d'alertes, SQLite), `dashboard/backend/system_monitor.py` (CPU/RAM/disque/services), `dashboard/backend/anomalies.py` (détection simple), `dashboard/backend/alerts.py` (moteur de notification), `dashboard/backend/settings_store.py` (réglages ajustables à chaud), `dashboard/backend/wgstate.py` (logique de lecture partagée, voir 10.2.1), `scripts/09-check-alerts.sh` (cron), onglets **Monitoring** et **Alertes** du dashboard.
+
+| Fonctionnalité | Où | Détail |
+|---|---|---|
+| Historique long terme du débit | Onglet Monitoring, sélecteur 1h/24h/7j/30j | Graphique dédié, alimenté par une petite base **SQLite** (pas le CSV) pour rester rapide même sur 30 jours |
+| Alertes configurables | Onglet Alertes | Email (SMTP), Slack, Discord, Telegram - règles : inactivité prolongée, seuil de débit, service down |
+| Seuil "en ligne" ajustable | Onglet Alertes → Réglages généraux | Remplace la constante `HANDSHAKE_ONLINE_THRESHOLD_SEC` figée en dur ; persistée dans un fichier JSON, prise en compte immédiatement (pas de redémarrage du service) |
+| Monitoring du serveur hôte | Onglet Monitoring → Système hôte | CPU, RAM, disque, uptime (via `psutil`) |
+| Détection d'anomalies simples | Onglet Monitoring → Anomalies détectées | Pic de trafic inhabituel (z-score sur le débit récent) ; endpoint qui change trop souvent (indice de clé compromise/partagée) |
+| Statut des services systemd | Onglet Monitoring (Système hôte) et Alertes (règle "service down") | `wg-quick@wg0` et `blockhash-dashboard`, via `systemctl is-active` |
+
+#### 10.2.1 Pourquoi une base SQLite en plus du CSV existant ?
+
+Le CSV (`tunnels.csv`, section 8) reste la source du journal brut et de l'heuristique de reconnexion : le relire intégralement pour un graphique sur 30 jours (des milliers de lignes par client) serait lent et fragile. `store.py` ajoute donc une petite base SQLite (`/var/log/wireguard/blockhash.db`) alimentée par un hook ajouté au **même** script de capture 5 minutes (`wg-log-snapshot.sh`, voir section 8) : rien de nouveau à surveiller, juste une écriture supplémentaire à chaque cycle déjà existant.
+
+**Point technique important** : les compteurs `rx_bytes`/`tx_bytes` renvoyés par `wg show` sont **cumulatifs depuis le démarrage de l'interface**, pas un débit instantané. `store.py` stocke les valeurs brutes puis calcule le **delta** entre deux échantillons consécutifs au moment de la requête (`store.query_series`), pour obtenir un vrai débit par intervalle. Le graphique historique de la vue Monitoring utilise cette méthode ; le petit graphique "Débit du tunnel" de la vue d'ensemble (Étape 4, section 7.3) reste basé sur le CSV et somme les compteurs bruts par fenêtre de 5 minutes - une simplification héritée, suffisante pour un coup d'œil rapide sur les 12 derniers points, mais moins rigoureuse que le nouveau graphique à sélecteur de plage.
+
+Pour eviter toute duplication de logique de lecture entre le service web (`app.py`, sous Flask/gunicorn) et les scripts cron indépendants (`alerts.py`), la lecture de `wg0.conf` et de `wg show` a été extraite dans `wgstate.py`, un module **sans aucune dépendance externe** (bibliothèque standard uniquement) que les deux réutilisent.
+
+#### 10.2.2 Détection d'anomalies : ce que ça fait (et ne fait pas)
+
+- **Pic de trafic** : compare le dernier bucket de débit (fenêtre 24h) à la moyenne et à l'écart-type des buckets précédents ; signale si le dernier dépasse `moyenne + 3×écart-type` (et un plancher minimal pour ne pas signaler du bruit sur un tunnel presque silencieux).
+- **Endpoint flapping** : réutilise l'heuristique de reconnexion déjà calculée pour l'historique par client (section 10.1) ; au-delà de 6 changements d'endpoint en 24h, le client est signalé - un indice possible de clé privée partagée entre plusieurs appareils, pas une certitude.
+
+Ce n'est **pas** un IDS : pas de machine learning, pas de base de référence par client, pas de whitelisting d'IP. C'est volontairement simple et lisible, pour un contexte pédagogique - libre à vous de le remplacer par une vraie stack d'observabilité (Prometheus + Grafana + Alertmanager, par exemple) si ce LAB grandit.
+
+#### 10.2.3 Sécurité de l'alerting
+
+Contrairement à la gestion des clients (section 10.1.1), **l'alerting ne nécessite aucune extension des droits sudo**. `alerts.py` ne fait que :
+- lire `wg0.conf` et `wg show wg0 dump` (déjà autorisé) ;
+- lire/écrire son propre fichier de configuration sous `/etc/blockhash/alerts-config.json` (appartient à `www-data`, `chmod 600` - ce fichier contient des secrets : mot de passe SMTP, URLs de webhook, jeton de bot Telegram) ;
+- effectuer des requêtes HTTP sortantes vers les webhooks/API de notification configurés.
+
+**Masquage des secrets** : `GET /api/alerts/config` ne renvoie jamais un secret en clair - un champ déjà configuré est renvoyé sous la forme `••••••••`. Le formulaire du dashboard renvoie cette même valeur telle quelle si vous ne la modifiez pas (voir `alerts.py:save_config`), donc resauvegarder le formulaire sans toucher au mot de passe SMTP ne l'efface pas. Si vous consultez ce fichier directement sur le serveur (`sudo cat /etc/blockhash/alerts-config.json`), les secrets y sont en clair - c'est un fichier de configuration serveur, pas une couche de chiffrement.
+
+**L'alerting est désactivé par défaut** (`enabled: false`) : aucune notification n'est envoyée tant que vous ne l'activez pas explicitement depuis l'onglet Alertes.
+
+#### 10.2.4 Activation du cron d'évaluation des règles
+
+`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-alerts`, qui exécute toutes les 5 minutes :
+
+```bash
+python3 /opt/blockhash-dashboard/backend/alerts.py check
+```
+
+Chaque règle a son propre délai de répétition (`cooldowns_sec` dans la config) pour éviter le spam : par défaut, 1 alerte d'inactivité par client et par jour, 1 alerte de débit par client et par heure, 1 alerte de service down toutes les 30 minutes tant que le problème persiste. Vous pouvez déclencher une vérification manuelle avec `sudo python3 /opt/blockhash-dashboard/backend/alerts.py check`, ou tester un canal précis sans attendre une vraie condition d'alerte avec le bouton *Tester* de chaque canal dans le dashboard.
+
+#### 10.2.6 Réinitialiser la déduplication (sans SSH)
+
+Chaque règle qui s'est déclenchée reste "en pause" pendant son `cooldowns_sec` (voir 10.2.4) : c'est voulu, pour éviter qu'un client resté inactif ne déclenche une notification à chaque passage du cron. Mais en phase de test - par exemple pour vérifier qu'un webhook Slack fonctionne vraiment en conditions réelles - attendre le cooldown est peu pratique.
+
+L'onglet **Alertes** affiche un panneau *Règles actuellement en pause (déduplication)* qui liste chaque règle en cooldown avec le temps écoulé depuis son dernier déclenchement, et permet de :
+- **Réinitialiser** une règle précise (le bouton en face de chaque ligne) ;
+- **Tout réinitialiser** (bouton en haut du panneau, avec confirmation).
+
+Techniquement, cela vide (entièrement ou une seule ligne selon le cas) la table `alert_state` de `store.py`, via `GET/DELETE /api/alerts/dedup` et `DELETE /api/alerts/dedup/<rule_key>`. Cette table ne stocke que des horodatages de dédup - la vider ne supprime ni l'historique des alertes déjà envoyées (table `alerts`, affichée juste en dessous), ni la configuration des règles/canaux.
+
+Pour les mêmes besoins en CLI (sans dashboard) :
+```bash
+python3 /opt/blockhash-dashboard/backend/store.py dedup-list
+python3 /opt/blockhash-dashboard/backend/store.py dedup-clear --rule-key "inactive:<clé_publique_du_client>"
+python3 /opt/blockhash-dashboard/backend/store.py dedup-clear   # sans --rule-key : reinitialise tout
+```
+
+#### 10.2.7 Limites connues
+
+- **Détection d'anomalies** : heuristiques simples (voir 10.2.2), pas un système de détection d'intrusion.
+- **Dédup des alertes** : si l'envoi d'une notification échoue (ex. webhook injoignable), la règle est quand même marquée comme "envoyée" pour la durée du cooldown - conçu pour un LAB, pas pour une garantie de livraison. Consultez `/var/log/wireguard/alerts.log` en cas de doute, ou réinitialisez la règle concernée depuis l'onglet Alertes (voir 10.2.6) une fois le problème corrigé.
+- **`cpu_percent` au premier appel** : `psutil.cpu_percent()` a besoin d'un point de comparaison ; le tout premier appel après le démarrage du service renvoie `null` plutôt qu'un chiffre trompeur (`0.0`).
+
+### 10.3 Administration système
+
+Fichiers concernés : `dashboard/backend/wgops.py` (opérations privilégiées), `dashboard/backend/servers_store.py` (registre multi-serveurs), onglet **Système** du dashboard.
+
+| Fonctionnalité | Où | Détail |
+|---|---|---|
+| Sauvegarde/restauration de `wg0.conf` | Onglet Système → *Sauvegardes* | Versionné sur disque (`/etc/wireguard/backups/`), avec **diff** avant application et sauvegarde de sécurité automatique avant toute restauration |
+| Rotation assistée des clés serveur | Onglet Système → *Rotation des clés serveur* | Régénère la paire de clés du serveur **et** le `.conf` de chaque client existant (leurs propres clés ne changent pas) en une seule opération atomique |
+| Redémarrage du tunnel | Onglet Système → *Maintenance du tunnel* | `systemctl restart wg-quick@wg0`, avec confirmation côté UI |
+| Export d'audit | Onglet Système → *Export d'audit* | Zip de tous les `.conf` clients + `wg0.conf` + un manifeste CSV non sensible (nom, clé publique, IP, statut) |
+| Multi-serveurs | Onglet Système → *Multi-serveurs* | Supervision agrégée de plusieurs instances BLOCKHash (voir 10.3.5) |
+
+#### 10.3.1 Sécurité : un second point d'entrée privilégié
+
+Comme pour la gestion des clients (section 10.1.1), ces opérations passent par un **point d'entrée unique et privilégié** : `dashboard/backend/wgops.py`, avec exactement les mêmes garanties que `wgctl.py` (root:root, `chmod 750`, validation stricte des paramètres, écriture atomique, jamais de trace Python brute renvoyée).
+
+Ce module est volontairement **séparé** de `wgctl.py` plutôt que d'y ajouter des actions, et contrôlé par un interrupteur dédié `SYSTEM_OPS_ENABLED` (distinct de `CLIENT_MANAGEMENT_ENABLED`) : la rotation des clés serveur et le redémarrage du tunnel ont un rayon d'impact bien plus large qu'ajouter ou révoquer un client - un exploitant peut vouloir activer la gestion des clients depuis le web sans exposer ces opérations plus sensibles.
+
+```bash
+# /etc/blockhash/dashboard.env
+SYSTEM_OPS_ENABLED=false   # masque ces actions sans toucher a CLIENT_MANAGEMENT_ENABLED
+```
+
+La règle sudoers ajoutée par `03-install-dashboard.sh` :
+```bash
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgops.py *
+```
+
+#### 10.3.2 Sauvegardes : ce qui est protégé
+
+- Chaque sauvegarde est un fichier horodaté (`wg0_AAAAMMJJ-HHMMSS_<label>.conf`) sous `/etc/wireguard/backups/`, avec une rotation automatique (50 sauvegardes conservées par défaut, réglable via `WG_MAX_BACKUPS`).
+- **Avant toute restauration**, une sauvegarde de l'état actuel est créée automatiquement (label `avant-restauration`) - une restauration malheureuse reste donc toujours réversible.
+- Le **diff** (`diff-backup`) utilise `difflib` (bibliothèque standard Python) pour comparer une sauvegarde au `wg0.conf` actuel, ligne par ligne, avant de décider de restaurer.
+- Les noms de fichiers de sauvegarde sont strictement validés côté serveur (regex + vérification que le chemin résolu reste dans le dossier des sauvegardes) pour empêcher tout traversal de chemin depuis l'API.
+
+#### 10.3.3 Rotation des clés serveur : ce qui se passe exactement
+
+1. Sauvegarde de sécurité de `wg0.conf` (label `avant-rotation-cles`).
+2. Nouvelle paire de clés générée (`wg genkey` / `wg pubkey`).
+3. `wg0.conf`, `server_private.key` et `server_public.key` mis à jour.
+4. `wg syncconf` recharge l'interface à chaud, sans couper les tunnels déjà établis.
+5. **Chaque** fichier `.conf` client sous `clients/*.conf` est réécrit : seule sa ligne `PublicKey` (celle qui pointe vers le **serveur**, dans le bloc `[Peer]` du fichier **client**) est remplacée par la nouvelle clé publique serveur. Les clés propres au client (sa `PrivateKey`, son `PresharedKey`, son IP) ne changent pas.
+6. Le dashboard affiche la liste des clients concernés et rappelle qu'ils doivent réimporter leur configuration (nouveau `.conf`/QR à redistribuer, voir section 10.1 pour régénérer un client individuellement si besoin).
+
+**Quand l'utiliser** : rotation périodique de routine (tous les 6-12 mois, voir section 12), ou en urgence si la clé privée du serveur est suspectée compromise.
+
+#### 10.3.4 Export d'audit : contenu et sensibilité
+
+Le zip généré contient :
+- `clients/*.conf` -configuration complète de chaque client, **clé privée incluse** (rappel : ce LAB conserve les clés privées client côté serveur pour la simplicité, voir section 6) ;
+- `wg0.conf` -configuration serveur complète (clé privée serveur incluse) ;
+- `manifest.csv` -un résumé non sensible (nom, clé publique, IP, statut) pour un usage d'audit léger sans manipuler les clés privées.
+
+**Ce zip est aussi sensible que l'ensemble de `/etc/wireguard/`** : à traiter avec les mêmes précautions (transfert chiffré, pas de stockage sur un partage non protégé). Les fichiers d'export sont écrits dans `/tmp/blockhash-exports/` et purgés automatiquement au bout d'une heure.
+
+#### 10.3.5 Multi-serveurs : portée et limites
+
+Le registre (`servers_store.py`) permet d'ajouter d'autres instances BLOCKHash (nom, URL, jeton d'API optionnel) et d'afficher un résumé agrégé (tunnels actifs, injoignabilité) sans quitter le dashboard courant. Techniquement :
+
+- Le jeton d'API de chaque serveur distant est stocké côté serveur uniquement (`/etc/blockhash/servers.json`, `chmod 600`) et **jamais transmis au navigateur** - c'est le backend de *cette* instance qui interroge `/api/overview` du serveur distant pour le compte de l'utilisateur, puis relaie le résultat.
+- **Ceci reste une supervision agrégée, pas une fédération complète** : gérer les clients, consulter le journal détaillé ou configurer les alertes d'un serveur distant se fait en ouvrant *son propre* dashboard (bouton *Ouvrir*), pas depuis cette instance. Étendre chaque vue (Clients, Journal, Monitoring...) pour qu'elle soit elle-même multi-serveur est un chantier plus large, volontairement hors scope de cette itération.
+- Un serveur injoignable (mauvaise URL, jeton invalide, pare-feu) est signalé sans faire échouer le reste de la vue.
+
+### 10.4 Reporting et export
+
+Fichiers concernés : `dashboard/backend/reports.py`, onglets Journal (export), Alertes (rapport hebdomadaire) et Conformité.
+
+| Fonctionnalité | Où | Détail |
+|---|---|---|
+| Export CSV du journal filtré | Onglet Journal → *Export CSV* | Reprend exactement les lignes actuellement affichées (filtre de statut + recherche + tri) |
+| Export PDF du journal filtré | Onglet Journal → *Export PDF* | Même principe, rendu en PDF tabulaire côté serveur |
+| Rapport hebdomadaire automatique | Onglet Alertes → *Rapport hebdomadaire par e-mail* | Résumé du trafic, des alertes et des clients inactifs, envoyé chaque lundi matin |
+| Vue Conformité | Onglet Conformité | Clients actifs sans connexion depuis 7/15/30/60/90 jours (ou jamais connectés), exportable en CSV/PDF |
+
+#### 10.4.1 Export CSV/PDF : cohérence avec ce qui est affiché
+
+L'export CSV est généré **côté navigateur**, directement à partir des lignes déjà filtrées/triées visibles à l'écran (aucun appel serveur supplémentaire) : ce que vous exportez est exactement ce que vous voyez. L'export PDF envoie ces mêmes lignes déjà filtrées au serveur (`POST /api/reports/pdf`), qui les met en forme avec `fpdf2` (bibliothèque Python pure, aucune dépendance système comme `wkhtmltopdf` ou un navigateur headless).
+
+Le même mécanisme (`build_table_pdf`, générique) est réutilisé pour l'export PDF de la vue Conformité - toute nouvelle vue tabulaire du dashboard peut s'en servir sans dupliquer de logique de mise en page.
+
+#### 10.4.2 Vue Conformité : règle de classement
+
+Un client **actif** (non désactivé) est listé s'il n'a pas de handshake depuis au moins 7 jours, ou s'il ne s'est **jamais** connecté. Chaque client est classé dans le plus grand seuil qu'il dépasse (90/60/30/15/7 jours), trié du plus inactif au moins inactif. Les actions *Désactiver*/*Révoquer* de cette vue appellent exactement les mêmes endpoints que l'onglet Clients (voir section 10.1) - la vue Conformité n'est qu'une présentation différente, filtrée, des mêmes données.
+
+#### 10.4.3 Rapport hebdomadaire : configuration
+
+Le rapport réutilise le **canal e-mail déjà configuré dans l'onglet Alertes** (section 10.2) - aucune configuration SMTP séparée. Deux champs propres au rapport :
+- **Envoyer chaque lundi matin** (interrupteur, désactivé par défaut) ;
+- **Destinataire** (optionnel - si vide, réutilise le destinataire e-mail déjà configuré pour les alertes).
+
+Le contenu du rapport (`reports.build_weekly_summary`) : nombre de clients actifs, volume cumulé, nombre d'alertes déclenchées dans la semaine (détail inclus), et liste des clients inactifs depuis plus de 7 jours. Le bouton *Envoyer maintenant* déclenche un envoi immédiat, utile pour vérifier la mise en forme sans attendre lundi.
+
+Le cron correspondant (`/etc/cron.d/blockhash-weekly-report`, installé par `03-install-dashboard.sh`) :
+```bash
+0 8 * * 1 root python3 /opt/blockhash-dashboard/backend/reports.py send-weekly
+```
+Il ne fait rien tant que l'interrupteur n'est pas activé - comme pour l'alerting (section 10.2.3), aucun envoi surprise après une simple installation.
+
+#### 10.4.4 Limites connues
+
+- **Export PDF** : mise en page volontairement simple (tableau + en-tête), pas un moteur de rapport avec graphiques intégrés - pour un besoin plus riche, générez le CSV et importez-le dans l'outil de reporting déjà utilisé par votre organisation.
+- **Rapport hebdomadaire** : format texte brut (pas de mise en forme HTML), pour rester lisible sur n'importe quel client e-mail sans dépendance à un moteur de templates supplémentaire.
+- **Vue Conformité** : se base sur le dernier handshake connu (`wg show`), pas sur un historique d'audit complet - un client désactivé puis réactivé repart avec un compteur d'inactivité à zéro dès sa prochaine connexion.
+
+### 10.5 Temps réel, journal SQLite et fiabilité
+
+Fichiers concernés : `dashboard/backend/store.py` (table `logs`), `dashboard/backend/geoip.py`, `dashboard/backend/tests/` (suite pytest), route `/api/events/stream` et `/healthz`/`/api/version` dans `app.py`.
+
+#### 10.5.1 Le journal des connexions n'est plus lu depuis le CSV
+
+Jusqu'ici, l'API relisait l'intégralité de `tunnels.csv` à chaque requête pour en extraire une page. Le journal est maintenant stocké dans la même base SQLite que les métriques long terme (table `logs` de `store.py`), avec pagination, filtrage et tri **au niveau SQL** (`LIMIT`/`OFFSET`/`WHERE`/`ORDER BY`) - l'API ne charge jamais plus que la page demandée en mémoire, quelle que soit la taille de l'historique.
+
+Le fichier `tunnels.csv` continue d'être écrit par le même cron 5 minutes (`04-logging-monitoring.sh`) : ce n'est plus l'API qui le lit, mais il reste disponible comme trace texte brute (`grep`/`tail` sans outillage, export vers un autre système) - voir le commentaire en tête de ce script pour le détail.
+
+`GET /api/logs` accepte désormais :
+```
+?limit=50&offset=0&search=<texte>&status=<online|idle|never>&sort_key=<timestamp|rx_bytes|tx_bytes|endpoint|allowed_ips>&sort_dir=<asc|desc>
+```
+et renvoie `{"total": N, "rows": [...]}`. Le filtre `status` (qui dépend de l'état **live** des pairs, pas d'une colonne de la table `logs`) est résolu côté serveur en une liste de clés publiques avant d'être combiné à la pagination SQL - un filtre de statut actif ne réduit donc jamais le nombre de lignes réellement disponibles par page, contrairement à un filtrage naïf après coup.
+
+#### 10.5.2 Pagination côté interface
+
+L'onglet Journal affiche désormais une vraie barre de pagination (taille de page 25/50/100/200, boutons Précédent/Suivant, compteur "X–Y sur Z"), remplaçant l'ancienne limite fixe de 100-200 entrées sans navigation. Les exports CSV/PDF (section 10.4.1) portent sur la page actuellement affichée.
+
+#### 10.5.3 Temps réel : Server-Sent Events
+
+`GET /api/events/stream` pousse trois types d'événements dès qu'ils se produisent, plutôt que d'attendre le prochain cycle de rafraîchissement (30 secondes) :
+- `peer_connected` / `peer_disconnected` (changement de statut live d'un pair) ;
+- `alert` (nouvelle ligne dans l'historique des alertes, section 10.2).
+
+Le frontend s'y connecte via `EventSource` au chargement du dashboard et affiche un toast pour chaque événement. **Le rafraîchissement périodique de 30 secondes reste actif en parallèle** : si la connexion SSE échoue (proxy qui la bloque, navigateur ancien), le dashboard continue de fonctionner normalement, juste avec une latence de mise à jour plus longue - SSE est une amélioration de réactivité, pas une dépendance dure.
+
+**Pourquoi pas de bus d'événements partagé entre workers ?** Chaque connexion SSE relit indépendamment l'état déjà partagé sur disque/dans le noyau (`wg show`, la table `alerts`) toutes les 3 secondes et ne pousse un événement que si quelque chose a changé depuis sa dernière lecture. Peu importe quel worker gunicorn traite quelle connexion : la source de vérité est le système de fichiers, pas une mémoire de process partagée - pas besoin de Redis ni d'une file de messages pour ce cas d'usage.
+
+**Point d'attention deploiement**, déjà pris en compte par `03-install-dashboard.sh` : une connexion SSE reste ouverte plusieurs secondes. Avec des workers gunicorn "sync" par défaut, quelques onglets dashboard ouverts simultanément suffiraient à saturer tous les workers et bloquer le reste du trafic (y compris les fichiers statiques). Le service est donc configuré avec `--worker-class gthread --threads 4`, qui permet à chaque worker de gérer plusieurs connexions concurrentes via des threads, sans dépendance supplémentaire (contrairement à gevent/eventlet).
+
+**Authentification SSE** : `EventSource` ne permet pas d'envoyer d'en-têtes personnalisés. Si `DASHBOARD_TOKEN` est configuré, le jeton est accepté en paramètre de requête (`?token=...`) **uniquement** pour cette route précise - un compromis documenté (un jeton en query string peut apparaître dans des logs d'accès), acceptable car l'accès au port du dashboard est déjà restreint au niveau réseau (section 7.3).
+
+#### 10.5.4 Healthcheck complet et `/api/version`
+
+`GET /healthz` ne se contente plus de vérifier que Flask répond : il vérifie aussi que `wg0.conf` est lisible, que `wg show` répond réellement, et que la base de métriques est accessible. Renvoie `503` (et le détail de chaque vérification) si l'un de ces points est en échec - utile derrière une sonde de supervision externe ou un load balancer, qui autrement verrait un service "up" alors que WireGuard lui-même est en panne.
+
+`GET /api/version` renvoie la version du dashboard et l'état des interrupteurs de fonctionnalités (`client_management_enabled`, `system_ops_enabled`) - pratique pour un script d'inventaire ou de compatibilité.
+
+Par ailleurs, un gestionnaire d'erreurs générique (`@app.errorhandler(Exception)`) garantit qu'**aucune** erreur inattendue ne renvoie une page d'erreur HTML Werkzeug ou une trace Python brute au client : toujours du JSON propre (`{"error": "..."}`), le détail complet restant dans les logs serveur (`journalctl -u blockhash-dashboard`) pour le diagnostic. C'est ce filet de sécurité qui a permis de détecter, pendant le développement, un cas réel où `sudo` absent du système faisait remonter une erreur 500 brute plutôt qu'un message clair - corrigé pour renvoyer une erreur 502 explicite.
+
+#### 10.5.5 Carte des endpoints clients (GeoIP)
+
+L'onglet Monitoring affiche une carte (Leaflet + fond de carte OpenStreetMap) plaçant chaque client connecté selon la géolocalisation approximative de son IP publique d'endpoint.
+
+- Résolution via l'API gratuite [ip-api.com](https://ip-api.com/docs) (pas de clé requise, 45 requêtes/minute en usage non commercial), en un seul appel groupé (`/batch`) pour toutes les IP à résoudre.
+- **Mise en cache** dans la base SQLite (table `geoip_cache`, 7 jours par défaut, réglable via `GEOIP_TTL_SEC`) : une même IP n'est réinterrogée qu'une fois la semaine passée, très loin de la limite de 45 requêtes/minute même avec de nombreux clients.
+- Les IP privées/réservées (RFC1918, loopback, lien-local) ne sont **jamais** envoyées à l'API externe - elles ne peuvent de toute façon pas être géolocalisées et sont simplement absentes de la carte.
+- Nécessite un accès Internet sortant depuis le serveur vers `ip-api.com` (HTTP) et `tile.openstreetmap.org` (HTTPS, chargé directement par le navigateur de l'utilisateur, pas par le serveur) - à vérifier si votre pare-feu sortant est restrictif.
+- Best effort : si l'API GeoIP est injoignable, la carte s'affiche quand même (fond de carte vide de marqueurs) plutôt que de faire échouer tout l'onglet Monitoring.
+
+#### 10.5.6 Authentification durcie (verrouillage, audit, refus de démarrage)
+
+- **Refus de démarrage sans jeton** : si `DASHBOARD_TOKEN` est vide, l'application ne démarre plus (`sys.exit`) au lieu de tourner sans authentification par erreur. Pour un lab isolé où c'est un choix assumé, définissez `ALLOW_NO_AUTH=true` dans `/etc/blockhash/dashboard.env`.
+- **Verrouillage anti force-brute** : après `AUTH_MAX_ATTEMPTS` échecs d'authentification depuis la même IP (8 par défaut), les requêtes suivantes reçoivent `429 Too Many Requests` pendant `AUTH_LOCKOUT_SECONDS` (300 par défaut, réglables dans `dashboard.env`). Le compteur est en mémoire process (approximatif entre les workers gunicorn) - suffisant pour ralentir un script automatisé, pas conçu comme une protection distribuée de niveau WAF.
+- **Journal d'audit** (`/var/log/wireguard/audit.log`, créé et permissionné par `03-install-dashboard.sh`) : chaque requête mutante (`POST`/`PATCH`/`DELETE` sur `/api/...`) y est tracée avec IP source, méthode, chemin et code de statut - capturé génériquement via un hook `@app.after_request` plutôt que des appels manuels route par route, pour qu'aucune route actuelle ou future ne puisse être oubliée.
+
+#### 10.5.7 Tests automatisés
+
+Une suite pytest (`dashboard/backend/tests/`) couvre la logique la plus sensible aux régressions silencieuses :
+- `wgstate.py` : parsing des blocs `[Peer]` (actifs/désactivés), fusion avec `wg show`, heuristique de reconnexion ;
+- `store.py` : calcul de **delta** (pas la somme brute des compteurs cumulatifs - la régression la plus facile à réintroduire par erreur), pagination/filtrage du journal, dédup des alertes ;
+- `alerts.py` : masquage des secrets, fusion de config, évaluation des règles avec dédup ;
+- `app.py` : forme des réponses API, codes d'erreur (403 quand une fonctionnalité est désactivée, 422 sur un nom de client invalide), combinaison filtre de statut + pagination.
+
+Chaque test tourne dans un environnement **entièrement isolé** (répertoire temporaire, faux binaire `wg`, variables d'environnement dédiées via la fixture `wg_env`) - aucun test ne touche jamais `/etc/wireguard` ou `/etc/blockhash` du système réel.
+
+```bash
+cd dashboard/backend
+pip install -r requirements-dev.txt --break-system-packages
+pytest                      # toute la suite
+pytest tests/test_store.py -v   # un seul fichier, verbeux
+```
+
+`requirements-dev.txt` est volontairement séparé de `requirements.txt` : pytest n'a aucune raison d'être installé sur le serveur de production, seulement dans un environnement de développement/CI.
+
+### 10.6 Interface utilisateur avancée
+
+Fichiers concernés : `dashboard/frontend/css/style.css` (variables de thème), `dashboard/frontend/js/app.js`, `dashboard/frontend/js/vendor/leaflet.js`.
+
+| Fonctionnalité | Détail |
+|---|---|
+| Thème clair/sombre | Bouton dans la barre supérieure ; préférence mémorisée (`localStorage`) et réappliquée au prochain chargement |
+| Recherche globale | Barre unique dans la barre supérieure, cherche simultanément dans les clients (déjà chargés) et le journal (requête `/api/logs?search=` limitée à 5 résultats) ; un clic sur un résultat bascule vers la bonne vue et applique le filtre correspondant |
+| Mode NOC / plein écran | Masque la barre latérale, agrandit les chiffres clés, demande le plein écran navigateur - pensé pour un affichage continu sur un écran de salle |
+| Chargement avec squelettes | Les cartes chiffrées affichent un effet de scintillement pendant le tout premier chargement, plutôt qu'un simple "–" statique |
+| Menu mobile en tiroir | En dessous de 720px de large, la barre latérale devient un tiroir (bouton hamburger, fond assombri, fermeture automatique après un clic de navigation) plutôt qu'une barre horizontale à défilement - voir 10.6.1 |
+
+#### 10.6.1 Un vrai bug mobile trouvé par le test visuel
+
+Avec l'ajout progressif des onglets Conformité et Système, la barre latérale mobile (jusque-là transformée en barre horizontale défilante) ne pouvait plus afficher que 2 des 7 éléments de navigation, sans indice visuel qu'il y avait plus d'options en faisant défiler. Un test dans un vrai navigateur (Chromium headless, capture d'écran à 375px de large) l'a révélé immédiatement - remplacé par un tiroir de navigation classique (voir tableau ci-dessus), un motif d'interface mobile bien plus robuste face à l'ajout futur d'onglets.
+
+#### 10.6.2 Limites connues
+
+- **Recherche globale** : cherche les clients par nom/IP/endpoint et le journal par endpoint/IP/clé publique ; ne cherche pas (encore) dans l'historique des alertes ni les sauvegardes.
+- **Mode NOC** : le plein écran navigateur peut être refusé silencieusement dans certains contextes (ex. iframe) - l'effet visuel (barre latérale masquée, textes agrandis) reste appliqué même si le vrai plein écran système échoue.
+- **Thème clair** : conçu par inversion des mêmes variables CSS que le thème sombre ; les graphiques Chart.js/Leaflet gardent des couleurs adaptées automatiquement, mais un futur composant qui coderait une couleur en dur (plutôt que via une variable CSS) casserait le thème clair pour ce composant seulement.
+
+---
+
+## 11. Commandes Linux de référence
 
 | Commande | Usage |
 |---|---|
@@ -914,13 +942,13 @@ iperf3 -c 10.66.66.1
 | `sudo ./scripts/06-manage-client.sh list` | Liste tous les clients (actifs et désactivés) avec leurs métadonnées |
 | `sudo ./scripts/06-manage-client.sh add <nom> [jours]` | Ajoute un client (équivalent CLI de "Ajouter un client" dans le dashboard) |
 | `sudo ./scripts/06-manage-client.sh disable\|enable <nom>` | Désactive/réactive un client sans le supprimer |
-| `sudo ./scripts/07-check-expirations.sh` | Force la vérification des expirations (normalement en cron, voir 7.6.4) |
+| `sudo ./scripts/07-check-expirations.sh` | Force la vérification des expirations (normalement en cron, voir 10.1.4) |
 | `sudo tc -s qdisc show dev wg0` | Vérifie les classes/limites de débit actuellement appliquées par `tc` |
 | `sudo visudo -cf /etc/sudoers.d/blockhash-dashboard` | Valide la syntaxe de la règle sudoers avant de la recharger |
 | `python3 /opt/blockhash-dashboard/backend/store.py series --range 24h` | Affiche la série de débit agrégée (debug, sans passer par l'API) |
 | `sudo python3 /opt/blockhash-dashboard/backend/alerts.py check` | Force une évaluation immédiate des règles d'alerte (hors cron) |
 | `sudo python3 /opt/blockhash-dashboard/backend/alerts.py test slack` | Envoie une notification de test sur un canal (email/slack/discord/telegram) |
-| `python3 /opt/blockhash-dashboard/backend/store.py dedup-list` | Liste les règles d'alerte actuellement en cooldown (voir 7.7.6) |
+| `python3 /opt/blockhash-dashboard/backend/store.py dedup-list` | Liste les règles d'alerte actuellement en cooldown (voir 10.2.6) |
 | `python3 /opt/blockhash-dashboard/backend/store.py dedup-clear --rule-key "..."` | Réinitialise le cooldown d'une règle précise (ou de toutes, sans `--rule-key`) |
 | `sudo journalctl -u wg-quick@wg0 -f` puis `systemctl is-active wg-quick@wg0` | Vérifie l'état du service surveillé par la règle d'alerte "service down" |
 | `sudo python3 /opt/blockhash-dashboard/backend/wgops.py list-backups` | Liste les sauvegardes de `wg0.conf` (debug, sans passer par l'API) |
@@ -930,11 +958,11 @@ iperf3 -c 10.66.66.1
 | `python3 /opt/blockhash-dashboard/backend/store.py logs --limit 20 --search 51820` | Interroge le journal SQLite directement (debug, sans passer par l'API) |
 | `curl -sN http://localhost:8080/api/events/stream` | Suit le flux d'événements temps réel en direct dans le terminal |
 | `curl -s http://localhost:8080/healthz \| jq` | Vérifie l'état détaillé du service (wg show, base de métriques) |
-| `cd dashboard/backend && pytest` | Exécute la suite de tests automatisés (voir 7.10.6) |
+| `cd dashboard/backend && pytest` | Exécute la suite de tests automatisés (voir 10.5.7) |
 
 ---
 
-## 11. Durcissement et bonnes pratiques de sécurité
+## 12. Durcissement et bonnes pratiques de sécurité
 
 - **Restreindre les sources** : ne jamais laisser `adminSourceIp` en `*` en production ; limiter le SSH et le dashboard à des IP nommées ou à un VPN d'administration dédié.
 - **Rotation des clés** : régénérer les clés serveur/clients périodiquement (tous les 6-12 mois ou en cas de suspicion de compromission) - le bouton *Régénérer* du dashboard (ou `06-manage-client.sh regenerate`) automatise cette rotation pour un client donné.
@@ -944,17 +972,17 @@ iperf3 -c 10.66.66.1
 - **Principe du moindre privilège** : un compte administrateur dédié par technicien, pas de partage de clé SSH.
 - **Sauvegarde** : sauvegarder `/etc/wireguard/` (hors clés privées client si politique stricte) et l'exporter vers un coffre-fort de secrets (Azure Key Vault).
 - **Surveillance** : envisager l'envoi des logs CSV vers Azure Monitor / Log Analytics pour alerting (ex. handshake absent depuis > 24h sur un peer critique).
-- **Élévation sudo du dashboard (`wgctl.py`)** : voir la discussion dédiée en section 7.6.1. Points clés à ne pas oublier lors d'un durcissement ultérieur :
+- **Élévation sudo du dashboard (`wgctl.py`)** : voir la discussion dédiée en section 10.1.1. Points clés à ne pas oublier lors d'un durcissement ultérieur :
   - vérifier périodiquement que `dashboard/backend/wgctl.py` appartient bien à `root:root` (`ls -l /opt/blockhash-dashboard/backend/wgctl.py` doit afficher `-rwxr-x---` `root root`) ;
   - si vous n'avez pas besoin de la gestion des clients depuis le web, repassez `CLIENT_MANAGEMENT_ENABLED=false` dans `/etc/blockhash/dashboard.env` et retirez la ligne `wgctl.py` de `/etc/sudoers.d/blockhash-dashboard` ;
   - surveillez `/var/log/wireguard/expirations.log` et les logs `journalctl -u blockhash-dashboard` pour repérer un usage anormal (rafale de créations/révocations de clients, par exemple).
-- **Secrets d'alerting (`/etc/blockhash/alerts-config.json`)** : contient en clair le mot de passe SMTP, les URLs de webhook Slack/Discord et le jeton de bot Telegram si vous les configurez. Le fichier est `chmod 600` et appartient à `www-data` (voir 7.7.3) - ne l'ajoutez jamais à un dépôt Git ni à une sauvegarde non chiffrée sans le traiter comme un secret.
-- **Opérations système (`wgops.py`)** : mêmes précautions que pour `wgctl.py` (`root:root`, `chmod 750`, vérification périodique). Le rayon d'impact d'une compromission de `www-data` est ici plus large (redémarrage du service, rotation de clés) - envisagez de désactiver `SYSTEM_OPS_ENABLED` sur les déploiements où seule la lecture seule/la gestion des clients est nécessaire (voir 7.8.1).
+- **Secrets d'alerting (`/etc/blockhash/alerts-config.json`)** : contient en clair le mot de passe SMTP, les URLs de webhook Slack/Discord et le jeton de bot Telegram si vous les configurez. Le fichier est `chmod 600` et appartient à `www-data` (voir 10.2.3) - ne l'ajoutez jamais à un dépôt Git ni à une sauvegarde non chiffrée sans le traiter comme un secret.
+- **Opérations système (`wgops.py`)** : mêmes précautions que pour `wgctl.py` (`root:root`, `chmod 750`, vérification périodique). Le rayon d'impact d'une compromission de `www-data` est ici plus large (redémarrage du service, rotation de clés) - envisagez de désactiver `SYSTEM_OPS_ENABLED` sur les déploiements où seule la lecture seule/la gestion des clients est nécessaire (voir 10.3.1).
 - **Registre multi-serveurs (`/etc/blockhash/servers.json`)** : contient les jetons d'API d'autres instances BLOCKHash en clair. Traitez-le comme un secret au même titre que `alerts-config.json` ; si un serveur distant n'a plus besoin d'être supervisé, retirez-le du registre plutôt que de laisser un jeton inutilisé trainer.
 
 ---
 
-## 12. Dépannage (Troubleshooting)
+## 13. Dépannage (Troubleshooting)
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
@@ -970,7 +998,7 @@ iperf3 -c 10.66.66.1
 | Un client réactivé garde le statut "Jamais connecté" | Normal juste après la réactivation : `wg show` n'a pas encore vu de nouveau handshake | Attendre la prochaine tentative de connexion du client, ou forcer une reconnexion côté client |
 | Le graphique "historique long terme" (onglet Monitoring) reste vide | Le cron de capture (`04-logging-monitoring.sh`) n'a pas encore tourné 5 minutes, ou `store.py` absent (dashboard pas encore installé au moment de l'installation du logging) | Attendre le prochain cycle cron ; vérifier `python3 /opt/blockhash-dashboard/backend/store.py series --range 1h` |
 | Aucune alerte n'est jamais envoyée alors qu'une condition est clairement remplie | Alerting désactivé (`enabled: false` par défaut), ou canal non configuré | Activer l'interrupteur dans l'onglet Alertes ; vérifier `/var/log/wireguard/alerts.log` pour voir si le cron tourne |
-| Une alerte ne se redéclenche jamais après une résolution puis une nouvelle occurrence | Cooldown de dédup pas encore écoulé (voir `cooldowns_sec` dans la config, 7.7.4) | Onglet Alertes → *Règles actuellement en pause* → *Réinitialiser* (ou *Tout réinitialiser*) - voir 7.7.6. Passer par `sqlite3` en SSH n'est plus nécessaire |
+| Une alerte ne se redéclenche jamais après une résolution puis une nouvelle occurrence | Cooldown de dédup pas encore écoulé (voir `cooldowns_sec` dans la config, 10.2.4) | Onglet Alertes → *Règles actuellement en pause* → *Réinitialiser* (ou *Tout réinitialiser*) - voir 10.2.6. Passer par `sqlite3` en SSH n'est plus nécessaire |
 | `psutil non installé côté serveur` dans l'onglet Monitoring | `pip install -r requirements.txt` n'a pas installé `psutil` (échec de compilation, dépendances manquantes) | Vérifier `sudo $APP_DIR/venv/bin/pip show psutil` ; `apt install python3-dev gcc` puis réinstaller si besoin |
 | Test d'un canal d'alerte échoue avec une erreur réseau | Webhook/API bloqué par le pare-feu sortant, ou identifiants invalides | Vérifier la connectivité sortante de la VM (`curl -I <url_webhook>`) et les identifiants saisis |
 | Onglet Système affiche "opérations système désactivées" | `SYSTEM_OPS_ENABLED=false`, ou règle sudoers `wgops.py` absente | Vérifier `/etc/blockhash/dashboard.env` puis `sudo -u www-data sudo -n python3 /opt/blockhash-dashboard/backend/wgops.py list-backups` |
@@ -980,7 +1008,7 @@ iperf3 -c 10.66.66.1
 | Rapport hebdomadaire jamais reçu bien qu'activé | Aucun serveur SMTP configuré dans l'onglet Alertes (le rapport réutilise ce canal) | Configurer et tester le canal e-mail dans Alertes, puis *Envoyer maintenant* depuis le rapport hebdomadaire |
 | Un serveur distant apparaît "injoignable" dans Multi-serveurs | URL incorrecte, jeton invalide, pare-feu entre les deux VM | Vérifier l'URL/le jeton, tester `curl -H "X-API-Token: ..." <url>/api/overview` depuis le serveur courant |
 | `/healthz` renvoie 503 | Un des sous-systèmes vérifiés est en panne (`wg show` ne répond pas, `wg0.conf` illisible, base de métriques inaccessible) | Regarder le détail dans `checks` de la réponse JSON pour cibler le bon sous-système |
-| Aucune notification de toast en temps réel, tout passe par le rafraîchissement 30s | Connexion SSE bloquée (proxy, ancien navigateur) ou pas assez de threads gunicorn | Vérifier `curl -sN http://localhost:8080/api/events/stream` ; vérifier que le service tourne bien avec `--worker-class gthread` (voir 7.10.3) |
+| Aucune notification de toast en temps réel, tout passe par le rafraîchissement 30s | Connexion SSE bloquée (proxy, ancien navigateur) ou pas assez de threads gunicorn | Vérifier `curl -sN http://localhost:8080/api/events/stream` ; vérifier que le service tourne bien avec `--worker-class gthread` (voir 10.5.3) |
 | Le dashboard répond très lentement dès que 2-3 onglets sont ouverts | Workers gunicorn saturés par des connexions SSE si `--worker-class gthread --threads` n'a pas été appliqué (mise à jour depuis une version antérieure) | Vérifier `systemctl cat blockhash-dashboard \| grep ExecStart`, réappliquer 03-install-dashboard.sh si besoin |
 | La carte des endpoints clients reste vide | Pas d'accès Internet sortant vers `ip-api.com`/`tile.openstreetmap.org`, ou tous les endpoints sont des IP privées | Tester `curl http://ip-api.com/json` depuis le serveur ; la carte reste vide par conception pour des endpoints privés (LAN, VPN imbriqué) |
 | Le menu mobile (hamburger) ne s'ouvre pas | JavaScript bloqué, ou largeur d'écran juste au-dessus du seuil de 720px | Vérifier la console navigateur ; le seuil est réglable dans `style.css` (`@media (max-width: 720px)`) |
@@ -989,7 +1017,7 @@ iperf3 -c 10.66.66.1
 
 ---
 
-## 13. Nettoyage / destruction du LAB
+## 14. Nettoyage / destruction du LAB
 
 Pour éviter toute facturation Azure inutile après le TP :
 
@@ -1004,7 +1032,7 @@ Cette commande supprime l'intégralité des ressources (VM, disques, IP publique
 
 ---
 
-## 14. Annexe- Exercices pour les stagiaires
+## 15. Annexe- Exercices pour les stagiaires
 
 1. Déployer l'infrastructure Azure avec un `vm_size` différent (`Standard_B1s`) via `terraform.tfvars` et mesurer l'impact sur les performances (`iperf3`).
 2. Créer 3 clients WireGuard et documenter, pour chacun, l'IP attribuée et la clé publique.
@@ -1016,13 +1044,13 @@ Cette commande supprime l'intégralité des ressources (VM, disques, IP publique
 
 ---
 
-## 15. Licence et conditions de diffusion
+## 16. Licence et conditions de diffusion
 
 Ce LAB a été conçu par **BLOCKHash** comme support de formation professionnel.
 
 - Les scripts et templates (`azure/`, `scripts/`) peuvent être adaptés librement pour un usage interne en entreprise.
 - Toute redistribution commerciale de ce support (revente du LAB en tant que produit de formation) doit conserver la mention **« Développé par BLOCKHash »** dans ce README, sauf accord contraire écrit avec BLOCKHash.
-- Ce support est fourni à titre pédagogique. BLOCKHash ne saurait être tenu responsable d'une mauvaise configuration réseau menant à une exposition non désirée d'un système en production- se référer systématiquement à la section 11 (Durcissement) avant tout déploiement réel.
+- Ce support est fourni à titre pédagogique. BLOCKHash ne saurait être tenu responsable d'une mauvaise configuration réseau menant à une exposition non désirée d'un système en production- se référer systématiquement à la section 12 (Durcissement) avant tout déploiement réel.
 
 ---
 

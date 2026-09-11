@@ -18,6 +18,7 @@ module "network" {
   wireguard_client_source_ip = var.wireguard_client_source_ip
   wireguard_port              = var.wireguard_port
   dashboard_port              = var.dashboard_port
+  dashboard_tls_port          = var.dashboard_tls_port
   tags                        = var.tags
 }
 

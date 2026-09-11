@@ -35,16 +35,26 @@ resource "azurerm_network_security_group" "this" {
     description                = "Tunnel WireGuard (UDP)"
   }
 
-  # NOTE SECURITE (voir README 7.3bis / scripts/03-install-dashboard.sh
-  # etape 7bis) : le dashboard BLOCKHash n'ecoute plus sur une interface
-  # publique. gunicorn est en loopback pur (127.0.0.1) et Caddy expose le
-  # dashboard en TLS uniquement sur l'IP privee du tunnel WireGuard
-  # (10.66.66.1) - donc uniquement joignable en etant deja connecte au VPN.
-  # Aucune regle NSG entrante n'est donc necessaire pour ce port : on ne
-  # garde QUE SSH (admin) et WireGuard (UDP) en entree publique, ce qui
-  # reduit la surface d'attaque au strict minimum. Si vous revenez a une
-  # exposition directe (sans Caddy), reintroduisez une regle equivalente
-  # a AllowDashboard-Admin ci-dessous, restreinte a var.admin_source_ip.
+  # SECURITE (voir README 7.3bis / scripts/03-install-dashboard.sh etape 7bis) :
+  # a la demande, le dashboard BLOCKHash est desormais joignable directement
+  # via l'IP publique de la VM, sans passer par le VPN WireGuard au
+  # prealable (ecran de connexion identifiant + cle cote applicatif, voir
+  # app.py:/api/login). Cote reseau, on restreint neanmoins cet acces a
+  # var.admin_source_ip, comme pour SSH ci-dessus - c'est cette regle NSG,
+  # pas la position du client par rapport au VPN, qui limite qui peut meme
+  # atteindre l'ecran de connexion.
+  security_rule {
+    name                       = "AllowDashboard-Admin"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = tostring(var.dashboard_tls_port)
+    source_address_prefix      = var.admin_source_ip
+    destination_address_prefix = "*"
+    description                = "Dashboard BLOCKHash (HTTPS/Caddy) - restreint a l IP d administration"
+  }
 
   security_rule {
     name                       = "DenyAllOtherInbound"

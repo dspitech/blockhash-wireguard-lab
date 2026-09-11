@@ -11,6 +11,34 @@
 </head>
 <body class="is-loading">
 
+<!-- ============ ECRAN DE CONNEXION ============ -->
+<!-- Le dashboard est joignable directement via l'IP publique de la VM
+     (plus besoin d'etre connecte au VPN WireGuard, voir README 7.3bis) :
+     cet ecran est donc la seule protection applicative avant d'atteindre
+     les donnees. Masque par defaut (voir CSS #login-screen), affiche par
+     app.js tant qu'aucun jeton valide n'est en localStorage. -->
+<div class="login-screen" id="login-screen" hidden>
+  <form class="login-card" id="login-form" autocomplete="on">
+    <div class="brand" style="justify-content:center;margin-bottom:var(--sp-3);">
+      <span class="brand-mark">BH</span>
+      <div class="brand-text"><strong>BLOCKHash</strong><span>Tunnel Ops</span></div>
+    </div>
+    <h1>Connexion</h1>
+    <p class="login-hint">Identifiant et cle generes lors de l'installation (voir la sortie de <code>scripts/03-install-dashboard.sh</code> ou <code>/etc/blockhash/dashboard.env</code>).</p>
+    <div class="field">
+      <label for="login-username">Identifiant</label>
+      <input class="input" id="login-username" name="username" autocomplete="username" required />
+    </div>
+    <div class="field">
+      <label for="login-password">Cle (mot de passe)</label>
+      <input class="input" id="login-password" name="password" type="password" autocomplete="current-password" required />
+    </div>
+    <div class="login-error" id="login-error" hidden></div>
+    <button class="btn primary" type="submit" id="btn-login" style="width:100%;justify-content:center;">Se connecter</button>
+    <button class="btn ghost" type="button" id="btn-login-demo" style="width:100%;justify-content:center;margin-top:var(--sp-2);">Voir une démo hors-ligne</button>
+  </form>
+</div>
+
 <div class="shell" id="shell">
 
   <!-- ============ SIDEBAR ============ -->
@@ -61,6 +89,7 @@
 
     <div class="sidebar-footer">
       <div class="conn-pill" id="conn-pill"><span class="dot"></span><span id="conn-label">Connexion…</span></div>
+      <button class="btn ghost sm" id="btn-logout" style="width:100%;margin-top:var(--sp-2);" hidden>Se déconnecter</button>
     </div>
   </aside>
 
@@ -353,6 +382,21 @@
     <div class="modal-footer">
       <button class="btn" data-close-modal>Annuler</button>
       <button class="btn primary" id="btn-confirm-client">Créer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-client-edit">
+  <div class="modal">
+    <div class="modal-header"><h3>Modifier le client</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nom</label><input class="input" id="field-edit-name" placeholder="ex. alice-laptop" /></div>
+      <div class="field"><label>Date d'expiration (laisser vide = pas d'expiration)</label><input class="input" type="date" id="field-edit-expires" /></div>
+      <div class="field"><label>Limite de bande passante en Mbit/s (entier, optionnel, laisser vide = illimité)</label><input class="input" type="number" min="1" step="1" id="field-edit-bandwidth" placeholder="ex. 20" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-close-modal>Annuler</button>
+      <button class="btn primary" id="btn-confirm-client-edit">Enregistrer</button>
     </div>
   </div>
 </div>

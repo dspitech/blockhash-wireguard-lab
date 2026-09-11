@@ -38,9 +38,15 @@ variable "wireguard_port" {
 }
 
 variable "dashboard_port" {
-  description = "Port TCP du dashboard BLOCKHash (API + interface web)"
+  description = "Port TCP interne du dashboard BLOCKHash (gunicorn, loopback uniquement)"
   type        = number
   default     = 8080
+}
+
+variable "dashboard_tls_port" {
+  description = "Port TCP public du dashboard BLOCKHash (Caddy, TLS) - celui reellement ouvert dans le NSG"
+  type        = number
+  default     = 443
 }
 
 variable "tags" {

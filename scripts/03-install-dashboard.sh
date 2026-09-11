@@ -32,12 +32,15 @@ python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --upgrade pip
 "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
-echo "== 4. Generation du jeton d'API et du fichier d'environnement =="
+echo "== 4. Generation des identifiants et du fichier d'environnement =="
 mkdir -p /etc/blockhash
 if [ ! -f /etc/blockhash/dashboard.env ]; then
   TOKEN=$(openssl rand -hex 24)
+  DASH_USERNAME="${DASHBOARD_USERNAME:-admin}"
+  DASH_PASSWORD="${DASHBOARD_PASSWORD:-$(openssl rand -base64 18 | tr -d '=+/')}"
   cat > /etc/blockhash/dashboard.env <<EOF
 DASHBOARD_TOKEN=$TOKEN
+DASHBOARD_USERNAME=$DASH_USERNAME
 WG_INTERFACE=wg0
 WG_DIR=/etc/wireguard
 WG_CONF_PATH=/etc/wireguard/wg0.conf
@@ -45,9 +48,9 @@ WG_LOG_CSV=/var/log/wireguard/tunnels.csv
 FRONTEND_DIR=$APP_DIR/frontend
 PORT=$DASHBOARD_PORT
 # Passez a "false" pour repasser le dashboard en lecture seule (aucune
-# regle sudoers wgctl.py necessaire) - voir README section 7.6.1.
+# regle sudoers wgctl.py necessaire) - voir README section 10.1.1.
 CLIENT_MANAGEMENT_ENABLED=true
-# Monitoring / alerting avances (voir README section 7.7)
+# Monitoring / alerting avances (voir README section 10.2)
 METRICS_DB_PATH=/var/log/wireguard/blockhash.db
 METRICS_DB_GROUP=$SERVICE_USER
 AUDIT_LOG_PATH=/var/log/wireguard/audit.log
@@ -56,7 +59,7 @@ AUTH_MAX_ATTEMPTS=8
 AUTH_LOCKOUT_SECONDS=300
 SETTINGS_PATH=/etc/blockhash/dashboard-settings.json
 ALERTS_CONFIG_PATH=/etc/blockhash/alerts-config.json
-# Administration systeme avancee (voir README section 7.8) : sauvegardes,
+# Administration systeme avancee (voir README section 10.3) : sauvegardes,
 # rotation de cles serveur, redemarrage du tunnel, export d'audit.
 # Passez a "false" pour desactiver separement de CLIENT_MANAGEMENT_ENABLED
 # (rayon d'impact plus large : redemarrage du service, rotation de cles).
@@ -66,19 +69,37 @@ WG_MAX_BACKUPS=50
 REPORTS_CONFIG_PATH=/etc/blockhash/reports-config.json
 SERVERS_CONFIG_PATH=/etc/blockhash/servers.json
 EOF
+  # Le hash du mot de passe est calcule a part (via le venv, une fois cree
+  # ci-dessous) puis ajoute au fichier - evite une dependance a Python avant
+  # l'etape 3 et garde le mot de passe en clair hors de tout fichier au repos.
+  echo "$DASH_PASSWORD" > /run/blockhash-dashpw.tmp
+  chmod 600 /run/blockhash-dashpw.tmp
   chmod 600 /etc/blockhash/dashboard.env
 fi
 
 TOKEN_VALUE=$(grep DASHBOARD_TOKEN /etc/blockhash/dashboard.env | cut -d= -f2)
+DASH_USERNAME_VALUE=$(grep DASHBOARD_USERNAME /etc/blockhash/dashboard.env | cut -d= -f2)
 
-echo "== 4bis. Injection du jeton dans le frontend (pour que le navigateur soit deja authentifie) =="
+echo "== 4bis. Hachage du mot de passe et verrouillage du frontend =="
+# Contrairement a l'ancienne version, le jeton n'est PLUS injecte dans le
+# HTML servi au navigateur : n'importe qui atteignant l'IP publique du
+# dashboard obtiendrait sinon un acces immediat, sans avoir a s'authentifier.
+# Desormais, config.js ne contient qu'une valeur vide ; le frontend affiche
+# un ecran de connexion (identifiant + cle) qui echange ces identifiants
+# contre le jeton via POST /api/login (voir dashboard/backend/app.py).
+if [ -f /run/blockhash-dashpw.tmp ]; then
+  DASH_PASSWORD_VALUE=$(cat /run/blockhash-dashpw.tmp)
+  PW_HASH=$("$APP_DIR/venv/bin/python3" -c "import sys; from werkzeug.security import generate_password_hash; print(generate_password_hash(sys.argv[1]))" "$DASH_PASSWORD_VALUE")
+  if ! grep -q '^DASHBOARD_PASSWORD_HASH=' /etc/blockhash/dashboard.env; then
+    echo "DASHBOARD_PASSWORD_HASH=$PW_HASH" >> /etc/blockhash/dashboard.env
+  fi
+  shred -u /run/blockhash-dashpw.tmp 2>/dev/null || rm -f /run/blockhash-dashpw.tmp
+fi
 cat > "$APP_DIR/frontend/js/config.js" <<EOF
 // Fichier genere automatiquement par 03-install-dashboard.sh
-// Permet au frontend d'appeler l'API sans configuration manuelle.
-// Le jeton n'apporte qu'une defense complementaire : le dashboard n'est
-// de toute facon joignable qu'en etant deja connecte au VPN WireGuard
-// (voir 7bis. Caddy ci-dessus - ecoute uniquement sur l'IP privee du tunnel).
-window.__BLOCKHASH_TOKEN__ = "${TOKEN_VALUE}";
+// Le jeton n'est plus injecte ici (voir etape 4bis) : le frontend l'obtient
+// dynamiquement en se connectant via l'ecran de login (identifiant + cle).
+window.__BLOCKHASH_TOKEN__ = "";
 EOF
 
 echo "== 4ter. Reglages et configuration d'alertes (fichiers vides par defaut) =="
@@ -249,12 +270,20 @@ systemctl daemon-reload
 systemctl enable blockhash-dashboard
 systemctl restart blockhash-dashboard
 
-echo "== 7bis. Installation de Caddy (reverse proxy TLS, ecoute uniquement sur le tunnel WireGuard) =="
-# Le dashboard n'est plus expose que sur l'IP privee du serveur WireGuard
-# (WG_SERVER_IP, voir 01-install-wireguard-server.sh) : il faut donc etre
-# deja connecte au VPN pour meme atteindre le port TLS. "tls internal"
-# genere un certificat auto-signe localement (pas besoin de nom de domaine
-# public) - le navigateur demandera une confirmation la premiere fois.
+echo "== 7bis. Installation de Caddy (reverse proxy TLS, ecoute sur l'IP publique de la VM) =="
+# Choix assume pour ce LAB (voir README 7.3bis, mis a jour) : le dashboard
+# est desormais joignable directement via l'IP publique de la VM, SANS etre
+# connecte au VPN WireGuard au prealable - la protection repose sur l'ecran
+# de connexion (identifiant + cle, voir etape 4/4bis et app.py:/api/login),
+# le verrouillage anti force-brute (AUTH_MAX_ATTEMPTS/AUTH_LOCKOUT_SECONDS)
+# et le TLS de Caddy, PAS sur la position reseau du client. Combinez-la avec
+# une regle NSG/ufw restreinte a votre IP admin des que possible (voir
+# terraform/modules/network/main.tf : regle "AllowDashboard-Admin" et
+# variable admin_source_ip) - c'est la seule couche qui limite reellement
+# QUI peut meme atteindre l'ecran de connexion.
+# "tls internal" genere un certificat auto-signe localement (pas besoin de
+# nom de domaine public) - le navigateur demandera une confirmation la
+# premiere fois.
 if ! command -v caddy >/dev/null 2>&1; then
   apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -263,10 +292,9 @@ if ! command -v caddy >/dev/null 2>&1; then
   apt install -y caddy
 fi
 
-WG_TUNNEL_IP="${WG_TUNNEL_IP:-10.66.66.1}"
 DASHBOARD_TLS_PORT="${DASHBOARD_TLS_PORT:-443}"
 cat > /etc/caddy/Caddyfile <<EOF
-${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT} {
+:${DASHBOARD_TLS_PORT} {
 	tls internal
 	reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
 	encode gzip
@@ -276,12 +304,17 @@ systemctl enable caddy
 systemctl restart caddy
 
 echo "== 8. Pare-feu local (ufw) =="
-# Plus aucune regle necessaire pour le port $DASHBOARD_PORT : gunicorn est
-# en loopback pur, ufw ne le voit meme pas. On autorise uniquement le port
-# TLS de Caddy, et seulement pour les paquets arrivant PAR l'interface wg0
-# (donc deja passes par le tunnel WireGuard - un attaquant sur le reseau
-# public ne peut pas usurper "vient de wg0").
-ufw allow in on wg0 to any port "$DASHBOARD_TLS_PORT" proto tcp comment "BLOCKHash Dashboard - VPN uniquement"
+# gunicorn reste en loopback pur (127.0.0.1) : seul Caddy, en TLS, est
+# reellement joignable depuis l'exterieur. On ouvre ce port TLS a toutes les
+# sources par defaut (acces via l'IP publique sans VPN, demande explicitement
+# pour ce lab) - definissez ADMIN_SOURCE_IP (ex: "203.0.113.10/32") avant
+# d'executer ce script pour le restreindre a une IP/CIDR precis, exactement
+# comme la variable Terraform du meme nom (voir terraform/variables.tf).
+if [ -n "${ADMIN_SOURCE_IP:-}" ]; then
+  ufw allow from "$ADMIN_SOURCE_IP" to any port "$DASHBOARD_TLS_PORT" proto tcp comment "BLOCKHash Dashboard - IP admin"
+else
+  ufw allow "$DASHBOARD_TLS_PORT"/tcp comment "BLOCKHash Dashboard - ouvert (definissez ADMIN_SOURCE_IP pour restreindre)"
+fi
 
 SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
 
@@ -289,18 +322,27 @@ echo ""
 echo "=================================================="
 echo " Dashboard BLOCKHash installe avec succes"
 echo "=================================================="
-echo "URL              : http://${SERVER_ENDPOINT}:${DASHBOARD_PORT}"
-echo "Jeton d'API       : ${TOKEN_VALUE}"
+echo "URL               : https://${SERVER_ENDPOINT}:${DASHBOARD_TLS_PORT}  (certificat auto-signe, confirmez l'exception dans le navigateur)"
+echo "Identifiant        : ${DASH_USERNAME_VALUE}"
+echo "Cle (mot de passe) : ${DASH_PASSWORD_VALUE:-[deja generee lors d_une installation precedente, voir /etc/blockhash/dashboard.env]}"
+echo "Jeton d'API        : ${TOKEN_VALUE}"
 echo ""
 echo "IMPORTANT :"
-echo " - Le port ${DASHBOARD_PORT} doit rester restreint a votre IP admin"
-echo "   dans le NSG Terraform (variable admin_source_ip) et dans ufw."
-echo " - Le jeton ci-dessus n'est utile que si vous appelez l'API"
-echo "   directement (curl -H \"X-API-Token: ...\"). Le frontend web"
-echo "   fonctionne sans jeton depuis la meme origine par defaut."
+echo " - Notez la cle ci-dessus MAINTENANT : elle n'est affichee qu'une fois"
+echo "   et n'est jamais stockee en clair sur le disque (seul son hash l'est,"
+echo "   dans /etc/blockhash/dashboard.env : DASHBOARD_PASSWORD_HASH)."
+echo " - Le dashboard est joignable depuis l'IP publique de la VM SANS etre"
+echo "   connecte au VPN - c'est voulu pour ce lab. Restreignez qui peut"
+echo "   l'atteindre via ADMIN_SOURCE_IP (ufw, deja fait ci-dessus si defini)"
+echo "   et la regle NSG Terraform 'AllowDashboard-Admin' (admin_source_ip)."
+echo " - Le jeton d'API n'est utile que pour appeler l'API directement"
+echo "   (curl -H \"X-API-Token: ...\"). Le frontend web, lui, ne le stocke"
+echo "   qu'apres connexion reussie via l'ecran de login (identifiant + cle)."
+echo " - Pour revenir a un acces reserve au VPN (ancien comportement), voir"
+echo "   README section 7.4."
 echo " - La gestion des clients (ajout/activation/revocation/etc.) est"
 echo "   activee depuis le dashboard. Les droits sudo de www-data ont ete"
-echo "   etendus a wgctl.py (voir README section 7.6.1) - relisez cette"
+echo "   etendus a wgctl.py (voir README section 10.1.1) - relisez cette"
 echo "   section avant tout deploiement expose sur Internet."
 echo " - Verifiez le service avec : sudo systemctl status blockhash-dashboard"
 echo " - Monitoring avance (débit long terme, système, anomalies) et alerting"
@@ -312,4 +354,4 @@ echo " - Administration système (sauvegardes/restauration, rotation des clés"
 echo "   serveur, redémarrage du tunnel, export d'audit, multi-serveurs) et"
 echo "   reporting (export PDF/CSV, rapport hebdomadaire, vue Conformité)"
 echo "   sont disponibles dans les onglets Système/Conformité - voir README"
-echo "   section 7.8 et 7.9. Le rapport hebdomadaire est désactivé par défaut."
+echo "   section 10.3 et 10.4. Le rapport hebdomadaire est désactivé par défaut."

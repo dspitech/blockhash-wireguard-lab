@@ -66,6 +66,14 @@ from pathlib import Path
 WG_IF = os.environ.get("WG_INTERFACE", "wg0")
 WG_DIR = Path(os.environ.get("WG_DIR", "/etc/wireguard"))
 WG_CONF = Path(os.environ.get("WG_CONF_PATH", str(WG_DIR / f"{WG_IF}.conf")))
+# Groupe autorise a LIRE wg0.conf (le dashboard, sous www-data, le lit
+# directement en group-read - voir wgstate.py:load_peer_config). Ce script
+# tourne en root (execution directe ou via sudo) : sans un chown explicite,
+# le fichier recree par save_conf() appartiendrait au groupe "root" et
+# deviendrait illisible par www-data des la premiere modification (ajout,
+# activation/desactivation, renommage, expiration...), meme si l'installation
+# initiale (03-install-dashboard.sh) avait mis les bons droits au depart.
+WG_CONF_GROUP = os.environ.get("WG_CONF_GROUP", "www-data")
 CLIENTS_DIR = WG_DIR / "clients"
 REVOKED_DIR = CLIENTS_DIR / "revoked"
 ENDPOINT_CACHE = WG_DIR / "server_endpoint.txt"
@@ -208,7 +216,22 @@ def save_conf(header, peers):
     tmp = WG_CONF.with_suffix(".conf.tmp")
     tmp.write_text(text)
     os.chmod(tmp, 0o640)
+    _chown_group_best_effort(tmp, WG_CONF_GROUP)
     tmp.replace(WG_CONF)
+
+
+def _chown_group_best_effort(path, group_name):
+    """Ajuste uniquement le groupe (conserve owner root) pour que www-data
+    puisse lire le fichier sans droits supplementaires. Ne doit jamais faire
+    echouer l'operation appelante (ex: tests lances par un utilisateur sans
+    ce groupe, ou plateforme sans module `grp`)."""
+    try:
+        import grp
+
+        gid = grp.getgrnam(group_name).gr_gid
+        os.chown(path, 0, gid)
+    except (KeyError, PermissionError, OSError, ImportError):
+        pass
 
 
 def sync_live():

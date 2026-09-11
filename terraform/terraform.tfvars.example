@@ -16,5 +16,6 @@ dns_label_prefix = "blockhash-wg-lab"
 admin_source_ip            = "203.0.113.10/32"   # votre IP publique -> whatismyipaddress.com
 wireguard_client_source_ip = "*"
 
-wireguard_port = 51820
-dashboard_port = 8080
+wireguard_port     = 51820
+dashboard_port     = 8080   # port interne gunicorn (loopback, jamais expose)
+dashboard_tls_port = 443    # port public Caddy - c'est celui-ci qui est ouvert vers admin_source_ip
