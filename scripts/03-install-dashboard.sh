@@ -147,7 +147,15 @@ chmod 640 /etc/wireguard/wg0.conf || true
 # (voir METRICS_DB_GROUP), mais on prepare le repertoire des maintenant.
 mkdir -p /var/log/wireguard
 chgrp "$SERVICE_USER" /var/log/wireguard || true
-chmod 750 /var/log/wireguard || true
+# 770 (pas 750) : le groupe www-data doit pouvoir non seulement LIRE mais
+# aussi ECRIRE dans ce dossier, car gunicorn (execute en www-data) y cree
+# lui-meme /var/log/wireguard/blockhash.db au tout premier appel a
+# store.init_db() (voir dashboard/backend/store.py) - typiquement des le
+# premier chargement du dashboard, avant meme que la tache cron de
+# 04-logging-monitoring.sh ne soit passee. Avec 750 (bit d'ecriture group
+# absent), cette creation echoue silencieusement et /api/health signale
+# "metrics_db_reachable": false (verifiable avec 'curl -k https://127.0.0.1/healthz').
+chmod 770 /var/log/wireguard || true
 # Journal d'audit des actions sensibles (creation/revocation client, rotation
 # de cles, redemarrage...) - pre-cree ici avec les bonnes permissions, sinon
 # www-data (groupe en lecture seule sur le dossier, voir chmod 750 ci-dessus)
@@ -281,9 +289,6 @@ echo "== 7bis. Installation de Caddy (reverse proxy TLS, ecoute sur l'IP publiqu
 # terraform/modules/network/main.tf : regle "AllowDashboard-Admin" et
 # variable admin_source_ip) - c'est la seule couche qui limite reellement
 # QUI peut meme atteindre l'ecran de connexion.
-# "tls internal" genere un certificat auto-signe localement (pas besoin de
-# nom de domaine public) - le navigateur demandera une confirmation la
-# premiere fois.
 if ! command -v caddy >/dev/null 2>&1; then
   apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -293,8 +298,34 @@ if ! command -v caddy >/dev/null 2>&1; then
 fi
 
 DASHBOARD_TLS_PORT="${DASHBOARD_TLS_PORT:-443}"
+# L'IP publique de la VM est STATIQUE (voir terraform/modules/compute/main.tf :
+# azurerm_public_ip.this, allocation_method = "Static") - on peut donc la
+# recuperer une fois ici et l'inscrire explicitement dans le Caddyfile.
+# C'est indispensable : un bloc de site sans adresse (ex. ":443") ne dit pas
+# a Caddy pour QUEL nom/IP emettre un certificat, et "tls internal" echoue
+# alors silencieusement au moment du handshake (alerte TLS "internal error",
+# visible avec 'curl -vk https://127.0.0.1/healthz'). En listant l'IP
+# publique ET 127.0.0.1 comme adresses du site, Caddy genere immediatement
+# au demarrage un certificat local valable pour les deux (pas besoin du mode
+# "on_demand", qui necessite depuis Caddy 2.7+ un point de controle "ask"
+# supplementaire - superflu ici puisque l'adresse est connue a l'avance et
+# stable).
+SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
 cat > /etc/caddy/Caddyfile <<EOF
-:${DASHBOARD_TLS_PORT} {
+https://${SERVER_ENDPOINT}:${DASHBOARD_TLS_PORT}, https://127.0.0.1:${DASHBOARD_TLS_PORT} {
+	# IMPORTANT (cloud/NAT) : une adresse de site qui est une IP litterale
+	# sert normalement AUSSI d'instruction d'ecoute (bind) chez Caddy, pas
+	# seulement de critere de correspondance TLS/Host. Or sur Azure (comme
+	# la plupart des clouds), l'IP publique de la VM n'est JAMAIS visible
+	# sur son interface reseau : le systeme d'exploitation ne connait que
+	# son IP privee, la traduction NAT vers l'IP publique se fait en amont,
+	# dans l'infrastructure Azure. Sans "bind 0.0.0.0" ci-dessous, Caddy
+	# tenterait de s'attacher litteralement a l'IP publique - une adresse
+	# qui n'existe sur aucune interface locale - et ce listener echouerait
+	# silencieusement : le dashboard resterait joignable en local
+	# (127.0.0.1) mais totalement injoignable depuis l'exterieur (aucune
+	# reponse, pas meme un avertissement de certificat).
+	bind 0.0.0.0
 	tls internal
 	reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
 	encode gzip
@@ -315,8 +346,6 @@ if [ -n "${ADMIN_SOURCE_IP:-}" ]; then
 else
   ufw allow "$DASHBOARD_TLS_PORT"/tcp comment "BLOCKHash Dashboard - ouvert (definissez ADMIN_SOURCE_IP pour restreindre)"
 fi
-
-SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
 
 echo ""
 echo "=================================================="
