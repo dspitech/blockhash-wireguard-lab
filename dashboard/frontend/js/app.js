@@ -276,31 +276,31 @@ async function runDashboard(forceDemo) {
     STATE.demoMode = true;
     setConnPill("demo");
   } else {
-  try {
-    const version = await apiGet("/api/version");
-    STATE.demoMode = false;
-    STATE.clientManagementEnabled = !!version.client_management_enabled;
-    document.getElementById("wg-if-name").textContent = version.wg_interface || "wg0";
-    setConnPill("live");
-    connectSSE();
-  } catch (err) {
-    if (err.status === 401) {
-      // Jeton présent mais invalide/expiré côté serveur (ex: dashboard.env
-      // régénéré) : on le purge et on renvoie au formulaire de connexion
-      // plutôt que de basculer silencieusement en mode démo.
-      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-      showLoginScreen("Session expirée, reconnectez-vous.");
-      return;
-    }
     try {
-      await apiGet("/api/health");
+      const version = await apiGet("/api/version");
       STATE.demoMode = false;
+      STATE.clientManagementEnabled = !!version.client_management_enabled;
+      document.getElementById("wg-if-name").textContent = version.wg_interface || "wg0";
       setConnPill("live");
-    } catch {
-      STATE.demoMode = true;
-      setConnPill("demo");
+      connectSSE();
+    } catch (err) {
+      if (err.status === 401) {
+        // Jeton présent mais invalide/expiré côté serveur (ex: dashboard.env
+        // régénéré) : on le purge et on renvoie au formulaire de connexion
+        // plutôt que de basculer silencieusement en mode démo.
+        window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+        showLoginScreen("Session expirée, reconnectez-vous.");
+        return;
+      }
+      try {
+        await apiGet("/api/health");
+        STATE.demoMode = false;
+        setConnPill("live");
+      } catch {
+        STATE.demoMode = true;
+        setConnPill("demo");
+      }
     }
-  }
   }
 
   document.getElementById("btn-logout").hidden = STATE.demoMode === true;
@@ -327,7 +327,15 @@ async function bootstrap() {
 function connectSSE() {
   if (STATE.demoMode) return;
   try {
-    const src = new EventSource("/api/events/stream");
+    // EventSource ne peut pas envoyer d'en-tete X-API-Token (contrairement a
+    // fetch/apiGet) : le jeton doit etre passe en parametre d'URL, que le
+    // backend accepte UNIQUEMENT pour cette route precise (voir
+    // enforce_auth dans app.py). Sans ce parametre, chaque tentative de
+    // connexion echoue en 401 et le navigateur la retente indefiniment
+    // (EventSource se reconnecte automatiquement), inondant la console.
+    const token = window.__BLOCKHASH_TOKEN__ || window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    const url = token ? `/api/events/stream?token=${encodeURIComponent(token)}` : "/api/events/stream";
+    const src = new EventSource(url);
     src.addEventListener("peer_connected", e => {
       const d = JSON.parse(e.data);
       toast("success", `${d.name} connecté`, d.endpoint);

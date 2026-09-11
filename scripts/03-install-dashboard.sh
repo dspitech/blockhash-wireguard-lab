@@ -312,6 +312,18 @@ DASHBOARD_TLS_PORT="${DASHBOARD_TLS_PORT:-443}"
 # stable).
 SERVER_ENDPOINT=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
 cat > /etc/caddy/Caddyfile <<EOF
+{
+	# IMPORTANT (IP litterale + NAT cloud) : quand un client se connecte a
+	# Caddy via une adresse IP (et non un nom de domaine), il n'envoie
+	# aucun SNI dans la poignee de main TLS (RFC 6066 : une IP n'est pas
+	# un nom de serveur valide). Sans SNI, Caddy ne peut pas faire
+	# correspondre la connexion a un bloc de site et la poignee de main
+	# echoue -> ERR_SSL_PROTOCOL_ERROR cote navigateur.
+	# "default_sni" force Caddy a utiliser cette valeur comme nom de
+	# serveur par defaut quand le client n'en fournit pas.
+	default_sni ${SERVER_ENDPOINT}
+}
+
 https://${SERVER_ENDPOINT}:${DASHBOARD_TLS_PORT}, https://127.0.0.1:${DASHBOARD_TLS_PORT} {
 	# IMPORTANT (cloud/NAT) : une adresse de site qui est une IP litterale
 	# sert normalement AUSSI d'instruction d'ecoute (bind) chez Caddy, pas
