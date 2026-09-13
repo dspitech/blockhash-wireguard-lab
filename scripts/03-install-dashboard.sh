@@ -347,8 +347,23 @@ https://${SERVER_ENDPOINT}:${DASHBOARD_TLS_PORT}, https://127.0.0.1:${DASHBOARD_
 	# reponse, pas meme un avertissement de certificat).
 	bind 0.0.0.0
 	tls internal
-	reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
-	encode gzip
+
+	# /api/events/stream (SSE) est exclu de "encode gzip" ci-dessous : gzip a
+	# besoin de bufferiser pour compresser, ce qui casse le framing HTTP/2 des
+	# qu'on l'applique a un flux qui ne se termine jamais (boucle while True
+	# dans _event_stream) -> ERR_HTTP2_PROTOCOL_ERROR cote navigateur, avec
+	# reconnexions en boucle par l'EventSource du frontend. flush_interval -1
+	# force Caddy a pousser chaque evenement immediatement, sans le retenir.
+	@sse path /api/events/stream
+	handle @sse {
+		reverse_proxy 127.0.0.1:${DASHBOARD_PORT} {
+			flush_interval -1
+		}
+	}
+	handle {
+		encode gzip
+		reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+	}
 }
 EOF
 systemctl enable caddy

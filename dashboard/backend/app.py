@@ -29,6 +29,7 @@ d'environnement DASHBOARD_TOKEN). Laisser DASHBOARD_TOKEN vide desactive
 l'authentification (LAB/demo uniquement, via ALLOW_NO_AUTH=true).
 """
 
+import base64
 import json
 import logging
 import os
@@ -39,17 +40,24 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_file, send_from_directory
 from werkzeug.security import check_password_hash
 
 import alerts
 import anomalies
+import auth
 import geoip
 import reports
 import servers_store
 import settings_store
 import store
 import system_monitor
+try:
+    import webpush
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    webpush = None
+    WEBPUSH_AVAILABLE = False
 from wgstate import (
     build_reconnect_stats,
     build_throughput_series,
@@ -77,6 +85,7 @@ CLIENT_MANAGEMENT_ENABLED = os.environ.get("CLIENT_MANAGEMENT_ENABLED", "true").
 # client (voir README 7.8.1) - on permet de les désactiver séparément.
 SYSTEM_OPS_ENABLED = os.environ.get("SYSTEM_OPS_ENABLED", "true").lower() != "false"
 CLIENT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+CONTACT_FIELDS = ("prenom", "email", "telephone", "adresse", "fonction", "tags", "notes")
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 
@@ -119,6 +128,15 @@ if DASHBOARD_TOKEN and not DASHBOARD_PASSWORD_HASH and not ALLOW_NO_AUTH:
         "Relancez ce script, ou definissez ALLOW_NO_AUTH=true pour un lab isole."
     )
 
+# Migration vers le modele multi-utilisateurs (items 49/52) : si aucun compte
+# n'existe encore en base, importe le compte legacy (dashboard.env) comme
+# premier admin. Ne fait rien si des comptes existent deja (mises a jour
+# suivantes) - voir auth.ensure_bootstrap_admin.
+try:
+    auth.ensure_bootstrap_admin(DASHBOARD_USERNAME, DASHBOARD_PASSWORD_HASH)
+except Exception as _exc:  # ne doit jamais empecher le demarrage du dashboard
+    print(f"[auth] migration bootstrap admin ignoree : {_exc}", file=sys.stderr)
+
 # Journal d'audit dedie, separe des logs applicatifs generaux : trace qui a
 # declenche une action qui MODIFIE l'etat du tunnel ou des clients (creation,
 # revocation, activation/desactivation, rotation de cles, redemarrage...).
@@ -151,19 +169,31 @@ AUTH_MAX_ATTEMPTS = int(os.environ.get("AUTH_MAX_ATTEMPTS", "8"))
 AUTH_LOCKOUT_SECONDS = int(os.environ.get("AUTH_LOCKOUT_SECONDS", "300"))
 
 
-def _record_auth_failure(ip):
+def _record_auth_failure(ip, max_attempts=None, lockout_seconds=None):
+    max_attempts = AUTH_MAX_ATTEMPTS if max_attempts is None else max_attempts
+    lockout_seconds = AUTH_LOCKOUT_SECONDS if lockout_seconds is None else lockout_seconds
     entry = _FAILED_AUTH.setdefault(ip, {"count": 0, "locked_until": 0.0})
     entry["count"] += 1
-    if entry["count"] >= AUTH_MAX_ATTEMPTS:
-        entry["locked_until"] = time.time() + AUTH_LOCKOUT_SECONDS
-        audit("auth_lockout", attempts=entry["count"], lockout_seconds=AUTH_LOCKOUT_SECONDS)
+    if entry["count"] >= max_attempts:
+        entry["locked_until"] = time.time() + lockout_seconds
+        audit("auth_lockout", attempts=entry["count"], lockout_seconds=lockout_seconds, key=ip)
+        try:
+            alert_cfg = alerts.load_config()
+            if alert_cfg.get("enabled") and alert_cfg["rules"].get("failed_auth_attempts"):
+                rule_key = f"failed_auth:{ip}"
+                cooldown = alert_cfg["cooldowns_sec"].get("failed_auth_attempts", 300)
+                if store.should_send(rule_key, cooldown, now=int(time.time())):
+                    msg = f"{entry['count']} tentatives d'authentification échouées depuis {ip} — verrouillage {lockout_seconds}s."
+                    alerts.dispatch(alert_cfg, "BLOCKHash - Tentatives échouées", msg, level="critical", rule_key=rule_key)
+        except Exception:
+            pass  # une alerte ratee ne doit jamais bloquer la reponse d'authentification
 
 
 def _record_auth_success(ip):
     _FAILED_AUTH.pop(ip, None)
 
 
-def _is_locked_out(ip):
+def _is_locked_out(ip, max_attempts=None, lockout_seconds=None):
     entry = _FAILED_AUTH.get(ip)
     if not entry:
         return False
@@ -175,18 +205,39 @@ def _is_locked_out(ip):
 
 
 def check_auth():
-    if not DASHBOARD_TOKEN:
+    if not DASHBOARD_TOKEN and not store.list_users():
+        return True  # ALLOW_NO_AUTH ou aucune auth configuree du tout
+
+    token = request.headers.get("X-API-Token")
+    if not token and request.path == "/api/events/stream":
+        # EventSource (SSE) ne peut pas envoyer d'en-tetes personnalises -> on
+        # accepte le jeton en parametre de requete UNIQUEMENT pour ce endpoint
+        # precis. Compromis documente (README 7.10.3) : un jeton en query
+        # string peut se retrouver dans des logs d'acces - acceptable ici car
+        # l'acces au dashboard est de toute facon restreint au tunnel
+        # WireGuard (voir scripts/03-install-dashboard.sh, etape 7bis).
+        token = request.args.get("token")
+    if not token:
+        return False
+
+    # 1. Jeton legacy partage (retro-compatibilite le temps de la migration -
+    #    voir auth.py). Traite comme un admin implicite.
+    if DASHBOARD_TOKEN and token == DASHBOARD_TOKEN:
+        g.current_user = {"username": "legacy-token", "role": "admin"}
         return True
-    if request.headers.get("X-API-Token") == DASHBOARD_TOKEN:
+
+    # 2. Session utilisateur (creee par /api/login)
+    user = auth.resolve_session_token(token)
+    if user:
+        g.current_user = user
         return True
-    # EventSource (SSE) ne peut pas envoyer d'en-tetes personnalises -> on
-    # accepte le jeton en parametre de requete UNIQUEMENT pour ce endpoint
-    # precis. Compromis documente (README 7.10.3) : un jeton en query string
-    # peut se retrouver dans des logs d'acces - acceptable ici car l'acces
-    # au dashboard est de toute facon restreint au tunnel WireGuard
-    # (voir scripts/03-install-dashboard.sh, etape 7bis).
-    if request.path == "/api/events/stream" and request.args.get("token") == DASHBOARD_TOKEN:
+
+    # 3. Token API scope (cree via /api/tokens)
+    user = auth.resolve_api_token(token)
+    if user:
+        g.current_user = user
         return True
+
     return False
 
 
@@ -207,15 +258,24 @@ def enforce_auth():
         _record_auth_failure(ip)
         return jsonify({"error": "unauthorized"}), 401
     _record_auth_success(ip)
+
+    # Controle de permission par role (items 49/52) : g.current_user est
+    # renseigne par check_auth() ci-dessus pour toute requete authentifiee.
+    required = auth.required_role_for(request.method, request.path)
+    user_role = g.current_user["role"] if hasattr(g, "current_user") else "admin"
+    if auth.ROLE_RANK.get(user_role, 0) < auth.ROLE_RANK.get(required, 2):
+        audit("permission_denied", path=request.path, method=request.method, role=user_role, required=required)
+        return jsonify({"error": "insufficient_role", "required": required}), 403
     return None
 
 
 @app.post("/api/login")
 def api_login():
-    """Echange (username, password) contre le jeton de session (DASHBOARD_TOKEN).
-    Le frontend stocke ce jeton en localStorage (voir app.js:authHeaders) et
-    l'envoie ensuite en en-tete X-API-Token sur chaque appel, exactement comme
-    avant l'ajout de cet ecran de connexion."""
+    """Echange (username, password) contre un jeton de SESSION propre a cet
+    utilisateur (et non plus le jeton statique partage DASHBOARD_TOKEN - voir
+    auth.py). Le frontend stocke ce jeton en localStorage (voir
+    app.js:authHeaders) et l'envoie ensuite en en-tete X-API-Token sur chaque
+    appel, exactement comme avant l'introduction des comptes multiples."""
     ip = request.remote_addr
     if _is_locked_out(ip):
         return jsonify({"error": "too_many_attempts", "retry_after_seconds": AUTH_LOCKOUT_SECONDS}), 429
@@ -224,23 +284,131 @@ def api_login():
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
 
-    # NB : check_password_hash() leve une erreur si on lui passe un hash vide
-    # ou malforme (pas de "$" a splitter) - on ne l'appelle donc qu'avec le
-    # vrai hash configure, jamais avec une chaine vide de "remplissage".
-    valid = False
-    if DASHBOARD_TOKEN and DASHBOARD_PASSWORD_HASH and username and password:
-        try:
-            valid = username == DASHBOARD_USERNAME and check_password_hash(DASHBOARD_PASSWORD_HASH, password)
-        except ValueError:
-            valid = False
-    if not valid:
+    user = auth.authenticate(username, password) if username and password else None
+    if not user:
         _record_auth_failure(ip)
         audit("login_failed", username=username)
         return jsonify({"error": "invalid_credentials"}), 401
 
     _record_auth_success(ip)
-    audit("login_success", username=username)
-    return jsonify({"token": DASHBOARD_TOKEN, "username": DASHBOARD_USERNAME})
+    store.touch_user_login(user["username"])
+    audit("login_success", username=user["username"], role=user["role"])
+    token = auth.create_session_token(user["username"])
+    return jsonify({"token": token, "username": user["username"], "role": user["role"]})
+
+
+@app.get("/api/auth/me")
+def api_auth_me():
+    user = getattr(g, "current_user", None) or {"username": DASHBOARD_USERNAME, "role": "admin"}
+    return jsonify(user)
+
+
+@app.get("/api/users")
+def api_users_list():
+    return jsonify(store.list_users())
+
+
+@app.post("/api/users")
+def api_users_create():
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    role = body.get("role") or "reader"
+    if not CLIENT_NAME_RE.match(username):
+        raise WgctlError("Nom d'utilisateur invalide : lettres, chiffres, tirets et underscores uniquement.", status=422)
+    if role not in auth.VALID_ROLES:
+        raise WgctlError(f"Rôle invalide (attendus : {', '.join(auth.VALID_ROLES)}).", status=422)
+    if len(password) < 8:
+        raise WgctlError("Le mot de passe doit contenir au moins 8 caractères.", status=422)
+    if store.get_user(username):
+        raise WgctlError(f"Un utilisateur nommé « {username} » existe déjà.", status=409)
+    store.create_user(username, auth.create_password_hash(password), role)
+    audit("user_created", username=username, role=role, by=g.current_user["username"])
+    return jsonify({"ok": True, "username": username, "role": role}), 201
+
+
+@app.patch("/api/users/<username>")
+def api_users_update(username):
+    body = request.get_json(silent=True) or {}
+    if not store.get_user(username):
+        raise WgctlError(f"Utilisateur inconnu : {username}", status=404)
+
+    # Garde-fou : on ne doit jamais pouvoir se retrouver sans aucun admin actif
+    # (verrou irrecuperable sans acces SSH pour repasser par dashboard.env).
+    demoting = "role" in body and body["role"] != "admin"
+    deactivating = body.get("active") is False
+    if (demoting or deactivating) and store.count_active_admins(exclude_username=username) == 0:
+        raise WgctlError(
+            "Impossible : ce serait le dernier compte admin actif. Promouvez un autre compte d'abord.",
+            status=422,
+        )
+
+    if "role" in body and body["role"] not in auth.VALID_ROLES:
+        raise WgctlError(f"Rôle invalide (attendus : {', '.join(auth.VALID_ROLES)}).", status=422)
+
+    password_hash = None
+    if body.get("password"):
+        if len(body["password"]) < 8:
+            raise WgctlError("Le mot de passe doit contenir au moins 8 caractères.", status=422)
+        password_hash = auth.create_password_hash(body["password"])
+
+    store.update_user(
+        username,
+        role=body.get("role"),
+        active=body.get("active"),
+        password_hash=password_hash,
+    )
+    if password_hash or body.get("active") is False:
+        store.delete_sessions_for_user(username)  # force une reconnexion apres changement de mot de passe/desactivation
+    audit("user_updated", username=username, by=g.current_user["username"], fields=list(body.keys()))
+    return jsonify({"ok": True, "username": username})
+
+
+@app.delete("/api/users/<username>")
+def api_users_delete(username):
+    if username == g.current_user["username"]:
+        raise WgctlError("Impossible de supprimer votre propre compte pendant que vous êtes connecté avec.", status=422)
+    if not store.get_user(username):
+        raise WgctlError(f"Utilisateur inconnu : {username}", status=404)
+    if store.count_active_admins(exclude_username=username) == 0:
+        raise WgctlError("Impossible : ce serait le dernier compte admin actif.", status=422)
+    store.delete_user(username)
+    audit("user_deleted", username=username, by=g.current_user["username"])
+    return jsonify({"ok": True})
+
+
+@app.get("/api/tokens")
+def api_tokens_list():
+    return jsonify(store.list_api_tokens())
+
+
+@app.post("/api/tokens")
+def api_tokens_create():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()[:60]
+    scope = body.get("scope") or "reader"
+    expires_days = body.get("expires_days")
+    if not name:
+        raise WgctlError("Un nom est requis pour identifier ce token.", status=422)
+    if scope not in auth.VALID_ROLES:
+        raise WgctlError(f"Scope invalide (attendus : {', '.join(auth.VALID_ROLES)}).", status=422)
+    expires_ts = None
+    if expires_days:
+        expires_ts = int(datetime.now(tz=timezone.utc).timestamp()) + int(expires_days) * 86400
+
+    raw_token = auth.generate_raw_token("bhtok")
+    store.create_api_token(auth.hash_token(raw_token), name, scope, g.current_user["username"], expires_ts=expires_ts)
+    audit("api_token_created", name=name, scope=scope, by=g.current_user["username"])
+    # Le token en clair n'est renvoye QU'ICI, une seule fois - il n'est pas
+    # recuperable ensuite (seule son empreinte est stockee, voir auth.py).
+    return jsonify({"ok": True, "token": raw_token, "name": name, "scope": scope}), 201
+
+
+@app.delete("/api/tokens/<int:rowid>")
+def api_tokens_revoke(rowid):
+    store.revoke_api_token(rowid)
+    audit("api_token_revoked", rowid=rowid, by=g.current_user["username"])
+    return jsonify({"ok": True})
 
 
 # Capture generique de toute action MUTANTE (POST/PATCH/DELETE) sur l'API,
@@ -351,7 +519,7 @@ def _event_stream():
     try:
         for p in load_live_peers():
             last_status[p["public_key"]] = p["status"]
-        existing_alerts = store.list_alerts(limit=1)
+        existing_alerts = store.list_alerts(limit=1)["rows"]
         if existing_alerts:
             last_alert_id = existing_alerts[0]["id"]
     except Exception:
@@ -362,16 +530,65 @@ def _event_stream():
     while True:
         try:
             peers = load_live_peers()
+            alert_cfg = None  # charge paresseusement, une seule fois par iteration si besoin
             for p in peers:
                 prev = last_status.get(p["public_key"])
                 if prev is not None and prev != p["status"]:
+                    transition = None
                     if p["status"] == "online":
+                        transition = "connected"
                         yield _sse_format("peer_connected", {"name": p["name"], "endpoint": p["endpoint"]})
                     elif prev == "online":
+                        transition = "disconnected"
                         yield _sse_format("peer_disconnected", {"name": p["name"]})
+
+                    # Regle d'alerte "connexion/deconnexion" : evenementielle
+                    # (contrairement aux autres regles, evaluees par le cron
+                    # toutes les 5 min) - detectee ici, au fil de l'eau, par
+                    # chaque connexion SSE ouverte. store.should_send() deduplique
+                    # proprement meme si plusieurs onglets/workers observent la
+                    # meme transition au meme moment (voir README 7.7.6).
+                    if transition:
+                        try:
+                            if alert_cfg is None:
+                                alert_cfg = alerts.load_config()
+                            if alert_cfg.get("enabled") and alert_cfg["rules"].get("connect_disconnect"):
+                                rule_key = f"{transition}:{p['public_key']}"
+                                cooldown = alert_cfg["cooldowns_sec"].get("connect_disconnect", 60)
+                                if store.should_send(rule_key, cooldown, now=int(time.time())):
+                                    verb = "s'est connecté" if transition == "connected" else "s'est déconnecté"
+                                    msg = f"Client « {p['name']} » {verb}" + (f" ({p['endpoint']})" if p.get("endpoint") and transition == "connected" else ".")
+                                    alerts.dispatch(
+                                        alert_cfg,
+                                        f"BLOCKHash - {'Connexion' if transition == 'connected' else 'Déconnexion'}",
+                                        msg,
+                                        level="info",
+                                        rule_key=rule_key,
+                                        peer_name=p["name"],
+                                    )
+
+                            # Regle "hors plage horaire" : ne concerne que les
+                            # connexions (pas les deconnexions), evaluee ici en
+                            # temps reel car le cron (5 min) manquerait souvent
+                            # la fenetre horaire exacte de la connexion.
+                            off_hours_cfg = alert_cfg["rules"].get("off_hours") or {}
+                            if transition == "connected" and off_hours_cfg.get("enabled"):
+                                now_local = datetime.now().time()
+                                start = datetime.strptime(off_hours_cfg.get("start", "22:00"), "%H:%M").time()
+                                end = datetime.strptime(off_hours_cfg.get("end", "06:00"), "%H:%M").time()
+                                in_window = (start <= now_local or now_local <= end) if start > end else (start <= now_local <= end)
+                                if in_window:
+                                    rule_key = f"off_hours:{p['public_key']}"
+                                    cooldown = alert_cfg["cooldowns_sec"].get("off_hours", 60)
+                                    if store.should_send(rule_key, cooldown, now=int(time.time())):
+                                        msg = f"Client « {p['name']} » s'est connecté hors plage horaire autorisée ({off_hours_cfg.get('start')}–{off_hours_cfg.get('end')})."
+                                        alerts.dispatch(alert_cfg, "BLOCKHash - Connexion hors horaires", msg, level="warning", rule_key=rule_key, peer_name=p["name"])
+                        except Exception:
+                            pass  # une alerte ratee ne doit jamais casser le flux SSE
+
                 last_status[p["public_key"]] = p["status"]
 
-            recent_alerts = store.list_alerts(limit=10)
+            recent_alerts = store.list_alerts(limit=10)["rows"]
             new_alerts = [a for a in recent_alerts if a["id"] > last_alert_id]
             for a in reversed(new_alerts):  # chronologique
                 yield _sse_format("alert", a)
@@ -408,13 +625,29 @@ def api_logs():
     sort_key = request.args.get("sort_key", "ts")
     sort_dir = request.args.get("sort_dir", "desc")
     status = request.args.get("status")  # "online" | "idle" | "never" | None (= "all")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    volume_min_mb = request.args.get("volume_min_mb")
+    volume_max_mb = request.args.get("volume_max_mb")
 
     pubkeys = None
     if status and status != "all":
         pubkeys = [p["public_key"] for p in load_live_peers() if p["status"] == status]
 
-    result = load_logs(limit=limit, offset=offset, search=search, pubkeys=pubkeys, sort_key=sort_key, sort_dir=sort_dir)
+    result = load_logs(
+        limit=limit, offset=offset, search=search, pubkeys=pubkeys, sort_key=sort_key, sort_dir=sort_dir,
+        ts_from=int(date_from) if date_from else None,
+        ts_to=int(date_to) if date_to else None,
+        volume_min=int(float(volume_min_mb) * 1_000_000) if volume_min_mb else None,
+        volume_max=int(float(volume_max_mb) * 1_000_000) if volume_max_mb else None,
+    )
     return jsonify(result)
+
+
+@app.get("/api/logs/heatmap")
+def api_logs_heatmap():
+    days = min(int(request.args.get("days", 30)), 365)
+    return jsonify(store.logs_heatmap(days=days))
 
 
 @app.get("/api/overview")
@@ -468,7 +701,7 @@ def api_throughput():
 
 @app.get("/api/system")
 def api_system():
-    return jsonify(system_monitor.snapshot())
+    return jsonify(system_monitor.snapshot(include_ping=request.args.get("ping") == "true"))
 
 
 @app.get("/api/anomalies")
@@ -504,7 +737,28 @@ def api_settings_update():
         except (TypeError, ValueError):
             raise WgctlError("online_threshold_sec doit être un entier entre 10 et 3600 (secondes).", status=422)
         body["online_threshold_sec"] = value
+    if "retention_days" in body and body["retention_days"] is not None:
+        try:
+            value = int(body["retention_days"])
+            if value < 1 or value > 3650:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise WgctlError("retention_days doit être un entier entre 1 et 3650 jours (ou null pour illimité).", status=422)
+        body["retention_days"] = value
     return jsonify(settings_store.update_settings(body))
+
+
+@app.post("/api/system/purge")
+def api_system_purge():
+    """Purge manuelle immediate (en plus du cron quotidien) : supprime logs,
+    echantillons de debit et historique d'alertes plus vieux que
+    retention_days. Tourne dans le process Flask (pas besoin de sudo,
+    store.py n'ecrit que dans sa propre base SQLite)."""
+    settings = settings_store.get_settings()
+    retention_days = settings.get("retention_days") or 3650
+    store.prune_old(retention_days=retention_days)
+    audit("manual_purge", retention_days=retention_days)
+    return jsonify({"ok": True, "retention_days": retention_days})
 
 
 # ------------------------------------------------------------------
@@ -524,10 +778,93 @@ def api_alerts_config_update():
     return jsonify(alerts.mask_config(updated))
 
 
-@app.get("/api/alerts/history")
+@app.get("/api/push/vapid-public-key")
+def api_push_vapid_public_key():
+    if not WEBPUSH_AVAILABLE:
+        return jsonify({"available": False}), 200
+    return jsonify({"available": True, "public_key": webpush.public_key_b64url()})
+
+
+@app.post("/api/push/subscribe")
+def api_push_subscribe():
+    if not WEBPUSH_AVAILABLE:
+        raise WgctlError("Web Push indisponible : dépendances non installées côté serveur (pywebpush).", status=503)
+    body = request.get_json(silent=True) or {}
+    endpoint = body.get("endpoint")
+    keys = body.get("keys") or {}
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        raise WgctlError("Abonnement Web Push invalide (endpoint/keys manquants).", status=422)
+    store.save_push_subscription(endpoint, keys["p256dh"], keys["auth"])
+    return jsonify({"ok": True}), 201
+
+
+@app.post("/api/push/unsubscribe")
+def api_push_unsubscribe():
+    body = request.get_json(silent=True) or {}
+    if body.get("endpoint"):
+        store.delete_push_subscription(body["endpoint"])
+    return jsonify({"ok": True})
+
+
+@app.post("/api/push/test")
+def api_push_test():
+    if not WEBPUSH_AVAILABLE:
+        raise WgctlError("Web Push indisponible : dépendances non installées côté serveur (pywebpush).", status=503)
+    result = webpush.broadcast("BLOCKHash - Test", "Ceci est une notification de test.", url="/")
+    return jsonify(result)
 def api_alerts_history():
-    limit = int(request.args.get("limit", 50))
-    return jsonify(store.list_alerts(limit=limit))
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+    severity = request.args.get("severity") or None
+    peer_name = request.args.get("client") or None
+    rule = request.args.get("rule") or None
+    ts_from = request.args.get("date_from")
+    ts_to = request.args.get("date_to")
+    archived = request.args.get("archived")
+    return jsonify(store.list_alerts(
+        limit=limit, offset=offset, severity=severity, peer_name=peer_name, rule=rule,
+        ts_from=int(ts_from) if ts_from else None,
+        ts_to=int(ts_to) if ts_to else None,
+        archived=(archived == "true") if archived in ("true", "false") else None,
+    ))
+
+
+@app.get("/api/alerts/history/export")
+def api_alerts_history_export():
+    data = store.list_alerts(limit=10000, offset=0)
+    header = "horodatage,severite,regle,client,message"
+    lines = [header]
+    for a in data["rows"]:
+        ts_iso = datetime.fromtimestamp(a["ts"], tz=timezone.utc).isoformat()
+        cells = [ts_iso, a["level"], a.get("rule_key") or "", a.get("peer_name") or "", a["message"]]
+        lines.append(",".join('"' + str(c).replace('"', '""') + '"' for c in cells))
+    return Response(
+        "\n".join(lines) + "\n",
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=alertes.csv"},
+    )
+
+
+@app.patch("/api/alerts/history/<int:alert_id>")
+def api_alerts_history_update(alert_id):
+    body = request.get_json(silent=True) or {}
+    if body.get("read"):
+        store.mark_alert_read(alert_id)
+    if "archived" in body:
+        store.set_alert_archived(alert_id, archived=bool(body["archived"]))
+    return jsonify({"ok": True, "id": alert_id})
+
+
+@app.delete("/api/alerts/history/<int:alert_id>")
+def api_alerts_history_delete(alert_id):
+    store.delete_alert(alert_id)
+    return jsonify({"ok": True, "id": alert_id})
+
+
+@app.get("/api/alerts/stats")
+def api_alerts_stats():
+    days = min(int(request.args.get("days", 7)), 90)
+    return jsonify(store.alerts_stats(days=days))
 
 
 @app.get("/api/alerts/dedup")
@@ -697,13 +1034,42 @@ def api_clients_list():
     return jsonify(load_live_peers())
 
 
+@app.get("/api/clients/export")
+def api_clients_export():
+    status = request.args.get("status")
+    peers = load_live_peers()
+    if status and status != "all":
+        peers = [p for p in peers if (p["status"] if p["enabled"] else "disabled") == status]
+
+    columns = ["name", "status", "allowed_ips", "prenom", "email", "telephone", "adresse", "fonction", "created", "expires"]
+    lines = [",".join(columns)]
+
+    def esc(value):
+        s = "" if value is None else str(value)
+        return '"' + s.replace('"', '""') + '"' if ("," in s or '"' in s) else s
+
+    for p in peers:
+        row = dict(p)
+        row["status"] = row["status"] if row["enabled"] else "disabled"
+        lines.append(",".join(esc(row.get(c)) for c in columns))
+
+    return Response(
+        "\n".join(lines) + "\n",
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=clients-{datetime.now(tz=timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"},
+    )
+
+
 @app.post("/api/clients")
 def api_clients_add():
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     validate_client_name(name)
     expires_days = body.get("expires_days")
-    result = run_wgctl("add", name=name, expires_days=expires_days)
+    contact = {f: (body.get(f) or "").strip() or None for f in CONTACT_FIELDS}
+    if "rgpd_consent" in body:
+        contact["rgpd_consent"] = "true" if body["rgpd_consent"] else "false"
+    result = run_wgctl("add", name=name, expires_days=expires_days, **contact)
     return jsonify(result), 201
 
 
@@ -736,12 +1102,65 @@ def api_clients_update(name):
             bw_down=body.get("bw_down_mbit", "none") or "none",
         )
 
+    if any(f in body for f in CONTACT_FIELDS) or "rgpd_consent" in body:
+        contact = {f: body[f] for f in CONTACT_FIELDS if f in body}
+        if "rgpd_consent" in body:
+            contact["rgpd_consent"] = "true" if body["rgpd_consent"] else "false"
+        results["contact"] = run_wgctl("set-contact", name=name, **contact)
+
     if not results:
         raise WgctlError(
-            "Aucun champ reconnu dans la requete (attendus : enabled, new_name, expires, bw_up_mbit, bw_down_mbit).",
+            "Aucun champ reconnu dans la requete (attendus : enabled, new_name, expires, bw_up_mbit, "
+            "bw_down_mbit, " + ", ".join(CONTACT_FIELDS) + ").",
             status=422,
         )
     return jsonify({"ok": True, "name": name, "results": results})
+
+
+@app.post("/api/clients/bulk")
+def api_clients_bulk_add():
+    """Creation groupee : chaque ligne est traitee independamment (un echec
+    n'interrompt pas les suivantes), avec un rapport detaille par ligne -
+    utilise par l'import CSV et par le formulaire multi-lignes du frontend."""
+    body = request.get_json(silent=True) or {}
+    rows = body.get("clients")
+    if not isinstance(rows, list) or not rows:
+        raise WgctlError("Le champ 'clients' est requis (liste non vide).", status=422)
+    if len(rows) > 500:
+        raise WgctlError("500 clients maximum par import.", status=422)
+
+    dry_run = bool(body.get("dry_run"))
+    created, errors = [], []
+    for i, row in enumerate(rows):
+        raw_name = (row.get("name") or row.get("nom") or "").strip()
+        try:
+            validate_client_name(raw_name)
+        except WgctlError as exc:
+            errors.append({"row": i + 1, "name": raw_name, "error": str(exc)})
+            continue
+        if dry_run:
+            created.append({"row": i + 1, "name": raw_name})
+            continue
+        try:
+            contact = {f: (row.get(f) or "").strip() or None for f in CONTACT_FIELDS}
+            result = run_wgctl("add", name=raw_name, expires_days=row.get("expires_days"), **contact)
+            created.append({"row": i + 1, "name": raw_name, "allowed_ips": result.get("allowed_ips")})
+        except WgctlError as exc:
+            errors.append({"row": i + 1, "name": raw_name, "error": str(exc)})
+
+    return jsonify({"ok": True, "dry_run": dry_run, "created": created, "errors": errors})
+
+
+@app.get("/api/clients/import-template")
+def api_clients_import_template():
+    header = "nom,prenom,email,telephone,adresse,fonction,expires_days"
+    example = "jdupont,Jean Dupont,jean.dupont@example.com,+33612345678,\"12 rue de Paris, 75001 Paris\",Technicien,365"
+    csv_text = header + "\n" + example + "\n"
+    return Response(
+        csv_text,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=modele-import-clients.csv"},
+    )
 
 
 @app.delete("/api/clients/<name>")
@@ -805,6 +1224,35 @@ def api_clients_history(name):
     )
 
 
+@app.get("/api/clients/<name>/gdpr-export")
+def api_clients_gdpr_export(name):
+    """Export complet des donnees d'un client (profil + historique de
+    connexions), en reponse a une demande d'acces RGPD. Le client garde le
+    controle : le consentement (rgpd_consent) et sa date sont inclus tels
+    quels dans l'export, sans interpretation."""
+    validate_client_name(name)
+    peer = next((p for p in load_live_peers() if p["name"].lower() == name.lower()), None)
+    if not peer:
+        raise WgctlError(f"Client inconnu : {name}", status=404)
+
+    result = load_logs(limit=1000, pubkey=peer["public_key"], sort_dir="desc")
+    audit("gdpr_export", client=name)
+
+    export = {
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "profile": {k: peer.get(k) for k in (
+            "name", "prenom", "email", "telephone", "adresse", "fonction", "tags", "notes",
+            "allowed_ips", "created", "expires", "rgpd_consent",
+        )},
+        "connection_history": result["rows"],
+    }
+    return Response(
+        json.dumps(export, indent=2, ensure_ascii=False),
+        mimetype="application/json",
+        headers={"Content-Disposition": f"attachment; filename={name}-export-rgpd.json"},
+    )
+
+
 # ------------------------------------------------------------------
 # Administration système : sauvegardes, rotation de clés, redémarrage,
 # export d'audit. Tout passe par `sudo -n python3 wgops.py <action>`,
@@ -829,7 +1277,8 @@ def api_system_backups_list():
 def api_system_backups_create():
     body = request.get_json(silent=True) or {}
     label = (body.get("label") or "manuel").strip()[:40]
-    return jsonify(run_wgops("backup", label=label)), 201
+    description = (body.get("description") or "").strip()[:500] or None
+    return jsonify(run_wgops("backup", label=label, description=description)), 201
 
 
 @app.get("/api/system/backups/<filename>/diff")
@@ -838,20 +1287,135 @@ def api_system_backups_diff(filename):
     return jsonify(run_wgops("diff-backup", filename=filename))
 
 
+def _verify_current_user_password(password):
+    """Verifie `password` contre le compte reellement connecte (voir
+    g.current_user, renseigne par check_auth). Repli sur DASHBOARD_PASSWORD_HASH
+    uniquement si la requete est authentifiee via le jeton legacy partage ou
+    un token API (qui n'ont pas de mot de passe propre a re-verifier)."""
+    if not password:
+        return False
+    current = getattr(g, "current_user", None)
+    if current and not current["username"].startswith("token:") and current["username"] != "legacy-token":
+        user = store.get_user(current["username"])
+        if not user:
+            return False
+        try:
+            return check_password_hash(user["password_hash"], password)
+        except ValueError:
+            return False
+    if DASHBOARD_PASSWORD_HASH:
+        try:
+            return check_password_hash(DASHBOARD_PASSWORD_HASH, password)
+        except ValueError:
+            return False
+    return False
+
+
 @app.post("/api/system/backups/<filename>/restore")
 def api_system_backups_restore(filename):
     validate_backup_filename(filename)
-    return jsonify(run_wgops("restore-backup", filename=filename))
+    body = request.get_json(silent=True) or {}
+    password = body.get("password") or ""
+    ip = request.remote_addr
+    lock_key = f"restore:{ip}"
+
+    if _is_locked_out(lock_key, max_attempts=BACKUP_DOWNLOAD_MAX_ATTEMPTS, lockout_seconds=BACKUP_DOWNLOAD_LOCKOUT_SECONDS):
+        return jsonify({"error": "too_many_attempts", "retry_after_seconds": BACKUP_DOWNLOAD_LOCKOUT_SECONDS}), 429
+
+    if not _verify_current_user_password(password):
+        _record_auth_failure(lock_key, max_attempts=BACKUP_DOWNLOAD_MAX_ATTEMPTS, lockout_seconds=BACKUP_DOWNLOAD_LOCKOUT_SECONDS)
+        audit("backup_restore_denied", filename=filename)
+        return jsonify({"error": "invalid_password"}), 401
+
+    _record_auth_success(lock_key)
+    result = run_wgops("restore-backup", filename=filename)
+    audit("backup_restored", filename=filename, safety_backup=result.get("safety_backup"))
+    return jsonify(result)
+
+
+BACKUP_DOWNLOAD_MAX_ATTEMPTS = 3
+BACKUP_DOWNLOAD_LOCKOUT_SECONDS = 300
+
+
+@app.post("/api/system/backups/<filename>/download")
+def api_system_backups_download(filename):
+    """Telechargement d'une sauvegarde : exige de re-saisir le mot de passe
+    admin (meme si le jeton de session est deja valide), avec son propre
+    compteur anti force-brute (3 essais / 5 min, distinct du verrouillage de
+    login) et un log d'audit dedie (qui a telecharge quoi, quand)."""
+    validate_backup_filename(filename)
+    ip = request.remote_addr
+    lock_key = f"backup:{ip}"
+
+    if _is_locked_out(lock_key, max_attempts=BACKUP_DOWNLOAD_MAX_ATTEMPTS, lockout_seconds=BACKUP_DOWNLOAD_LOCKOUT_SECONDS):
+        return jsonify({"error": "too_many_attempts", "retry_after_seconds": BACKUP_DOWNLOAD_LOCKOUT_SECONDS}), 429
+
+    body = request.get_json(silent=True) or {}
+    password = body.get("password") or ""
+
+    if not _verify_current_user_password(password):
+        _record_auth_failure(lock_key, max_attempts=BACKUP_DOWNLOAD_MAX_ATTEMPTS, lockout_seconds=BACKUP_DOWNLOAD_LOCKOUT_SECONDS)
+        audit("backup_download_denied", filename=filename)
+        return jsonify({"error": "invalid_password"}), 401
+
+    _record_auth_success(lock_key)
+    result = run_wgops("download-backup", filename=filename)
+    content = base64.b64decode(result["content_base64"])
+    audit("backup_downloaded", filename=filename, size_bytes=len(content))
+    return Response(
+        content,
+        mimetype="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.post("/api/system/restart-tunnel")
 def api_system_restart_tunnel():
-    return jsonify(run_wgops("restart-tunnel"))
+    affected = sum(1 for p in load_live_peers() if p["status"] == "online")
+    result = run_wgops("restart-tunnel")
+    audit("tunnel_restarted", clients_disconnected=affected)
+    result["clients_disconnected"] = affected
+    return jsonify(result)
 
 
 @app.post("/api/system/rotate-server-keys")
 def api_system_rotate_keys():
-    return jsonify(run_wgops("rotate-server-keys"))
+    affected = len(load_live_peers())
+    result = run_wgops("rotate-server-keys")
+    audit("server_keys_rotated", clients_affected=affected)
+    result["clients_affected"] = affected
+    return jsonify(result)
+
+
+@app.get("/api/system/audit")
+def api_system_audit():
+    """Lit le journal d'audit append-only (voir AUDIT_LOG_PATH) et renvoie
+    les entrees les plus recentes en premier, avec pagination simple. Lecture
+    seule d'un fichier texte : aucun risque, meme si le fichier grossit
+    beaucoup (on ne lit que ce qui est demande)."""
+    limit = min(int(request.args.get("limit", 50)), 500)
+    offset = int(request.args.get("offset", 0))
+    if not AUDIT_LOG_PATH.exists():
+        return jsonify({"rows": [], "total": 0})
+    lines = AUDIT_LOG_PATH.read_text(errors="ignore").splitlines()
+    lines.reverse()  # plus recent en premier
+    total = len(lines)
+    page = lines[offset:offset + limit]
+    return jsonify({"rows": [{"raw": line} for line in page], "total": total})
+
+
+@app.get("/api/system/audit/export")
+def api_system_audit_export():
+    if not AUDIT_LOG_PATH.exists():
+        return Response("", mimetype="text/plain", headers={"Content-Disposition": "attachment; filename=audit.log"})
+    return Response(
+        AUDIT_LOG_PATH.read_bytes(),
+        mimetype="text/plain",
+        headers={"Content-Disposition": "attachment; filename=audit.log"},
+    )
+@app.get("/api/system/diagnostics")
+def api_system_diagnostics():
+    return jsonify(run_wgops("diagnostics"))
 
 
 @app.get("/api/system/export")
@@ -962,32 +1526,62 @@ def api_reports_weekly_send():
 # révocation). Lecture seule, réutilise load_live_peers() (déjà là).
 # ------------------------------------------------------------------
 COMPLIANCE_BUCKETS = [90, 60, 30, 15, 7]
+DEFAULT_COMPLIANCE_POLICIES = {
+    "default_inactive_days": 90,
+    "by_tag": {"vip": 180, "externe": 30, "audit": 30},
+    "exceptions": [],  # noms de clients exclus des controles (a documenter par l'admin)
+}
+
+
+@app.get("/api/compliance/policies")
+def api_compliance_policies():
+    return jsonify(settings_store.get_settings().get("compliance_policies", DEFAULT_COMPLIANCE_POLICIES))
+
+
+@app.patch("/api/compliance/policies")
+def api_compliance_policies_update():
+    body = request.get_json(silent=True) or {}
+    current = settings_store.get_settings().get("compliance_policies", DEFAULT_COMPLIANCE_POLICIES)
+    current = {**current, **body}
+    return jsonify(settings_store.update_settings({"compliance_policies": current})["compliance_policies"])
 
 
 @app.get("/api/compliance")
 def api_compliance():
+    policies = settings_store.get_settings().get("compliance_policies", DEFAULT_COMPLIANCE_POLICIES)
+    exceptions = set(policies.get("exceptions", []))
+    by_tag = policies.get("by_tag", {})
+    default_threshold = policies.get("default_inactive_days", 90)
+
     peers = load_live_peers()
-    now_ts = int(datetime.now(tz=timezone.utc).timestamp())
     results = []
     for p in peers:
-        if not p["enabled"]:
+        if not p["enabled"] or p["name"] in exceptions:
             continue
         if p["seconds_since_handshake"] is None:
             days_inactive = None
         else:
             days_inactive = p["seconds_since_handshake"] // 86400
 
+        # Seuil effectif : le plus permissif des tags du client l'emporte
+        # (un client marque a la fois #vip et #audit garde le seuil le plus
+        # long, cf. "politiques par tag de client" - une exception documentee
+        # via #tag est une politique, pas un contournement silencieux).
+        client_tags = [t.strip().lstrip("#") for t in (p.get("tags") or "").split(",") if t.strip()]
+        effective_threshold = max([by_tag.get(t, 0) for t in client_tags] + [0]) or default_threshold
+
         bucket = None
         if days_inactive is None:
             bucket = "never"
-        else:
+        elif days_inactive >= effective_threshold:
             for threshold in COMPLIANCE_BUCKETS:
                 if days_inactive >= threshold:
                     bucket = threshold
                     break
+            bucket = bucket or effective_threshold
 
         if bucket is None:
-            continue  # actif recemment (< 7 jours) -> pas un candidat, on ne le liste pas
+            continue  # sous le seuil effectif -> conforme, pas liste
 
         results.append(
             {

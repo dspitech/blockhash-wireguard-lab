@@ -100,6 +100,12 @@
 }
 
 * { box-sizing: border-box; }
+/* Garantit que l'attribut HTML "hidden" masque toujours l'element, quelle
+   que soit une regle "display:" plus loin dans cette feuille (meme
+   specificite que la regle UA [hidden] => sans ce !important, la derniere
+   regle "display:" declaree l'emporterait et l'element resterait visible
+   malgre "hidden" - c'est exactement le bug qui affectait .login-screen). */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -392,6 +398,14 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: var(--fs-s
   position: fixed; inset: 0; z-index: 500; background: var(--teal-deeper);
   display: flex; align-items: center; justify-content: center; padding: var(--sp-4);
 }
+/* Sans cette regle, [hidden] (regle UA du navigateur) et .login-screen ont
+   la meme specificite (0,1,0) ; comme style.css est charge apres le style
+   par defaut du navigateur, "display: flex" l'emportait toujours et l'ecran
+   de connexion restait affiche par-dessus le dashboard meme apres
+   `login-screen.hidden = true` dans app.js (login fonctionnel cote reseau,
+   mais rien ne se passait visuellement). .login-screen[hidden] (0,2,0) est
+   plus specifique et gagne systematiquement quand l'attribut est present. */
+.login-screen[hidden] { display: none; }
 .login-card {
   background: var(--bg-surface-raised); border: 1px solid var(--border-default); border-radius: var(--radius-lg);
   width: 380px; max-width: 100%; padding: var(--sp-7) var(--sp-5); box-shadow: var(--shadow-3);

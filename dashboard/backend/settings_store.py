@@ -22,6 +22,20 @@ SETTINGS_PATH = Path(os.environ.get("SETTINGS_PATH", "/etc/blockhash/dashboard-s
 DEFAULTS = {
     # Duree (s) sous laquelle un peer est considere "en ligne" depuis son dernier handshake.
     "online_threshold_sec": 180,
+    # Retention des donnees (jours) : logs, echantillons de debit, historique
+    # des alertes plus vieux que cette duree sont purges par le cron
+    # quotidien (voir scripts/04-logging-monitoring.sh + store.py prune).
+    "retention_days": 35,
+    "date_format": "DD/MM/YYYY",     # ou "MM/DD/YYYY", "YYYY-MM-DD"
+    "timezone": "Europe/Paris",
+    "desktop_notifications_enabled": False,
+    "backup_schedule": "disabled",   # "disabled" | "daily" | "weekly" | "monthly"
+    "language": "fr",   # "fr" | "en"
+    "compliance_policies": {
+        "default_inactive_days": 90,
+        "by_tag": {"vip": 180, "externe": 30, "audit": 30},
+        "exceptions": [],
+    },
 }
 
 _lock = Lock()

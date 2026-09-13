@@ -23,6 +23,7 @@ comme wgctl.py.
 import argparse
 import base64
 import difflib
+import hashlib
 import io
 import json
 import os
@@ -94,7 +95,19 @@ def _prune_backups():
         backups.pop(0).unlink(missing_ok=True)
 
 
-def do_backup(label):
+def _meta_path(filename):
+    return BACKUPS_DIR / f"{filename}.meta.json"
+
+
+def _sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def do_backup(label, description=None):
     if not WG_CONF.exists():
         raise OpsError("wg0.conf introuvable.")
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,13 +115,48 @@ def do_backup(label):
     dest = BACKUPS_DIR / filename
     shutil.copy2(WG_CONF, dest)
     os.chmod(dest, 0o640)
+    if description:
+        meta = {"description": description[:500]}
+        _meta_path(filename).write_text(json.dumps(meta))
+        os.chmod(_meta_path(filename), 0o640)
     _prune_backups()
-    return {"filename": filename, "created": datetime.now(tz=timezone.utc).isoformat()}
+    return {"filename": filename, "created": datetime.now(tz=timezone.utc).isoformat(), "sha256": _sha256_of(dest)}
 
 
 def act_backup(args):
-    result = do_backup(args.label)
+    result = do_backup(args.label, description=getattr(args, "description", None))
     return {"ok": True, **result}
+
+
+AUTO_BACKUP_SCHEDULE_SECONDS = {"daily": 86400, "weekly": 7 * 86400, "monthly": 30 * 86400}
+
+
+def act_auto_backup(args):
+    """Invoquee par le cron quotidien (voir scripts/03-install-dashboard.sh) :
+    ne cree une sauvegarde que si le planning configure dans le dashboard
+    (reglage 'backup_schedule' : disabled/daily/weekly/monthly) l'exige,
+    en comparant a la sauvegarde 'auto' la plus recente. Auto-limitation
+    plutot qu'une reecriture dynamique de la crontab (plus simple, plus
+    sur : www-data n'a jamais besoin d'ecrire dans /etc/crontab)."""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).parent))
+        import settings_store
+        schedule = settings_store.get_settings().get("backup_schedule", "disabled")
+    except Exception:
+        schedule = "disabled"
+
+    if schedule not in AUTO_BACKUP_SCHEDULE_SECONDS:
+        return {"ok": True, "skipped": True, "reason": f"planning desactive ({schedule})"}
+
+    auto_backups = sorted(BACKUPS_DIR.glob("wg0_*_auto.conf"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if auto_backups:
+        age = time.time() - auto_backups[0].stat().st_mtime
+        if age < AUTO_BACKUP_SCHEDULE_SECONDS[schedule]:
+            return {"ok": True, "skipped": True, "reason": "pas encore due", "age_sec": int(age)}
+
+    result = do_backup("auto", description=f"Sauvegarde planifiee ({schedule})")
+    return {"ok": True, "skipped": False, **result}
 
 
 def act_list_backups(args):
@@ -121,12 +169,21 @@ def act_list_backups(args):
             peer_count = len(re.findall(r"^#{0,2}\[Peer\]\s*$", p.read_text(errors="ignore"), re.MULTILINE))
         except OSError:
             peer_count = None
+        description = None
+        meta_path = _meta_path(p.name)
+        if meta_path.exists():
+            try:
+                description = json.loads(meta_path.read_text()).get("description")
+            except (json.JSONDecodeError, OSError):
+                pass
         backups.append(
             {
                 "filename": p.name,
                 "size_bytes": stat.st_size,
                 "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                 "peer_count": peer_count,
+                "sha256": _sha256_of(p),
+                "description": description,
             }
         )
     return {"ok": True, "backups": backups}
@@ -158,13 +215,38 @@ def act_diff_backup(args):
 
 def act_restore_backup(args):
     path = _safe_backup_path(args.filename)
+    # Verification d'integrite : le fichier doit rester lisible et non-vide.
+    # (Le sha256 est recalcule a chaque listing plutot que fige a la creation :
+    # cela detecte aussi une modification/corruption survenue APRES coup.)
+    try:
+        content = path.read_text()
+    except OSError as exc:
+        raise OpsError(f"Sauvegarde illisible ou corrompue : {exc}")
+    if "[Interface]" not in content:
+        raise OpsError("Sauvegarde corrompue : contenu invalide (section [Interface] absente).")
+
     # Filet de securite : on sauvegarde l'etat actuel AVANT de l'ecraser,
     # pour pouvoir toujours annuler une restauration malheureuse.
     safety = do_backup("avant-restauration")
     shutil.copy2(path, WG_CONF)
     os.chmod(WG_CONF, 0o640)
     sync_live()
-    return {"ok": True, "restored_from": args.filename, "safety_backup": safety["filename"]}
+    return {"ok": True, "restored_from": args.filename, "safety_backup": safety["filename"], "sha256": _sha256_of(path)}
+
+
+def act_download_backup(args):
+    """Renvoie le contenu binaire d'une sauvegarde (base64) pour telechargement
+    depuis le dashboard. Le mot de passe admin est verifie cote Flask AVANT
+    d'appeler cette action (voir app.py:/api/system/backups/<f>/download) :
+    ce script se contente de lire un fichier deja valide par _safe_backup_path
+    (pas de traversal de chemin possible)."""
+    path = _safe_backup_path(args.filename)
+    content = path.read_bytes()
+    return {
+        "ok": True,
+        "filename": args.filename,
+        "content_base64": base64.b64encode(content).decode("ascii"),
+    }
 
 
 # ---------------------------------------------------------------------
@@ -270,11 +352,63 @@ def act_export_all(args):
     return {"ok": True, "zip_path": str(zip_path), "size_bytes": zip_path.stat().st_size, "client_count": len(conf_files)}
 
 
+def act_diagnostics(args):
+    """Collecte un instantane de diagnostic (etat des services, connectivite,
+    espace disque, permissions des fichiers critiques). Tourne en root (via
+    sudo, comme le reste de wgops.py) donc peut lire des permissions/chemins
+    inaccessibles a www-data - c'est precisement l'interet de cette action
+    plutot que de le faire depuis Flask."""
+    checks = []
+
+    def check(name, ok, detail=""):
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    # -- Service wg-quick --------------------------------------------
+    wg_status = subprocess.run(["systemctl", "is-active", f"wg-quick@{WG_IF}"], capture_output=True, text=True, timeout=5)
+    check("Service wg-quick@" + WG_IF, wg_status.stdout.strip() == "active", wg_status.stdout.strip() or "inconnu")
+
+    # -- Service dashboard ---------------------------------------------
+    dash_status = subprocess.run(["systemctl", "is-active", "blockhash-dashboard"], capture_output=True, text=True, timeout=5)
+    check("Service blockhash-dashboard", dash_status.stdout.strip() == "active", dash_status.stdout.strip() or "inconnu")
+
+    # -- Interface WireGuard active -------------------------------------
+    wg_show = subprocess.run(["wg", "show", WG_IF], capture_output=True, text=True, timeout=5)
+    check("Interface WireGuard active (wg show)", wg_show.returncode == 0, (wg_show.stdout.splitlines() or ["aucune sortie"])[0])
+
+    # -- Connectivite reseau sortante -----------------------------------
+    ping = subprocess.run(["ping", "-c", "1", "-W", "2", "1.1.1.1"], capture_output=True, text=True, timeout=4)
+    check("Connectivité réseau sortante", ping.returncode == 0, "OK" if ping.returncode == 0 else "Aucune réponse à 1.1.1.1")
+
+    # -- Espace disque ---------------------------------------------------
+    disk = shutil.disk_usage("/")
+    percent = disk.used / disk.total * 100
+    check(f"Espace disque (/) : {percent:.0f}% utilisé", percent < 90, f"{disk.free // (1024**3)} Go libres")
+
+    # -- Fichiers/permissions critiques ----------------------------------
+    for path, expected_mode in ((WG_CONF, 0o640), (BACKUPS_DIR, 0o750)):
+        if path.exists():
+            actual_mode = oct(path.stat().st_mode & 0o777)
+            check(f"Permissions {path}", True, f"mode actuel {actual_mode}")
+        else:
+            check(f"Présence de {path}", False, "fichier/dossier introuvable")
+
+    ok_count = sum(1 for c in checks if c["ok"])
+    return {
+        "ok": True,
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "summary": f"{ok_count}/{len(checks)} contrôles OK",
+        "checks": checks,
+    }
+
+
 ACTIONS = {
+    "diagnostics": act_diagnostics,
     "backup": act_backup,
+    "auto-backup": act_auto_backup,
     "list-backups": act_list_backups,
     "diff-backup": act_diff_backup,
     "restore-backup": act_restore_backup,
+    "download-backup": act_download_backup,
     "restart-tunnel": act_restart_tunnel,
     "rotate-server-keys": act_rotate_server_keys,
     "export-all": act_export_all,
@@ -285,6 +419,7 @@ def main():
     parser = argparse.ArgumentParser(description="BLOCKHash - operations systeme privilegiees")
     parser.add_argument("action", choices=sorted(ACTIONS.keys()))
     parser.add_argument("--label")
+    parser.add_argument("--description")
     parser.add_argument("--filename")
     args = parser.parse_args()
 

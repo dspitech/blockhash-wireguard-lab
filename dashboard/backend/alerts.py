@@ -43,6 +43,12 @@ from pathlib import Path
 import store
 import system_monitor
 from wgstate import load_live_peers, reconnect_counts_last_24h
+try:
+    import webpush
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    webpush = None
+    WEBPUSH_AVAILABLE = False
 
 CONFIG_PATH = Path(os.environ.get("ALERTS_CONFIG_PATH", "/etc/blockhash/alerts-config.json"))
 MASK = "••••••••"
@@ -59,12 +65,27 @@ DEFAULT_CONFIG = {
         "inactive_days": 7,          # null/0 pour desactiver la regle
         "bandwidth_alert_mb_5min": None,
         "service_down": True,
+        "connect_disconnect": True,  # alerte a chaque connexion/deconnexion d'un client
+        "off_hours": {"enabled": False, "start": "22:00", "end": "06:00"},  # connexion hors plage horaire
+        "failed_auth_attempts": True,   # alerte quand le verrouillage anti-bruteforce du login se declenche
+        "client_expiry_days": 3,     # alerte N jours avant la date d'expiration d'un client (0/null desactive)
+        "new_ip": True,              # alerte si un client se connecte depuis une IP jamais vue pour lui
+        "cpu_percent_threshold": None,   # ex. 90 -> alerte si CPU > 90%
+        "disk_percent_threshold": None,  # ex. 90 -> alerte si disque > 90%
     },
     "cooldowns_sec": {
         "inactive": 86400,     # 1 alerte par client inactif et par jour max
         "bandwidth": 3600,     # 1 alerte par client et par heure max
         "service_down": 1800,  # 1 alerte tous les 30 min tant que le service est down
+        "connect_disconnect": 60,  # evite les doublons entre onglets/workers sur la meme transition
+        "off_hours": 60,
+        "failed_auth_attempts": 300,
+        "client_expiry": 86400,
+        "new_ip": 300,
+        "cpu_threshold": 1800,
+        "disk_threshold": 3600,
     },
+    "max_alerts_per_hour": 0,  # 0 = illimite ; au-dela, les nouvelles alertes sont journalisees mais pas notifiees
     "channels": {
         "email": {
             "enabled": False,
@@ -77,8 +98,12 @@ DEFAULT_CONFIG = {
             "to_addr": "",
         },
         "slack_webhook_url": "",
+        "slack_enabled": True,     # desactivation temporaire sans effacer l'URL configuree
         "discord_webhook_url": "",
-        "telegram": {"bot_token": "", "chat_id": ""},
+        "discord_enabled": True,
+        "telegram": {"bot_token": "", "chat_id": "", "enabled": True},
+        "webpush_enabled": True,
+        "webpush_min_level": "critical",  # "info" | "warning" | "critical" : niveau minimal envoye en Web Push
     },
 }
 
@@ -195,42 +220,65 @@ def send_email(email_cfg, subject, message):
     return True
 
 
-def dispatch(config, subject, message, level="warning"):
+def dispatch(config, subject, message, level="warning", rule_key=None, peer_name=None):
     """Envoie `message` sur tous les canaux actifs. Renvoie la liste des
-    canaux ayant reussi (utilisee pour l'historique, voir store.insert_alert)."""
+    canaux ayant reussi (utilisee pour l'historique, voir store.insert_alert).
+    Si `max_alerts_per_hour` est depasse, l'alerte est journalisee (visible
+    dans l'historique) mais AUCUNE notification n'est envoyee - evite les
+    tempetes de notifications tout en gardant une trace complete."""
+    max_per_hour = config.get("max_alerts_per_hour") or 0
+    throttled = max_per_hour > 0 and store.count_alerts_last_hour() >= max_per_hour
+
     channels_ok = []
     ch = config["channels"]
 
-    if ch["email"]["enabled"] and ch["email"].get("smtp_host"):
-        try:
-            send_email(ch["email"], subject, message)
-            channels_ok.append("email")
-        except Exception as exc:  # best effort : ne bloque jamais les autres canaux
-            print(f"[alerts] email KO : {exc}", file=sys.stderr)
+    if not throttled:
+        if ch["email"]["enabled"] and ch["email"].get("smtp_host"):
+            try:
+                send_email(ch["email"], subject, message)
+                channels_ok.append("email")
+            except Exception as exc:  # best effort : ne bloque jamais les autres canaux
+                print(f"[alerts] email KO : {exc}", file=sys.stderr)
 
-    if ch.get("slack_webhook_url"):
-        try:
-            send_slack(ch["slack_webhook_url"], message)
-            channels_ok.append("slack")
-        except Exception as exc:
-            print(f"[alerts] slack KO : {exc}", file=sys.stderr)
+        if ch.get("slack_enabled", True) and ch.get("slack_webhook_url"):
+            try:
+                send_slack(ch["slack_webhook_url"], message)
+                channels_ok.append("slack")
+            except Exception as exc:
+                print(f"[alerts] slack KO : {exc}", file=sys.stderr)
 
-    if ch.get("discord_webhook_url"):
-        try:
-            send_discord(ch["discord_webhook_url"], message)
-            channels_ok.append("discord")
-        except Exception as exc:
-            print(f"[alerts] discord KO : {exc}", file=sys.stderr)
+        if ch.get("discord_enabled", True) and ch.get("discord_webhook_url"):
+            try:
+                send_discord(ch["discord_webhook_url"], message)
+                channels_ok.append("discord")
+            except Exception as exc:
+                print(f"[alerts] discord KO : {exc}", file=sys.stderr)
 
-    telegram = ch.get("telegram", {})
-    if telegram.get("bot_token") and telegram.get("chat_id"):
-        try:
-            send_telegram(telegram["bot_token"], telegram["chat_id"], message)
-            channels_ok.append("telegram")
-        except Exception as exc:
-            print(f"[alerts] telegram KO : {exc}", file=sys.stderr)
+        telegram = ch.get("telegram", {})
+        if telegram.get("enabled", True) and telegram.get("bot_token") and telegram.get("chat_id"):
+            try:
+                send_telegram(telegram["bot_token"], telegram["chat_id"], message)
+                channels_ok.append("telegram")
+            except Exception as exc:
+                print(f"[alerts] telegram KO : {exc}", file=sys.stderr)
 
-    store.insert_alert(level, subject, message, channels=channels_ok)
+        levels_order = {"info": 0, "warning": 1, "critical": 2}
+        min_level = ch.get("webpush_min_level", "critical")
+        if (
+            WEBPUSH_AVAILABLE
+            and ch.get("webpush_enabled", True)
+            and levels_order.get(level, 0) >= levels_order.get(min_level, 2)
+        ):
+            try:
+                webpush.broadcast(subject, message)
+                channels_ok.append("webpush")
+            except Exception as exc:
+                print(f"[alerts] webpush KO : {exc}", file=sys.stderr)
+
+    store.insert_alert(
+        level, subject, message + (" [notification throttlee : quota horaire atteint]" if throttled else ""),
+        channels=channels_ok, rule_key=rule_key, peer_name=peer_name,
+    )
     return channels_ok
 
 
@@ -289,7 +337,7 @@ def evaluate_rules(config=None, now=None):
                             else f"inactif depuis plus de {inactive_days} jour(s)."
                         )
                     )
-                    channels = dispatch(config, "BLOCKHash - Client inactif", msg, level="warning")
+                    channels = dispatch(config, "BLOCKHash - Client inactif", msg, level="warning", rule_key=rule_key, peer_name=peer["name"])
                     triggered.append({"rule": "inactive_days", "peer": peer["name"], "channels": channels})
 
     # -- Regle 2 : seuil de bande passante (dernier intervalle 5 min) --
@@ -309,7 +357,7 @@ def evaluate_rules(config=None, now=None):
                         f"{total / 1_000_000:.1f} Mo sur le dernier intervalle "
                         f"(seuil {bw_threshold_mb} Mo)."
                     )
-                    channels = dispatch(config, "BLOCKHash - Seuil de débit dépassé", msg, level="warning")
+                    channels = dispatch(config, "BLOCKHash - Seuil de débit dépassé", msg, level="warning", rule_key=rule_key, peer_name=peer["name"])
                     triggered.append({"rule": "bandwidth", "peer": peer["name"], "channels": channels})
 
     # -- Regle 3 : service WireGuard/dashboard hors ligne --------------
@@ -320,8 +368,59 @@ def evaluate_rules(config=None, now=None):
                 rule_key = f"service_down:{unit}"
                 if store.should_send(rule_key, cooldowns.get("service_down", 1800), now=now_ts):
                     msg = f"Le service « {unit} » n'est pas actif (statut : {status})."
-                    channels = dispatch(config, "BLOCKHash - Service hors ligne", msg, level="critical")
+                    channels = dispatch(config, "BLOCKHash - Service hors ligne", msg, level="critical", rule_key=rule_key, peer_name=None)
                     triggered.append({"rule": "service_down", "peer": unit, "channels": channels})
+
+    # -- Regle 3bis : seuils systeme (CPU / disque) --------------------
+    cpu_threshold = rules.get("cpu_percent_threshold")
+    disk_threshold = rules.get("disk_percent_threshold")
+    if cpu_threshold or disk_threshold:
+        snap = system_monitor.snapshot()
+        if cpu_threshold and snap.get("cpu_percent") is not None and snap["cpu_percent"] > cpu_threshold:
+            rule_key = "cpu_threshold"
+            if store.should_send(rule_key, cooldowns.get("cpu_threshold", 1800), now=now_ts):
+                msg = f"CPU à {snap['cpu_percent']:.0f}% (seuil configuré : {cpu_threshold}%)."
+                channels = dispatch(config, "BLOCKHash - Charge CPU élevée", msg, level="warning", rule_key=rule_key)
+                triggered.append({"rule": "cpu_percent_threshold", "peer": None, "channels": channels})
+        if disk_threshold and snap.get("disk", {}).get("percent") is not None and snap["disk"]["percent"] > disk_threshold:
+            rule_key = "disk_threshold"
+            if store.should_send(rule_key, cooldowns.get("disk_threshold", 3600), now=now_ts):
+                msg = f"Disque à {snap['disk']['percent']:.0f}% d'occupation (seuil configuré : {disk_threshold}%)."
+                channels = dispatch(config, "BLOCKHash - Espace disque critique", msg, level="critical", rule_key=rule_key)
+                triggered.append({"rule": "disk_percent_threshold", "peer": None, "channels": channels})
+
+    # -- Regle 4 : expiration de client proche -------------------------
+    expiry_days = rules.get("client_expiry_days")
+    if expiry_days:
+        for peer in peers:
+            if not peer["enabled"] or not peer.get("expires"):
+                continue
+            try:
+                expires_date = datetime.fromisoformat(peer["expires"]).date()
+            except ValueError:
+                continue
+            days_left = (expires_date - now.date()).days
+            if 0 <= days_left <= expiry_days:
+                rule_key = f"client_expiry:{peer['public_key']}:{expires_date.isoformat()}"
+                if store.should_send(rule_key, cooldowns.get("client_expiry", 86400), now=now_ts):
+                    msg = f"Client « {peer['name']} » expire le {expires_date.isoformat()} (dans {days_left} jour(s))."
+                    channels = dispatch(config, "BLOCKHash - Expiration proche", msg, level="warning", rule_key=rule_key, peer_name=peer["name"])
+                    triggered.append({"rule": "client_expiry_days", "peer": peer["name"], "channels": channels})
+
+    # -- Regle 5 : connexion depuis une IP jamais vue pour ce client ---
+    if rules.get("new_ip"):
+        for peer in peers:
+            if not peer["enabled"] or not peer.get("endpoint"):
+                continue
+            current_ip = peer["endpoint"].rsplit(":", 1)[0].strip("[]")
+            last = store.get_peer_last_ip(peer["public_key"])
+            if last and last.get("endpoint_ip") and last["endpoint_ip"] != current_ip:
+                rule_key = f"new_ip:{peer['public_key']}:{current_ip}"
+                if store.should_send(rule_key, cooldowns.get("new_ip", 300), now=now_ts):
+                    msg = f"Client « {peer['name']} » s'est connecté depuis une nouvelle IP : {current_ip} (précédente : {last['endpoint_ip']})."
+                    channels = dispatch(config, "BLOCKHash - Nouvelle IP détectée", msg, level="warning", rule_key=rule_key, peer_name=peer["name"])
+                    triggered.append({"rule": "new_ip", "peer": peer["name"], "channels": channels})
+            store.set_peer_last_ip(peer["public_key"], current_ip, ts=now_ts)
 
     return {"checked": True, "triggered": triggered}
 

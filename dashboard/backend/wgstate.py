@@ -75,6 +75,14 @@ def load_peer_config():
             "expires": meta.get("expires"),
             "bw_up_mbit": meta.get("bw_up_mbit"),
             "bw_down_mbit": meta.get("bw_down_mbit"),
+            "prenom": meta.get("prenom"),
+            "email": meta.get("email"),
+            "telephone": meta.get("telephone"),
+            "adresse": meta.get("adresse"),
+            "fonction": meta.get("fonction"),
+            "tags": meta.get("tags"),
+            "notes": meta.get("notes"),
+            "rgpd_consent": meta.get("rgpd_consent"),
         }
     return peers
 
@@ -150,6 +158,14 @@ def load_live_peers(online_threshold_sec=180):
                 "expires": cfg.get("expires"),
                 "bw_up_mbit": cfg.get("bw_up_mbit"),
                 "bw_down_mbit": cfg.get("bw_down_mbit"),
+                "prenom": cfg.get("prenom"),
+                "email": cfg.get("email"),
+                "telephone": cfg.get("telephone"),
+                "adresse": cfg.get("adresse"),
+                "fonction": cfg.get("fonction"),
+                "tags": cfg.get("tags"),
+                "notes": cfg.get("notes"),
+                "rgpd_consent": cfg.get("rgpd_consent"),
             }
         )
     return sorted(peers, key=lambda p: p["name"].lower())
@@ -180,7 +196,8 @@ def _row_to_log_dict(row, names):
     }
 
 
-def load_logs(limit=200, offset=0, search=None, pubkey=None, pubkeys=None, sort_key="ts", sort_dir="desc"):
+def load_logs(limit=200, offset=0, search=None, pubkey=None, pubkeys=None, sort_key="ts", sort_dir="desc",
+              ts_from=None, ts_to=None, volume_min=None, volume_max=None):
     """Renvoie {"total": N, "rows": [...]}, pagine au niveau SQL (voir
     store.query_logs) - contrairement a l'ancienne version CSV, ne charge
     jamais plus de `limit` lignes en memoire."""
@@ -188,7 +205,8 @@ def load_logs(limit=200, offset=0, search=None, pubkey=None, pubkeys=None, sort_
 
     names = load_peer_names()
     result = store.query_logs(
-        limit=limit, offset=offset, pubkey=pubkey, pubkeys=pubkeys, search=search, sort_key=sort_key, sort_dir=sort_dir
+        limit=limit, offset=offset, pubkey=pubkey, pubkeys=pubkeys, search=search, sort_key=sort_key, sort_dir=sort_dir,
+        ts_from=ts_from, ts_to=ts_to, volume_min=volume_min, volume_max=volume_max,
     )
     return {"total": result["total"], "rows": [_row_to_log_dict(r, names) for r in result["rows"]]}
 

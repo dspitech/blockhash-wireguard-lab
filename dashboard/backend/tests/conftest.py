@@ -99,7 +99,7 @@ def fresh_modules():
     monkeypatchent les variables d'environnement APRES le premier import
     fait par un test precedent, il faut recharger ces modules pour que
     les nouveaux chemins soient pris en compte a chaque test."""
-    names = ["wgstate", "store", "settings_store", "alerts", "reports", "servers_store", "system_monitor", "app"]
+    names = ["wgstate", "store", "settings_store", "alerts", "reports", "servers_store", "system_monitor", "auth", "webpush", "app"]
     for name in list(sys.modules):
         if name in names:
             del sys.modules[name]

@@ -41,7 +41,7 @@ def test_evaluate_rules_inactive_client_triggers_and_dedups(wg_env, fresh_module
     alerts.save_config(cfg)
 
     sent = []
-    alerts.dispatch = lambda config, subject, message, level="warning": (sent.append(message) or ["slack"])
+    alerts.dispatch = lambda config, subject, message, level="warning", rule_key=None, peer_name=None: (sent.append(message) or ["slack"])
 
     result = alerts.evaluate_rules()
     assert result["checked"] is True

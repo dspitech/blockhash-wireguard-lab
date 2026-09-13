@@ -10,6 +10,7 @@ seule de l'etat d'une unite, pas de droit d'action dessus).
 """
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -35,14 +36,61 @@ def service_status(unit):
         return "unknown"
 
 
-def snapshot():
+def tcp_connection_count():
+    """Nombre de connexions TCP ETABLISHED sur la machine (tout process
+    confondu) - psutil.net_connections() exige parfois root selon la
+    plateforme ; on degrade proprement (None) plutot que de planter."""
+    if psutil is None:
+        return None
+    try:
+        return sum(1 for c in psutil.net_connections(kind="tcp") if c.status == "ESTABLISHED")
+    except (psutil.AccessDenied, PermissionError):
+        return None
+
+
+def ping_latency_ms(host="1.1.1.1", timeout_sec=1):
+    """Latence reseau approximative (RTT ping) vers un hote public fixe.
+    Best-effort : renvoie None si `ping` est absent ou si la sonde echoue
+    (pas de connectivite sortante, firewall, etc.) plutot que de lever."""
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", str(timeout_sec), host],
+            capture_output=True, text=True, timeout=timeout_sec + 1,
+        )
+        match = re.search(r"time[=<]([\d.]+)", result.stdout)
+        return float(match.group(1)) if match else None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def cpu_temperature_c():
+    """Temperature CPU en degres Celsius si un capteur thermique est expose
+    par le noyau (rarement le cas sur une VM cloud, qui n'a pas d'acces au
+    materiel physique sous-jacent) - renvoie None sinon, sans erreur."""
+    if psutil is None or not hasattr(psutil, "sensors_temperatures"):
+        return None
+    try:
+        temps = psutil.sensors_temperatures()
+        for entries in temps.values():
+            if entries:
+                return entries[0].current
+    except Exception:
+        pass
+    return None
+
+
+def snapshot(include_ping=False):
     global _last_cpu_sample_ts
 
     data = {
         "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         "psutil_available": psutil is not None,
         "services": {unit: service_status(unit) for unit in MONITORED_SERVICES},
+        "tcp_connections": tcp_connection_count(),
+        "cpu_temperature_c": cpu_temperature_c(),
     }
+    if include_ping:
+        data["ping_ms"] = ping_latency_ms()
 
     if psutil is None:
         return data

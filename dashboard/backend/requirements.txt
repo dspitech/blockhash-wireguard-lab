@@ -1,5 +1,6 @@
 Flask==3.0.3
 gunicorn==22.0.0
 gevent==24.2.1
+pywebpush==2.5.0
 psutil==6.0.0
 fpdf2==2.7.9

@@ -415,6 +415,10 @@ def act_list(args):
     return {"ok": True, "peers": [p.to_dict() for p in peers]}
 
 
+CONTACT_FIELDS = ("prenom", "email", "telephone", "adresse", "fonction", "tags", "notes")
+CONSENT_FIELD = "rgpd_consent"
+
+
 def act_add(args):
     name = require_name(args.name)
     header, peers = load_conf()
@@ -425,6 +429,10 @@ def act_add(args):
     priv, pub, psk = gen_keypair()
 
     meta = {"created": now_iso(), "expires": None, "bw_up_mbit": None, "bw_down_mbit": None}
+    for field in CONTACT_FIELDS:
+        value = getattr(args, field, None)
+        meta[field] = value.strip() if value else None
+    meta[CONSENT_FIELD] = now_iso() if str(getattr(args, "rgpd_consent", "")).lower() in ("1", "true", "yes", "oui") else None
     if args.expires_days:
         meta["expires"] = (
             datetime.now(tz=timezone.utc) + timedelta(days=int(args.expires_days))
@@ -446,6 +454,28 @@ def act_add(args):
         "conf_text": conf_text,
         "qr_base64": qr_png_base64(conf_text),
     }
+
+
+def act_set_contact(args):
+    """Met a jour les champs de contact d'un client existant (prenom, email,
+    telephone, adresse, fonction) sans toucher a ses cles ni a son statut.
+    Chaque champ absent de la ligne de commande (None) laisse la valeur
+    actuelle inchangee ; passer une chaine vide efface le champ."""
+    name = require_name(args.name)
+    header, peers = load_conf()
+    peer = find_peer(peers, name)
+    updated = {}
+    for field in CONTACT_FIELDS:
+        value = getattr(args, field, None)
+        if value is not None:
+            peer.meta[field] = value.strip() or None
+            updated[field] = peer.meta[field]
+    if getattr(args, "rgpd_consent", None) is not None:
+        granted = str(args.rgpd_consent).lower() in ("1", "true", "yes", "oui")
+        peer.meta[CONSENT_FIELD] = now_iso() if granted else None
+        updated[CONSENT_FIELD] = peer.meta[CONSENT_FIELD]
+    save_conf(header, peers)
+    return {"ok": True, "name": name, "updated": updated}
 
 
 def act_enable(args):
@@ -615,6 +645,7 @@ ACTIONS = {
     "get-config": act_get_config,
     "set-expiry": act_set_expiry,
     "set-bandwidth": act_set_bandwidth,
+    "set-contact": act_set_contact,
     "check-expirations": act_check_expirations,
 }
 
@@ -628,6 +659,14 @@ def main():
     parser.add_argument("--expires")
     parser.add_argument("--bw-up")
     parser.add_argument("--bw-down")
+    parser.add_argument("--prenom")
+    parser.add_argument("--email")
+    parser.add_argument("--telephone")
+    parser.add_argument("--adresse")
+    parser.add_argument("--fonction")
+    parser.add_argument("--tags")
+    parser.add_argument("--notes")
+    parser.add_argument("--rgpd-consent")
     args = parser.parse_args()
 
     try:

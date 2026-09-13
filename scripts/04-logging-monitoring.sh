@@ -68,6 +68,16 @@ if ! grep -qF "store.py prune" /etc/crontab 2>/dev/null; then
   echo "$PRUNE_LINE" >> /etc/crontab
 fi
 
+# Sauvegardes planifiees (desactivees par defaut - reglage 'backup_schedule'
+# dans le dashboard : disabled/daily/weekly/monthly). Tourne tous les jours a
+# 4h ; wgops.py act_auto_backup s'auto-limite lui-meme selon le planning
+# configure (voir wgops.py) plutot que de reecrire dynamiquement cette ligne
+# de cron - www-data n'a ainsi jamais besoin d'ecrire dans /etc/crontab.
+AUTO_BACKUP_LINE="0 4 * * * root [ -f /opt/blockhash-dashboard/backend/wgops.py ] && python3 /opt/blockhash-dashboard/backend/wgops.py auto-backup >/dev/null 2>&1"
+if ! grep -qF "wgops.py auto-backup" /etc/crontab 2>/dev/null; then
+  echo "$AUTO_BACKUP_LINE" >> /etc/crontab
+fi
+
 echo "== 4. Configuration de la rotation des logs (logrotate) =="
 cat > /etc/logrotate.d/wireguard <<EOF
 $LOG_FILE {
