@@ -85,6 +85,18 @@
         <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.2 5.2l1.4 1.4M13.4 13.4l1.4 1.4M14.8 5.2l-1.4 1.4M6.6 13.4l-1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         <span class="nav-label" data-i18n="nav.settings">Réglages</span>
       </button>
+      <button class="nav-item" data-view="users" data-role-min="admin">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <span class="nav-label">Utilisateurs</span>
+      </button>
+      <button class="nav-item" data-view="tokens" data-role-min="admin">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="10" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M9.5 10H17M13 10v3M15.5 10v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <span class="nav-label">Tokens API</span>
+      </button>
+      <button class="nav-item" data-view="help">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.8 7.8a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="14" r=".7" fill="currentColor"/></svg>
+        <span class="nav-label">Aide</span>
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -576,15 +588,38 @@
           <div id="diagnostics-body" class="stack" style="padding:0 var(--sp-4) var(--sp-4);"><span class="cell-muted">Lancez un diagnostic pour voir l'état du système.</span></div>
         </div>
         <div class="card">
-          <div class="card-header"><h3 data-i18n="h3.journal-d-audit">Journal d'audit</h3><button class="btn ghost sm" id="btn-audit-export" data-i18n="btn.btn-audit-export">Exporter</button></div>
+          <div class="card-header"><h3 data-i18n="h3.journal-d-audit">Journal d'audit</h3><button class="btn ghost sm" data-view-link="audit">Voir tout →</button></div>
           <div class="table-wrap">
-            <table class="data-table" id="table-audit"><thead><tr><th data-i18n="th.entree">Entrée</th></tr></thead><tbody></tbody></table>
+            <table class="data-table" id="table-audit-preview"><thead><tr><th data-i18n="th.entree">Entrée</th></tr></thead><tbody></tbody></table>
           </div>
-          <div class="filters-bar" style="justify-content:flex-end;">
-            <span class="cell-muted" id="audit-page-indicator">0–0 sur 0</span>
-            <button class="btn ghost sm" id="audit-prev" data-i18n="btn.audit-prev">← Précédent</button>
-            <button class="btn ghost sm" id="audit-next" data-i18n="btn.audit-next">Suivant →</button>
-          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- AUDIT (page dediee, B5) ---------- -->
+    <section class="view" id="view-audit">
+      <div class="view-header">
+        <div><h1>Journal d'audit</h1><p>Qui a fait quoi, quand, depuis quelle IP</p></div>
+        <div class="view-actions"><button class="btn ghost sm" id="btn-audit-export">Exporter</button></div>
+      </div>
+      <div class="filters-bar">
+        <input class="input" id="audit-filter-action" placeholder="Filtrer par action (ex. login, backup, client)…" style="width:260px;" />
+        <input class="input" id="audit-filter-ip" placeholder="Filtrer par IP…" style="width:160px;" />
+        <label class="field-inline">Du <input class="input" type="date" id="audit-filter-date-from" /></label>
+        <label class="field-inline">Au <input class="input" type="date" id="audit-filter-date-to" /></label>
+        <button class="btn ghost sm" id="btn-audit-reset-filters">Réinitialiser</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="data-table" id="table-audit">
+            <thead><tr><th>Date</th><th>IP source</th><th>Action</th><th>Détail</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="filters-bar" style="justify-content:flex-end;">
+          <span class="cell-muted" id="audit-page-indicator">0–0 sur 0</span>
+          <button class="btn ghost sm" id="audit-prev">← Précédent</button>
+          <button class="btn ghost sm" id="audit-next">Suivant →</button>
         </div>
       </div>
     </section>
@@ -641,9 +676,15 @@
           <button class="btn ghost sm" id="btn-save-policies" style="align-self:flex-start;" data-i18n="btn.btn-save-policies">Enregistrer les politiques</button>
         </div>
       </div>
+    </section>
 
-      <div class="card" style="max-width:640px;margin-top:var(--sp-4);" data-role-min="admin">
-        <div class="card-header"><h3>Comptes utilisateurs</h3><button class="btn ghost sm" id="btn-add-user">Ajouter un utilisateur</button></div>
+    <!-- ---------- UTILISATEURS (page dediee, admin) ---------- -->
+    <section class="view" id="view-users">
+      <div class="view-header">
+        <div><h1>Utilisateurs</h1><p>Comptes, rôles et accès au dashboard</p></div>
+        <div class="view-actions"><button class="btn primary" id="btn-add-user">Ajouter un utilisateur</button></div>
+      </div>
+      <div class="card">
         <div class="table-wrap">
           <table class="data-table" id="table-users">
             <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead>
@@ -651,10 +692,16 @@
           </table>
         </div>
       </div>
+    </section>
 
-      <div class="card" style="max-width:640px;margin-top:var(--sp-4);" data-role-min="admin">
-        <div class="card-header"><h3>Tokens API</h3><button class="btn ghost sm" id="btn-add-token">Générer un token</button></div>
-        <p class="cell-muted" style="padding:0 var(--sp-4);">Pour l'automatisation (scripts, intégrations). Chaque token a un scope (lecture / écriture / admin) et une expiration optionnelle.</p>
+    <!-- ---------- TOKENS API (page dediee, admin) ---------- -->
+    <section class="view" id="view-tokens">
+      <div class="view-header">
+        <div><h1>Tokens API</h1><p>Pour l'automatisation (scripts, intégrations externes)</p></div>
+        <div class="view-actions"><button class="btn primary" id="btn-add-token">Générer un token</button></div>
+      </div>
+      <div class="card">
+        <p class="cell-muted" style="padding:var(--sp-3) var(--sp-4) 0;">Chaque token a un scope (lecture / écriture / admin) et une expiration optionnelle. Le token en clair n'est affiché qu'une seule fois, à la génération.</p>
         <div class="table-wrap">
           <table class="data-table" id="table-tokens">
             <thead><tr><th>Nom</th><th>Scope</th><th>Créé par</th><th>Expire</th><th>Dernier usage</th><th></th></tr></thead>
@@ -663,6 +710,20 @@
         </div>
       </div>
     </section>
+
+    <!-- ---------- AIDE (page dediee, B1) ---------- -->
+    <section class="view" id="view-help">
+      <div class="view-header"><div><h1>Aide</h1><p>Procédures pas-à-pas pour les tâches courantes</p></div></div>
+      <div class="help-grid" id="help-cards-grid"></div>
+    </section>
+
+    <!-- ---------- MODALE : detail d'une procedure d'aide ---------- -->
+    <div class="modal-overlay" id="modal-help-detail">
+      <div class="modal" style="max-width:600px;">
+        <div class="modal-header"><h3 id="help-detail-title">Procédure</h3><button class="icon-btn" data-close-modal>✕</button></div>
+        <div class="modal-body" id="help-detail-body"></div>
+      </div>
+    </div>
 
     <!-- ---------- MODALE : ajouter/editer un utilisateur ---------- -->
     <div class="modal-overlay" id="modal-user">
@@ -729,23 +790,31 @@
 
 <!-- ============ MODALS ============ -->
 <div class="modal-overlay" id="modal-client">
-  <div class="modal">
+  <div class="modal" style="max-width:520px;">
     <div class="modal-header"><h3 id="modal-client-title" data-i18n="h3.ajouter-un-client">Ajouter un client</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div class="modal-body">
-      <div class="field"><label data-i18n="label.nom-du-client">Nom du client</label><input class="input" id="field-client-name" placeholder="ex. alice-laptop" /></div>
-      <div class="field-row" style="display:flex;gap:10px;">
-        <div class="field" style="flex:1;"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input class="input" id="field-client-prenom" placeholder="ex. Alice Martin" /></div>
-        <div class="field" style="flex:1;"><label data-i18n="label.fonction">Fonction</label><input class="input" id="field-client-fonction" placeholder="ex. Technicienne" /></div>
+      <div class="form-section">
+        <div class="form-section-title">Identité</div>
+        <div class="field"><label data-i18n="label.nom-du-client">Nom du client</label><input class="input" id="field-client-name" placeholder="ex. alice-laptop" /></div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input class="input" id="field-client-prenom" placeholder="ex. Alice Martin" /></div>
+          <div class="field"><label data-i18n="label.fonction">Fonction</label><input class="input" id="field-client-fonction" placeholder="ex. Technicienne" /></div>
+        </div>
       </div>
-      <div class="field-row" style="display:flex;gap:10px;">
-        <div class="field" style="flex:1;"><label data-i18n="label.email">Email</label><input class="input" type="email" id="field-client-email" placeholder="alice@example.com" /></div>
-        <div class="field" style="flex:1;"><label data-i18n="label.telephone">Téléphone</label><input class="input" id="field-client-telephone" placeholder="+33612345678" /></div>
+      <div class="form-section">
+        <div class="form-section-title">Contact &amp; configuration</div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.email">Email</label><input class="input" type="email" id="field-client-email" placeholder="alice@example.com" /></div>
+          <div class="field"><label data-i18n="label.telephone">Téléphone</label><input class="input" id="field-client-telephone" placeholder="+33612345678" /></div>
+        </div>
+        <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input" id="field-client-adresse" placeholder="12 rue de Paris, 75001 Paris" /></div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par virgule)</label><input class="input" id="field-client-tags" placeholder="vip, audit" /></div>
+          <div class="field"><label data-i18n="label.date-d-expiration-optionnel">Date d'expiration</label><input class="input" type="date" id="field-client-expires" /></div>
+        </div>
+        <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-client-notes" rows="2" style="width:100%;"></textarea></div>
+        <div class="field"><label><input type="checkbox" id="field-client-rgpd-consent" /> Consentement RGPD recueilli</label></div>
       </div>
-      <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input" id="field-client-adresse" placeholder="12 rue de Paris, 75001 Paris" /></div>
-      <div class="field"><label data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par des virgules, ex. vip, externe)</label><input class="input" id="field-client-tags" placeholder="vip, audit" /></div>
-      <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-client-notes" rows="2" style="width:100%;"></textarea></div>
-      <div class="field"><label><input type="checkbox" id="field-client-rgpd-consent" /> Consentement RGPD recueilli</label></div>
-      <div class="field"><label data-i18n="label.date-d-expiration-optionnel">Date d'expiration (optionnel)</label><input class="input" type="date" id="field-client-expires" /></div>
     </div>
     <div class="modal-footer">
       <button class="btn" data-close-modal data-i18n="btn.cancel">Annuler</button>
@@ -755,25 +824,36 @@
 </div>
 
 <div class="modal-overlay" id="modal-client-edit">
-  <div class="modal">
+  <div class="modal" style="max-width:520px;">
     <div class="modal-header"><h3 data-i18n="h3.modifier-le-client">Modifier le client</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div class="modal-body">
-      <div class="field"><label data-i18n="label.nom-renommer">Nom (renommer)</label><input class="input" id="field-edit-name" placeholder="ex. alice-laptop" /></div>
-      <div class="field-row" style="display:flex;gap:10px;">
-        <div class="field" style="flex:1;"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input class="input" id="field-edit-prenom" /></div>
-        <div class="field" style="flex:1;"><label data-i18n="label.fonction">Fonction</label><input class="input" id="field-edit-fonction" /></div>
+      <div class="form-section">
+        <div class="form-section-title">Identité</div>
+        <div class="field"><label data-i18n="label.nom-renommer">Nom (renommer)</label><input class="input" id="field-edit-name" placeholder="ex. alice-laptop" /></div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input class="input" id="field-edit-prenom" /></div>
+          <div class="field"><label data-i18n="label.fonction">Fonction</label><input class="input" id="field-edit-fonction" /></div>
+        </div>
       </div>
-      <div class="field-row" style="display:flex;gap:10px;">
-        <div class="field" style="flex:1;"><label data-i18n="label.email">Email</label><input class="input" type="email" id="field-edit-email" /></div>
-        <div class="field" style="flex:1;"><label data-i18n="label.telephone">Téléphone</label><input class="input" id="field-edit-telephone" /></div>
+      <div class="form-section">
+        <div class="form-section-title">Contact</div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.email">Email</label><input class="input" type="email" id="field-edit-email" /></div>
+          <div class="field"><label data-i18n="label.telephone">Téléphone</label><input class="input" id="field-edit-telephone" /></div>
+        </div>
+        <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input" id="field-edit-adresse" /></div>
+        <div class="field"><label data-i18n="label.tags-separes-par-des-virgules">Tags (séparés par des virgules)</label><input class="input" id="field-edit-tags" /></div>
+        <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-edit-notes" rows="2" style="width:100%;"></textarea></div>
+        <div class="field"><label><input type="checkbox" id="field-edit-rgpd-consent" /> Consentement RGPD recueilli</label>
+          <button class="btn ghost sm" id="btn-gdpr-export" style="margin-left:10px;" data-i18n="btn.btn-gdpr-export">Exporter les données (RGPD)</button></div>
       </div>
-      <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input" id="field-edit-adresse" /></div>
-      <div class="field"><label data-i18n="label.tags-separes-par-des-virgules">Tags (séparés par des virgules)</label><input class="input" id="field-edit-tags" /></div>
-      <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-edit-notes" rows="2" style="width:100%;"></textarea></div>
-      <div class="field"><label><input type="checkbox" id="field-edit-rgpd-consent" /> Consentement RGPD recueilli</label>
-        <button class="btn ghost sm" id="btn-gdpr-export" style="margin-left:10px;" data-i18n="btn.btn-gdpr-export">Exporter les données (RGPD)</button></div>
-      <div class="field"><label data-i18n="label.date-d-expiration-laisser-vide-pas-d-expiration">Date d'expiration (laisser vide = pas d'expiration)</label><input class="input" type="date" id="field-edit-expires" /></div>
-      <div class="field"><label data-i18n="label.limite-de-bande-passante-en-mbit-s-entier-optionne">Limite de bande passante en Mbit/s (entier, optionnel, laisser vide = illimité)</label><input class="input" type="number" min="1" step="1" id="field-edit-bandwidth" placeholder="ex. 20" /></div>
+      <div class="form-section">
+        <div class="form-section-title">Configuration technique</div>
+        <div class="field-grid">
+          <div class="field"><label data-i18n="label.date-d-expiration-laisser-vide-pas-d-expiration">Expiration (vide = aucune)</label><input class="input" type="date" id="field-edit-expires" /></div>
+          <div class="field"><label>Bande passante (Mbit/s)</label><input class="input" type="number" min="1" step="1" id="field-edit-bandwidth" placeholder="illimité" /></div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" data-close-modal data-i18n="btn.cancel">Annuler</button>

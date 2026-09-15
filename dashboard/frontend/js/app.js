@@ -55,6 +55,36 @@ function authHeaders() {
   return token ? { "X-API-Token": token } : {};
 }
 
+/**
+ * Telecharge un fichier depuis une route /api/* protegee par jeton.
+ * window.open()/window.location sur une URL /api ne transmet PAS le header
+ * X-API-Token : la requete est alors rejetee en 401 et rien ne se passe,
+ * sans le moindre message d'erreur visible (bug corrige - voir historique).
+ * Cette fonction fait un fetch authentifie, puis declenche le telechargement
+ * via un lien <a download> temporaire sur le blob recu.
+ */
+async function downloadWithAuth(url, filename) {
+  try {
+    const resp = await fetch(url, { headers: authHeaders() });
+    if (!resp.ok) {
+      let message = `Erreur API (${resp.status})`;
+      try { message = (await resp.json()).error || message; } catch { /* reponse non-JSON, on garde le message par defaut */ }
+      throw new Error(message);
+    }
+    const blob = await resp.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename || "export";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    toast("danger", "Échec du téléchargement", err.message);
+  }
+}
+
 async function apiGet(path) {
   const res = await fetch(path, { headers: authHeaders(), cache: "no-store" });
   if (!res.ok) {
@@ -207,7 +237,7 @@ function applySidebar() {
 const VIEW_TITLES = {
   overview: "Vue d'ensemble", clients: "Clients", journal: "Journal des connexions",
   monitoring: "Monitoring", alerts: "Alertes", compliance: "Conformité",
-  system: "Système", settings: "Réglages",
+  system: "Système", settings: "Réglages", users: "Utilisateurs", tokens: "Tokens API", help: "Aide", audit: "Journal d'audit",
 };
 
 function switchView(view) {
@@ -227,8 +257,12 @@ function loadView(view) {
     case "monitoring": return renderMonitoring();
     case "alerts": return renderAlerts();
     case "compliance": return renderCompliance();
-    case "system": renderSystem(); return renderAudit();
-    case "settings": renderSettings(); if (STATE.currentUser.role === "admin") { renderUsers(); renderTokens(); } return;
+    case "system": renderSystem(); return renderAuditPreview();
+    case "audit": return renderAudit();
+    case "settings": return renderSettings();
+    case "users": return renderUsers();
+    case "tokens": return renderTokens();
+    case "help": return renderHelp();
   }
 }
 
@@ -626,7 +660,7 @@ document.getElementById("btn-copy-new-token").addEventListener("click", async ()
 });
 
 document.getElementById("btn-help").addEventListener("click", () => {
-  toast("info", "Raccourcis clavier", "g c: Clients · g a: Alertes · g m: Monitoring · / : rechercher · Échap : fermer une modale. Documentation complète : voir le README du projet (section 7).");
+  switchView("help");
 });
 document.getElementById("btn-feedback").addEventListener("click", () => {
   const context = `Page actuelle : ${STATE.currentView || "inconnue"}\nNavigateur : ${navigator.userAgent}\nURL : ${window.location.href}`;
@@ -647,6 +681,103 @@ async function maybeShowOnboarding() {
   } catch {
     el.innerHTML = `<span class="cell-muted">Diagnostic non disponible pour le moment — tout le reste du dashboard fonctionne normalement.</span>`;
   }
+}
+
+// ---------------------------------------------------------------
+// Aide (item B1) : cartes thematiques -> modale de detail pas-a-pas
+// ---------------------------------------------------------------
+const HELP_TOPICS = [
+  {
+    id: "create-client", title: "Créer un client", icon: "👤",
+    summary: "Ajouter un nouveau client WireGuard et récupérer sa configuration.",
+    steps: [
+      "Ouvrez la page <strong>Clients</strong>.",
+      "Cliquez sur <strong>Ajouter un client</strong> en haut à droite.",
+      "Renseignez le nom (obligatoire) et, si besoin, les champs de contact (email, téléphone, fonction…) et une date d'expiration.",
+      "Cliquez sur <strong>Créer</strong> : les clés WireGuard et l'adresse IP sont générées automatiquement.",
+      "Utilisez le bouton <strong>QR</strong> pour scanner directement depuis l'app mobile WireGuard, ou <strong>Config</strong> pour télécharger le fichier <code>.conf</code>.",
+    ],
+  },
+  {
+    id: "bulk-import", title: "Importer des clients en masse", icon: "📥",
+    summary: "Créer plusieurs clients d'un coup, en collant une liste ou en important un CSV.",
+    steps: [
+      "Sur la page <strong>Clients</strong>, cliquez sur <strong>Ajouter plusieurs clients</strong>.",
+      "Onglet <strong>Coller une liste</strong> : un client par ligne (<code>nom,email,téléphone</code>).",
+      "Onglet <strong>Importer un fichier CSV</strong> : téléchargez d'abord le modèle, remplissez-le, puis importez-le.",
+      "Cliquez sur <strong>Aperçu (dry-run)</strong> pour valider le contenu sans rien créer.",
+      "Si tout est correct, cliquez sur <strong>Créer les clients</strong>. Un rapport indique les lignes en erreur le cas échéant.",
+    ],
+  },
+  {
+    id: "download-config", title: "Télécharger une configuration", icon: "⬇️",
+    summary: "Récupérer le fichier .conf ou le QR code d'un client existant.",
+    steps: [
+      "Page <strong>Clients</strong>, repérez la ligne du client concerné.",
+      "Bouton <strong>Config</strong> : télécharge le fichier <code>.conf</code> prêt à importer dans l'application WireGuard.",
+      "Bouton <strong>QR</strong> : affiche le QR code à scanner depuis un mobile, avec option de téléchargement en PNG ou de copie du texte de config.",
+    ],
+  },
+  {
+    id: "view-logs", title: "Consulter les logs", icon: "📜",
+    summary: "Explorer l'historique des connexions et sessions.",
+    steps: [
+      "Ouvrez la page <strong>Journal</strong>.",
+      "Utilisez la recherche et le filtre de statut pour restreindre l'affichage.",
+      "Cliquez sur <strong>Filtres avancés</strong> pour affiner par plage de dates ou par volume.",
+      "Cliquez sur une ligne pour voir le détail complet d'une session (endpoint, clé publique, volumes).",
+      "La <strong>heatmap</strong> en bas de page montre les créneaux horaires les plus actifs sur 30 jours.",
+    ],
+  },
+  {
+    id: "create-alert", title: "Créer une alerte", icon: "🔔",
+    summary: "Configurer les règles et canaux de notification.",
+    steps: [
+      "Ouvrez la page <strong>Alertes</strong> puis cliquez sur <strong>Configurer les canaux</strong>.",
+      "Activez les alertes automatiques, puis cochez les règles souhaitées (connexion/déconnexion, hors-horaires, inactivité, expiration proche…).",
+      "Renseignez au moins un canal de notification (webhook Slack/Discord, e-mail) et testez-le avec le bouton <strong>Tester</strong>.",
+      "Enregistrez : les alertes déclenchées apparaissent ensuite dans l'historique, avec filtres et export CSV.",
+    ],
+  },
+  {
+    id: "restore-backup", title: "Restaurer une sauvegarde", icon: "🗄️",
+    summary: "Revenir à une configuration antérieure du tunnel.",
+    steps: [
+      "Ouvrez la page <strong>Système</strong>.",
+      "Repérez la sauvegarde souhaitée dans la liste (date, description, empreinte SHA-256).",
+      "Cliquez sur <strong>Restaurer</strong>, saisissez votre mot de passe et tapez <strong>RESTORE</strong> pour confirmer.",
+      "Une sauvegarde de sécurité de l'état actuel est créée automatiquement avant toute restauration, pour pouvoir annuler si besoin.",
+    ],
+  },
+  {
+    id: "manage-users", title: "Gérer les utilisateurs", icon: "🔑",
+    summary: "Ajouter des comptes, définir des rôles, générer des tokens API.",
+    steps: [
+      "Ouvrez la page <strong>Utilisateurs</strong> (réservée aux comptes admin).",
+      "Cliquez sur <strong>Ajouter un utilisateur</strong>, choisissez un rôle : lecteur, opérateur ou admin.",
+      "Pour désactiver ou changer le rôle d'un compte, utilisez <strong>Modifier</strong> sur sa ligne.",
+      "Pour l'automatisation, générez un <strong>Token API</strong> scopé depuis la page dédiée — il ne s'affiche qu'une seule fois, copiez-le immédiatement.",
+    ],
+  },
+];
+
+function renderHelp() {
+  const grid = document.getElementById("help-cards-grid");
+  grid.innerHTML = HELP_TOPICS.map(topic => `
+    <button class="help-card" data-help-topic="${topic.id}">
+      <span class="help-card-icon">${topic.icon}</span>
+      <span class="help-card-title">${escapeHtml(topic.title)}</span>
+      <span class="help-card-summary">${escapeHtml(topic.summary)}</span>
+    </button>`).join("");
+  grid.querySelectorAll("[data-help-topic]").forEach(btn => btn.addEventListener("click", () => openHelpDetail(btn.dataset.helpTopic)));
+}
+
+function openHelpDetail(topicId) {
+  const topic = HELP_TOPICS.find(t => t.id === topicId);
+  if (!topic) return;
+  document.getElementById("help-detail-title").textContent = topic.title;
+  document.getElementById("help-detail-body").innerHTML = `<ol class="help-steps">${topic.steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
+  openModal("modal-help-detail");
 }
 
 // ---------------------------------------------------------------
@@ -1053,19 +1184,59 @@ function drawClientsTable() {
       <td class="cell-muted">${fmtDate(p.created)}</td>
       <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "—"}</td>
       <td>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn ghost sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}">${p.enabled ? "Désactiver" : "Activer"}</button>
-          <button class="btn ghost sm" data-action="edit" data-name="${escapeHtml(p.name)}" title="Renommer / contact / expiration / bande passante">Modifier</button>
-          <button class="btn ghost sm" data-action="detail" data-name="${escapeHtml(p.name)}" title="Historique et statistiques">Détails</button>
-          <button class="btn ghost sm" data-action="qr" data-name="${escapeHtml(p.name)}" title="Afficher le QR code d'appairage">QR</button>
-          <button class="btn ghost sm" data-action="config" data-name="${escapeHtml(p.name)}" title="Télécharger la configuration (.conf)">Config</button>
-          <button class="btn ghost sm" data-action="regenerate" data-name="${escapeHtml(p.name)}" title="Régénérer les clés (invalide l'ancienne configuration)">Régénérer</button>
-          <button class="btn ghost sm" data-action="revoke" data-name="${escapeHtml(p.name)}" title="Révoquer">✕</button>
+        <div class="row-actions">
+          <button class="icon-btn sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}" title="${p.enabled ? "Désactiver" : "Activer"}">
+            ${p.enabled
+              ? '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+              : '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}
+          </button>
+          <div class="kebab-wrap">
+            <button class="icon-btn sm" data-action="kebab-toggle" title="Plus d'actions">
+              <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="4.5" r="1.3" fill="currentColor"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor"/></svg>
+            </button>
+            <div class="kebab-menu" hidden>
+              <button data-action="edit" data-name="${escapeHtml(p.name)}">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M13.5 3.5 16.5 6.5 7 16H4V13L13.5 3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                Modifier
+              </button>
+              <button data-action="detail" data-name="${escapeHtml(p.name)}">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M4 10c1.5-3.5 4-5 6-5s4.5 1.5 6 5c-1.5 3.5-4 5-6 5s-4.5-1.5-6-5Z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="1.8" stroke="currentColor" stroke-width="1.4"/></svg>
+                Détails
+              </button>
+              <button data-action="qr" data-name="${escapeHtml(p.name)}">
+                <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="12" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="12.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/></svg>
+                QR code
+              </button>
+              <button data-action="config" data-name="${escapeHtml(p.name)}">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                Config (.conf)
+              </button>
+              <button data-action="regenerate" data-name="${escapeHtml(p.name)}">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Régénérer les clés
+              </button>
+              <button data-action="revoke" data-name="${escapeHtml(p.name)}" class="danger">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4.5h4V6M6 6v9.5h8V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Révoquer
+              </button>
+            </div>
+          </div>
         </div>
       </td>
     </tr>
   `).join("");
 
+  tbody.querySelectorAll('[data-action="kebab-toggle"]').forEach(btn => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = btn.parentElement.querySelector(".kebab-menu");
+    const wasOpen = !menu.hidden;
+    document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true);
+    menu.hidden = wasOpen;
+  }));
+  if (!STATE._kebabDocListenerAttached) {
+    document.addEventListener("click", () => document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true));
+    STATE._kebabDocListenerAttached = true;
+  }
   tbody.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
   tbody.querySelectorAll('[data-action="edit"]').forEach(btn => btn.addEventListener("click", () => openEditClientModal(btn.dataset.name)));
   tbody.querySelectorAll('[data-action="detail"]').forEach(btn => btn.addEventListener("click", () => showClientDetail(btn.dataset.name)));
@@ -1250,7 +1421,7 @@ document.getElementById("btn-download-conf-from-qr").addEventListener("click", e
 
 document.getElementById("btn-export-clients").addEventListener("click", () => {
   const status = STATE.clientsFilter.status;
-  window.open(`/api/clients/export?status=${encodeURIComponent(status)}`, "_blank");
+  downloadWithAuth(`/api/clients/export?status=${encodeURIComponent(status)}`, "clients.csv");
 });
 
 async function toggleClient(name, currentlyEnabled) {
@@ -1279,7 +1450,7 @@ function openEditClientModal(name) {
 document.getElementById("btn-gdpr-export").addEventListener("click", () => {
   const name = document.getElementById("field-edit-name").dataset.originalName;
   if (!name) return;
-  window.open(`/api/clients/${encodeURIComponent(name)}/gdpr-export`, "_blank");
+  downloadWithAuth(`/api/clients/${encodeURIComponent(name)}/gdpr-export`, `${name}-export-rgpd.json`);
 });
 
 async function submitEditClient() {
@@ -1450,7 +1621,7 @@ document.getElementById("btn-bulk-clients").addEventListener("click", () => {
   openModal("modal-bulk-clients");
 });
 document.getElementById("btn-download-template").addEventListener("click", () => {
-  window.open("/api/clients/import-template", "_blank");
+  downloadWithAuth("/api/clients/import-template", "modele-import-clients.csv");
 });
 document.getElementById("bulk-file-input").addEventListener("change", e => {
   const file = e.target.files[0];
@@ -1929,7 +2100,7 @@ document.getElementById("alerts-next").addEventListener("click", () => {
   const el = document.getElementById(id);
   el.addEventListener(el.type === "checkbox" ? "change" : "input", () => { STATE.alertsPage.offset = 0; renderAlerts(); });
 });
-document.getElementById("btn-alerts-export").addEventListener("click", () => window.open("/api/alerts/history/export", "_blank"));
+document.getElementById("btn-alerts-export").addEventListener("click", () => downloadWithAuth("/api/alerts/history/export", "alertes.csv"));
 
 function renderDedupList(entries) {
   const el = document.getElementById("dedup-list");
@@ -2248,7 +2419,7 @@ document.getElementById("btn-rotate-keys").addEventListener("click", async () =>
 });
 document.getElementById("btn-export").addEventListener("click", () => {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Export indisponible sans API connectée.");
-  window.location.href = "/api/system/export";
+  downloadWithAuth("/api/system/export", `blockhash-export-${new Date().toISOString().slice(0, 10)}.zip`);
 });
 document.getElementById("qa-export")?.addEventListener("click", () => document.getElementById("btn-export").click());
 
@@ -2267,28 +2438,66 @@ document.getElementById("btn-run-diagnostics").addEventListener("click", async (
   } catch (err) { el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`; }
 });
 
-STATE.auditPage = { offset: 0, limit: 50 };
-async function renderAudit() {
-  const tbody = document.querySelector("#table-audit tbody");
+async function renderAuditPreview() {
+  const tbody = document.querySelector("#table-audit-preview tbody");
   if (STATE.demoMode) {
     tbody.innerHTML = `<tr><td><div class="empty-state"><strong>Mode démonstration</strong></div></td></tr>`;
     return;
   }
   try {
-    const data = await apiGet(`/api/system/audit?limit=${STATE.auditPage.limit}&offset=${STATE.auditPage.offset}`);
+    const data = await apiGet("/api/system/audit?limit=5&offset=0");
     tbody.innerHTML = data.rows.length
       ? data.rows.map(r => `<tr><td class="mono cell-muted" style="font-size:12px;">${escapeHtml(r.raw)}</td></tr>`).join("")
       : `<tr><td><div class="empty-state"><strong>Aucune entrée</strong></div></td></tr>`;
+  } catch (err) { tbody.innerHTML = `<tr><td><div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div></td></tr>`; }
+}
+
+STATE.auditPage = { offset: 0, limit: 50 };
+async function renderAudit() {
+  const tbody = document.querySelector("#table-audit tbody");
+  if (STATE.demoMode) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><strong>Mode démonstration</strong></div></td></tr>`;
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ limit: STATE.auditPage.limit, offset: STATE.auditPage.offset });
+    const action = document.getElementById("audit-filter-action").value.trim();
+    const ip = document.getElementById("audit-filter-ip").value.trim();
+    const dateFrom = document.getElementById("audit-filter-date-from").value;
+    const dateTo = document.getElementById("audit-filter-date-to").value;
+    if (action) params.set("action", action);
+    if (ip) params.set("ip", ip);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+
+    const data = await apiGet(`/api/system/audit?${params.toString()}`);
+    tbody.innerHTML = data.rows.length
+      ? data.rows.map(r => `
+          <tr>
+            <td class="mono cell-muted">${escapeHtml(r.date || "—")}</td>
+            <td class="mono cell-muted">${escapeHtml(r.ip || "—")}</td>
+            <td class="cell-primary">${escapeHtml(r.action || "—")}</td>
+            <td class="cell-muted" style="font-size:12px;">${escapeHtml(r.detail || "")}</td>
+          </tr>`).join("")
+      : `<tr><td colspan="4"><div class="empty-state"><strong>Aucune entrée</strong><span>Aucun événement ne correspond à ces filtres.</span></div></td></tr>`;
     const { offset, limit } = STATE.auditPage;
     document.getElementById("audit-page-indicator").textContent =
       data.total ? `${offset + 1}–${Math.min(offset + limit, data.total)} sur ${data.total}` : "0–0 sur 0";
     document.getElementById("audit-prev").disabled = offset <= 0;
     document.getElementById("audit-next").disabled = offset + limit >= data.total;
-  } catch (err) { tbody.innerHTML = `<tr><td><div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div></td></tr>`; }
+  } catch (err) { tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div></td></tr>`; }
 }
 document.getElementById("audit-prev").addEventListener("click", () => { STATE.auditPage.offset = Math.max(0, STATE.auditPage.offset - STATE.auditPage.limit); renderAudit(); });
 document.getElementById("audit-next").addEventListener("click", () => { STATE.auditPage.offset += STATE.auditPage.limit; renderAudit(); });
-document.getElementById("btn-audit-export").addEventListener("click", () => window.open("/api/system/audit/export", "_blank"));
+document.getElementById("btn-audit-export").addEventListener("click", () => downloadWithAuth("/api/system/audit/export", "audit.log"));
+["audit-filter-action", "audit-filter-ip", "audit-filter-date-from", "audit-filter-date-to"].forEach(id => {
+  document.getElementById(id).addEventListener("change", () => { STATE.auditPage.offset = 0; renderAudit(); });
+});
+document.getElementById("btn-audit-reset-filters").addEventListener("click", () => {
+  ["audit-filter-action", "audit-filter-ip", "audit-filter-date-from", "audit-filter-date-to"].forEach(id => document.getElementById(id).value = "");
+  STATE.auditPage.offset = 0;
+  renderAudit();
+});
 
 // ---------------------------------------------------------------
 // VUE : Réglages

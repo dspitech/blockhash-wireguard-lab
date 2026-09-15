@@ -812,6 +812,9 @@ def api_push_test():
         raise WgctlError("Web Push indisponible : dépendances non installées côté serveur (pywebpush).", status=503)
     result = webpush.broadcast("BLOCKHash - Test", "Ceci est une notification de test.", url="/")
     return jsonify(result)
+
+
+@app.get("/api/alerts/history")
 def api_alerts_history():
     limit = min(int(request.args.get("limit", 50)), 200)
     offset = int(request.args.get("offset", 0))
@@ -1387,21 +1390,50 @@ def api_system_rotate_keys():
     return jsonify(result)
 
 
+AUDIT_LINE_RE = re.compile(r"^(?P<date>\S+ \S+),\d+ ip=(?P<ip>\S+) action=(?P<action>\S+)\s*(?P<detail>.*)$")
+
+
+def _parse_audit_line(line):
+    m = AUDIT_LINE_RE.match(line)
+    if not m:
+        return {"raw": line, "date": None, "ip": None, "action": None, "detail": line}
+    d = m.groupdict()
+    d["raw"] = line
+    return d
+
+
 @app.get("/api/system/audit")
 def api_system_audit():
-    """Lit le journal d'audit append-only (voir AUDIT_LOG_PATH) et renvoie
-    les entrees les plus recentes en premier, avec pagination simple. Lecture
-    seule d'un fichier texte : aucun risque, meme si le fichier grossit
-    beaucoup (on ne lit que ce qui est demande)."""
+    """Lit le journal d'audit append-only (voir AUDIT_LOG_PATH), le parse en
+    champs structures (date, ip, action, detail - voir audit() plus haut
+    pour le format d'origine) et renvoie les entrees les plus recentes en
+    premier, avec pagination et filtres simples. Lecture seule d'un fichier
+    texte : aucun risque, meme si le fichier grossit beaucoup (on ne lit que
+    ce qui est demande)."""
     limit = min(int(request.args.get("limit", 50)), 500)
     offset = int(request.args.get("offset", 0))
+    action_filter = request.args.get("action")
+    ip_filter = request.args.get("ip")
+    date_from = request.args.get("date_from")  # "YYYY-MM-DD"
+    date_to = request.args.get("date_to")
+
     if not AUDIT_LOG_PATH.exists():
         return jsonify({"rows": [], "total": 0})
     lines = AUDIT_LOG_PATH.read_text(errors="ignore").splitlines()
     lines.reverse()  # plus recent en premier
-    total = len(lines)
-    page = lines[offset:offset + limit]
-    return jsonify({"rows": [{"raw": line} for line in page], "total": total})
+    rows = [_parse_audit_line(l) for l in lines if l.strip()]
+
+    if action_filter:
+        rows = [r for r in rows if r["action"] and action_filter.lower() in r["action"].lower()]
+    if ip_filter:
+        rows = [r for r in rows if r["ip"] and ip_filter in r["ip"]]
+    if date_from:
+        rows = [r for r in rows if r["date"] and r["date"] >= date_from]
+    if date_to:
+        rows = [r for r in rows if r["date"] and r["date"] <= date_to + " 23:59:59"]
+
+    total = len(rows)
+    return jsonify({"rows": rows[offset:offset + limit], "total": total})
 
 
 @app.get("/api/system/audit/export")

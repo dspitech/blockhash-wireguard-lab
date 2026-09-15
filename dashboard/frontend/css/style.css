@@ -215,6 +215,39 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 .icon-btn:hover { color: #fff; border-color: var(--accent); background: rgba(236,30,121,0.15); }
 .icon-btn svg { width: 16px; height: 16px; }
+
+.row-actions { display: flex; align-items: center; gap: 4px; }
+.row-actions .icon-btn.sm {
+  width: 28px; height: 28px; border: 1px solid var(--border-subtle); background: var(--bg-surface);
+  color: var(--text-tertiary);
+}
+.row-actions .icon-btn.sm:hover { color: var(--teal-mid); border-color: var(--teal-mid); background: var(--teal-mid, transparent); background: color-mix(in srgb, var(--teal-mid) 10%, var(--bg-surface)); }
+.row-actions .icon-btn.sm svg { width: 15px; height: 15px; }
+.kebab-wrap { position: relative; }
+.kebab-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 190px;
+  background: var(--bg-surface-raised); border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2); padding: 4px; display: flex; flex-direction: column; gap: 1px;
+}
+.kebab-menu button {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: none; background: none;
+  border-radius: var(--radius-sm); font-size: var(--fs-sm); color: var(--text-primary); cursor: pointer;
+  text-align: left; width: 100%; font-family: inherit;
+}
+.kebab-menu button:hover { background: var(--bg-inset); }
+.kebab-menu button svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-tertiary); }
+.kebab-menu button.danger { color: var(--accent-strong); }
+.kebab-menu button.danger svg { color: var(--accent-strong); }
+
+.form-section { margin-bottom: var(--sp-4); }
+.form-section:last-child { margin-bottom: 0; }
+.form-section-title {
+  font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-tertiary); margin-bottom: var(--sp-3); padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle);
+}
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--sp-3); }
+.field-grid .field { min-width: 0; }
+@media (max-width: 520px) { .field-grid { grid-template-columns: 1fr; } }
 .topbar-search {
   display: flex; align-items: center; gap: var(--sp-2);
   background: #fff; border: 1px solid rgba(255,255,255,0.4);
@@ -268,6 +301,19 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-4); gap: var(--sp-3); }
 .card-header h3 { font-size: var(--fs-md); font-weight: 700; margin: 0; color: var(--teal-deep); }
 .card-header .hint { font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-4); }
+.help-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  padding: var(--sp-4); cursor: pointer; transition: border-color .15s, transform .15s; font-family: inherit;
+}
+.help-card:hover { border-color: var(--teal-mid); transform: translateY(-2px); }
+.help-card-icon { font-size: 24px; }
+.help-card-title { font-weight: 700; color: var(--teal-deep); }
+.help-card-summary { font-size: var(--fs-sm); color: var(--text-tertiary); }
+.help-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+.help-steps li { line-height: 1.5; }
 
 .badge {
   display: inline-flex; align-items: center; gap: 5px;

@@ -156,6 +156,13 @@ chgrp "$SERVICE_USER" /var/log/wireguard || true
 # absent), cette creation echoue silencieusement et /api/health signale
 # "metrics_db_reachable": false (verifiable avec 'curl -k https://127.0.0.1/healthz').
 chmod 770 /var/log/wireguard || true
+# Bit setgid : sans lui, un fichier RECREE par un cron root (ex. VACUUM de
+# blockhash.db, voir store.py::prune_old) heriterait du groupe primaire de
+# root (generalement "root"), pas de www-data - www-data perdrait alors tout
+# acces au fichier jusqu'au prochain chgrp manuel. Avec setgid, le nouveau
+# fichier garde le groupe du REPERTOIRE (www-data) quel que soit l'utilisateur
+# qui l'a cree.
+chmod g+s /var/log/wireguard || true
 # Journal d'audit des actions sensibles (creation/revocation client, rotation
 # de cles, redemarrage...) - pre-cree ici avec les bonnes permissions, sinon
 # www-data (groupe en lecture seule sur le dossier, voir chmod 750 ci-dessus)

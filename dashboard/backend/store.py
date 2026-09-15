@@ -30,6 +30,7 @@ import os
 import re
 import sqlite3
 import statistics
+import stat as stat_mod
 import sys
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -169,8 +170,20 @@ def init_db():
 
 
 def _fix_permissions():
-    """La base est ecrite par root (cron) mais lue par www-data (Flask) :
-    on l'ouvre en lecture au groupe de service apres chaque ecriture."""
+    """La base est ecrite a la fois par des taches cron en root (capture
+    d'etat WireGuard toutes les 5 min, evaluation des regles d'alerte,
+    purge nocturne) ET par Flask/www-data (sessions, comptes utilisateurs,
+    tokens API, alertes marquees lues/archivees, abonnements Web Push...).
+    Les DEUX doivent pouvoir ECRIRE dans le meme fichier.
+
+    Root ignore de toute facon les permissions Unix (DAC_OVERRIDE), donc
+    seul www-data a besoin d'un droit explicite : mode 0660 (lecture+
+    ecriture pour le groupe, pas seulement lecture comme avant) et groupe
+    www-data. Le proprietaire n'est PAS force a chaque appel : que ce soit
+    root ou www-data qui ait cree/reecrit le fichier en dernier (ex. apres
+    un VACUUM), le bit setgid pose sur le repertoire (voir
+    scripts/03-install-dashboard.sh) garantit que le GROUPE reste www-data,
+    ce qui suffit avec ce mode 0660."""
     try:
         import grp
 
@@ -178,10 +191,13 @@ def _fix_permissions():
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(DB_PATH) + suffix)
             if p.exists():
-                os.chown(p, 0, gid)  # conserve owner root, ajuste seulement le groupe
-                os.chmod(p, 0o640)
+                st = p.stat()
+                if st.st_gid != gid:
+                    os.chown(p, st.st_uid, gid)  # conserve le proprietaire, ajuste seulement le groupe
+                if stat_mod.S_IMODE(st.st_mode) != 0o660:
+                    os.chmod(p, 0o660)
     except (KeyError, PermissionError, ImportError):
-        pass  # best effort (ex: execute par un non-root pendant les tests)
+        pass  # best effort (ex: execute par un non-root/non-proprietaire pendant les tests)
 
 
 # ---------------------------------------------------------------------
