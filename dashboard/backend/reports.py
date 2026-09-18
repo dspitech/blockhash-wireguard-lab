@@ -64,15 +64,16 @@ def save_reports_config(partial):
 # chemin e-mail ci-dessous - inutile de lui imposer cette dependance.
 def _new_table_pdf(title, subtitle=""):
     from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
 
     class _TablePDF(FPDF):
         def header(self):
             self.set_font("Helvetica", "B", 14)
-            self.cell(0, 10, title, ln=1)
+            self.cell(0, 10, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             if subtitle:
                 self.set_font("Helvetica", "", 10)
                 self.set_text_color(100, 100, 100)
-                self.cell(0, 6, subtitle, ln=1)
+                self.cell(0, 6, subtitle, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 self.set_text_color(0, 0, 0)
             self.ln(2)
 
@@ -134,7 +135,7 @@ def build_weekly_summary(now=None):
         for p in enabled_peers
         if p["seconds_since_handshake"] is None or p["seconds_since_handshake"] > 7 * 86400
     ]
-    alerts_week = [a for a in store.list_alerts(limit=1000) if a["ts"] >= week_ago_ts]
+    alerts_week = [a for a in store.list_alerts(limit=1000)["rows"] if a["ts"] >= week_ago_ts]
 
     lines = [
         f"Rapport hebdomadaire BLOCKHash - semaine du {(now - timedelta(days=7)).strftime('%d/%m/%Y')} au {now.strftime('%d/%m/%Y')}",

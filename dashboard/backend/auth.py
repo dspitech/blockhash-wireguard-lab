@@ -59,6 +59,10 @@ def required_role_for(method, path):
     connue : quelques routes pourraient meriter un role plus fin au cas par
     cas (voir discussion GDPR export), mais ce decoupage reader/operator/
     admin couvre honnetement l'essentiel du besoin exprime."""
+    if path == "/api/bug-reports" and method == "POST":
+        return "reader"  # n'importe quel compte peut signaler un bug
+    if path.startswith("/api/bug-reports"):
+        return "admin"  # consulter/traiter la boite de reception reste reserve aux admins
     if any(path.startswith(p) for p in ADMIN_ONLY_PREFIXES):
         return "admin"
     if method == "PATCH" and path in ADMIN_ONLY_EXACT_PATCH:

@@ -7,6 +7,110 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/leaflet.css" />
+<!-- Tailwind (Play CDN) : pas d'étape de build sur ce projet (déploiement
+     par scripts shell, voir scripts/03-install-dashboard.sh), donc on
+     charge le runtime JIT plutôt qu'un tailwind.css pré-compilé. Corrige
+     au passage un bug existant : css/tailwind.css était vide et les
+     classes utilitaires (ex. dans Réglages) ne s'appliquaient pas. -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    corePlugins: { preflight: false } // on garde le reset/les styles de style.css tels quels
+  };
+</script>
+<style type="text/tailwindcss">
+  /* ==========================================================
+     Couche "composants" migrée vers Tailwind (@layer components,
+     compilée par le Play CDN ci-dessus). Le box-model (spacing,
+     radius, typo) passe par des utilitaires Tailwind ; les couleurs
+     restent en var(--...) pour ne pas casser le thème sombre
+     (voir css/style.css :root[data-theme="dark"]), et les animations/
+     transitions/hover restent dans style.css, qui continue de cibler
+     les mêmes classes. */
+  @layer components {
+    .btn { @apply inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-semibold; }
+    .btn.sm { @apply px-2.5 py-1 text-xs; }
+    .icon-btn { @apply w-[34px] h-[34px] rounded-md flex items-center justify-center shrink-0; }
+
+    .card { @apply rounded-xl p-5; }
+    .card-header { @apply flex items-center justify-between gap-3 mb-4; }
+
+    .kpi-card { @apply rounded-xl p-5 flex flex-col gap-1; }
+    .kpi-label { @apply text-xs font-semibold flex items-center gap-1.5; }
+    .kpi-value { @apply text-[28px] font-bold tracking-tight tabular-nums; }
+    .kpi-delta { @apply text-xs font-semibold flex items-center gap-1; }
+    .kpi-icon { @apply w-[30px] h-[30px] rounded-md flex items-center justify-center; }
+
+    .feed-item { @apply flex gap-3 py-3; }
+    .feed-icon { @apply w-7 h-7 rounded-full flex items-center justify-center shrink-0; }
+    .feed-body { @apply flex-1 min-w-0; }
+    .feed-title { @apply text-[13px] font-semibold; }
+    .feed-meta { @apply text-[11px] mt-0.5; }
+
+    .empty-state { @apply flex flex-col items-center justify-center py-14 px-4 text-center gap-2; }
+
+    .chart-box { @apply relative h-[260px]; }
+    .chart-box.sm { @apply h-[160px]; }
+
+    table.data-table { @apply w-full text-[13px]; border-collapse: collapse; }
+    .data-table thead th { @apply text-left text-xs font-bold px-3 py-3 whitespace-nowrap; }
+    .data-table tbody td { @apply px-3 py-3 align-middle; }
+
+    .chip-group { @apply flex gap-1 p-[3px] rounded-md; }
+    .chip { @apply px-2.5 py-1.5 rounded text-xs font-semibold; }
+    .select, .input { @apply px-2.5 py-1.5 rounded-md text-[13px]; }
+
+    .qa-btn { @apply flex items-center gap-3 p-3 rounded-lg text-[13px] font-semibold text-left; }
+    .qa-icon { @apply w-[30px] h-[30px] rounded-md flex items-center justify-center shrink-0; }
+
+    .modal { @apply rounded-xl w-[460px]; }
+    .modal-header { @apply flex items-center justify-between px-5 py-4; }
+    .modal-body { @apply p-5 flex flex-col gap-4; }
+    .modal-footer { @apply px-5 py-4 flex justify-end gap-2; }
+    .field { @apply flex flex-col gap-1.5; }
+
+    .brand { @apply flex items-center gap-3 px-4 h-[60px] shrink-0; }
+    .brand-mark { @apply w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0; }
+    .brand-text { @apply flex flex-col leading-tight whitespace-nowrap overflow-hidden; }
+
+    .nav { @apply flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5; }
+    .nav-group-label { @apply text-[11px] uppercase tracking-wider px-3 pt-4 pb-1; }
+    .nav-item { @apply flex items-center gap-3 px-3 py-[9px] rounded-md text-[13px] font-medium whitespace-nowrap relative; }
+    .nav-item svg { @apply w-[17px] h-[17px] shrink-0; }
+    .nav-badge { @apply ml-auto text-[10px] font-bold px-1.5 py-px rounded-full; }
+
+    .sidebar-footer { @apply p-3 shrink-0; }
+    .conn-pill { @apply flex items-center gap-2 px-3 py-2 rounded-md text-xs; }
+    .conn-pill .dot { @apply w-[7px] h-[7px] rounded-full shrink-0; }
+
+    .topbar { @apply flex items-center gap-4 px-5; }
+    .topbar-title { @apply text-base font-bold tracking-tight; }
+    .topbar-sub { @apply text-xs; }
+    .topbar-search { @apply flex items-center gap-2 rounded-md px-3 py-2 w-[300px] text-[13px]; }
+    .env-badge { @apply text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full; }
+
+    .row-actions { @apply flex items-center gap-1; }
+    .row-actions .icon-btn.sm { @apply w-7 h-7; }
+    .row-actions .icon-btn.sm svg { @apply w-[15px] h-[15px]; }
+    .kebab-menu { @apply absolute right-0 top-[calc(100%+4px)] min-w-[190px] rounded-lg p-1 flex flex-col gap-px; }
+    .kebab-menu button { @apply flex items-center gap-2 px-2.5 py-[7px] rounded text-[13px] text-left w-full; }
+
+    .form-section { @apply mb-4; }
+    .form-section-title { @apply text-xs font-bold uppercase tracking-wide mb-3 pb-1.5; }
+    .field-grid { @apply grid grid-cols-2 gap-x-3; }
+
+    .login-screen { @apply fixed inset-0 flex items-center justify-center p-4; }
+    .login-card { @apply rounded-xl w-[380px] py-8 px-5; }
+    .login-error { @apply text-xs rounded-md px-3 py-2; }
+    .toast { @apply rounded-lg px-4 py-3 flex gap-3 items-start; }
+    .toast strong { @apply text-[13px]; }
+    .toast span { @apply text-xs; }
+    .skel { @apply rounded-md; }
+    #geoip-map { @apply h-[320px] rounded-lg overflow-hidden; }
+    .meter { @apply h-1.5 rounded-full overflow-hidden; }
+  }
+</style>
+<link rel="stylesheet" href="css/tw-components.css" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="is-loading">
@@ -93,11 +197,17 @@
         <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="10" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M9.5 10H17M13 10v3M15.5 10v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         <span class="nav-label">Tokens API</span>
       </button>
+      <button class="nav-item" data-view="bug-inbox" data-role-min="admin">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M4 5h12v8H8l-3 3v-3H4V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <span class="nav-label">Signalements</span>
+        <span class="nav-badge" id="nav-bug-badge" hidden>0</span>
+      </button>
       <button class="nav-item" data-view="help">
         <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.8 7.8a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="14" r=".7" fill="currentColor"/></svg>
         <span class="nav-label">Aide</span>
       </button>
     </nav>
+
 
     <div class="sidebar-footer">
       <div class="conn-pill" id="conn-pill"><span class="dot"></span><span id="conn-label">Connexion…</span></div>
@@ -149,9 +259,9 @@
         </div>
       </div>
 
-      <div class="kpi-grid" id="kpi-grid"></div>
+      <div class="kpi-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="kpi-grid"></div>
 
-      <div class="grid-2">
+      <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div class="card reveal" style="--reveal-delay:0ms;">
           <div class="card-header">
             <h3 data-i18n="h3.debit-du-tunnel">Débit du tunnel</h3>
@@ -169,7 +279,7 @@
         </div>
       </div>
 
-      <div class="grid-3" style="margin-top: var(--sp-4);">
+      <div class="grid-3 grid grid-cols-1 lg:grid-cols-3 gap-4 items-start" style="margin-top: var(--sp-4);">
         <div class="card reveal" style="--reveal-delay:100ms;">
           <div class="card-header">
             <h3 data-i18n="h3.repartition-des-statuts">Répartition des statuts</h3>
@@ -189,7 +299,7 @@
         </div>
         <div class="card reveal" style="--reveal-delay:180ms;">
           <div class="card-header"><h3 data-i18n="h3.actions-rapides">Actions rapides</h3></div>
-          <div class="quick-actions" id="quick-actions">
+          <div class="quick-actions grid grid-cols-2 gap-2" id="quick-actions">
             <button class="qa-btn" data-view-link="clients" data-i18n="btn.add-client">
               <span class="qa-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
               Ajouter un client
@@ -215,7 +325,7 @@
           <h3 data-i18n="h3.clients-connectes">Clients connectés</h3>
           <button class="btn ghost sm" data-view-link="clients" data-i18n="btn.view-all">Voir tout →</button>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-overview-peers">
             <thead><tr><th data-i18n="th.client">Client</th><th data-i18n="th.statut">Statut</th><th data-i18n="th.endpoint">Endpoint</th><th data-i18n="th.dernier-handshake">Dernier handshake</th><th data-i18n="th.rx-tx">Rx / Tx</th></tr></thead>
             <tbody></tbody>
@@ -230,8 +340,8 @@
         <div><h1 data-i18n="view.clients.title">Clients WireGuard</h1><p><span id="clients-count">0</span> client(s) configuré(s) — <span id="clients-filtered-count">0</span> affiché(s)</p></div>
         <div class="view-actions">
           <button class="btn ghost sm" id="btn-export-clients" title="Exporter la liste filtrée en CSV" data-i18n="btn.btn-export-clients">Exporter CSV</button>
-          <button class="btn ghost sm" id="btn-bulk-clients" data-i18n="btn.btn-bulk-clients">Ajouter plusieurs clients</button>
-          <button class="btn primary" id="btn-add-client" data-i18n="btn.btn-add-client"><svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Ajouter un client</button>
+          <button class="btn ghost sm" id="btn-bulk-clients" data-i18n="btn.btn-bulk-clients" data-role-min="operator">Ajouter plusieurs clients</button>
+          <button class="btn primary" id="btn-add-client" data-i18n="btn.btn-add-client" data-role-min="operator"><svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Ajouter un client</button>
         </div>
       </div>
       <div class="filters-bar">
@@ -265,7 +375,7 @@
         </label>
         <button class="btn ghost sm" id="btn-reset-filters" data-i18n="btn.btn-reset-filters">Réinitialiser</button>
       </div>
-      <div class="filters-bar" id="clients-bulk-bar" hidden style="background:var(--bg-inset);border-radius:var(--radius-md);padding:8px 12px;">
+      <div class="filters-bar" id="clients-bulk-bar" hidden data-role-min="operator" style="background:var(--bg-inset);border-radius:var(--radius-md);padding:8px 12px;">
         <span class="cell-muted"><span id="clients-selected-count">0</span> sélectionné(s)</span>
         <button class="btn ghost sm" data-bulk-do="enable" data-i18n="btn.bulk-enable">Activer</button>
         <button class="btn ghost sm" data-bulk-do="disable" data-i18n="btn.bulk-disable">Désactiver</button>
@@ -275,10 +385,10 @@
         <button class="btn ghost sm" id="btn-clear-selection" data-i18n="btn.btn-clear-selection">Annuler la sélection</button>
       </div>
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-clients">
             <thead><tr>
-              <th style="width:32px;"><input type="checkbox" id="clients-select-all" /></th>
+              <th style="width:32px;" data-role-min="operator"><input type="checkbox" id="clients-select-all" /></th>
               <th class="sortable" data-client-sort="name" data-i18n="th.client">Client</th><th data-i18n="th.statut">Statut</th><th data-i18n="th.contact">Contact</th><th data-i18n="th.ip-tunnel">IP tunnel</th><th data-i18n="th.endpoint">Endpoint</th>
               <th data-i18n="th.rx-tx">Rx / Tx</th><th class="sortable" data-client-sort="created" data-i18n="th.cree-le">Créé le</th><th class="sortable" data-client-sort="expires" data-i18n="th.expire">Expire</th><th></th>
             </tr></thead>
@@ -430,7 +540,7 @@
         <button class="btn ghost sm" id="btn-journal-reset-filters" data-i18n="btn.btn-journal-reset-filters">Réinitialiser</button>
       </div>
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-journal">
             <thead><tr><th class="sortable" data-sort="ts" data-i18n="th.horodatage">Horodatage</th><th data-i18n="th.client">Client</th><th data-i18n="th.endpoint">Endpoint</th><th data-i18n="th.ip-autorisees">IP autorisées</th><th data-i18n="th.rx-tx">Rx / Tx</th></tr></thead>
             <tbody></tbody>
@@ -456,7 +566,7 @@
         </div>
       </div>
 
-      <div class="grid-2">
+      <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div class="card">
           <div class="card-header"><h3 data-i18n="h3.debit-serie-longue-duree">Débit — série longue durée</h3>
             <button class="btn ghost sm" id="btn-chart-reset-zoom" title="Molette : zoom · glisser : déplacer">Réinitialiser le zoom</button>
@@ -469,7 +579,7 @@
         </div>
       </div>
 
-      <div class="grid-2" style="margin-top: var(--sp-4);">
+      <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start" style="margin-top: var(--sp-4);">
         <div class="card">
           <div class="card-header"><h3 data-i18n="h3.localisation-des-endpoints">Localisation des endpoints</h3><span class="hint">GeoIP approximatif</span></div>
           <div id="geoip-map"></div>
@@ -488,7 +598,7 @@
         <div><h1 data-i18n="view.alerts.title">Alertes</h1><p data-i18n="view.alerts.subtitle">Règles, canaux de notification et historique</p></div>
         <div class="view-actions">
           <button class="btn ghost sm" id="btn-alerts-export" data-i18n="btn.btn-alerts-export">Exporter CSV</button>
-          <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/></svg>Configurer les canaux</button>
+          <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/></svg>Configurer les canaux</button>
         </div>
       </div>
       <div class="filters-bar">
@@ -502,10 +612,10 @@
         <input class="input" id="alerts-filter-rule" placeholder="Filtrer par règle (ex. inactive, bandwidth…)" style="width:220px;" />
         <label class="field-inline"><input type="checkbox" id="alerts-filter-archived" /> Voir aussi les archivées</label>
       </div>
-      <div class="grid-2">
+      <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div class="card">
           <div class="card-header"><h3 data-i18n="h3.historique">Historique</h3></div>
-          <div class="table-wrap">
+          <div class="table-wrap overflow-x-auto -mx-1">
             <table class="data-table" id="table-alerts-history">
               <thead><tr><th data-i18n="th.horodatage">Horodatage</th><th data-i18n="th.regle">Règle</th><th data-i18n="th.client">Client</th><th data-i18n="th.severite">Sévérité</th><th data-i18n="th.detail">Détail</th><th></th></tr></thead>
               <tbody></tbody>
@@ -541,8 +651,8 @@
           <div class="field"><label><input type="checkbox" id="cfg-weekly-enabled" /> Envoyer un rapport hebdomadaire par e-mail</label></div>
           <div class="field"><label data-i18n="label.destinataire-du-rapport-hebdomadaire">Destinataire du rapport hebdomadaire</label><input class="input" id="cfg-weekly-to" placeholder="ops@exemple.com" style="max-width:320px;" /></div>
           <div style="display:flex;gap:8px;">
-            <button class="btn ghost sm" id="btn-weekly-save" data-i18n="btn.btn-weekly-save">Enregistrer</button>
-            <button class="btn ghost sm" id="btn-weekly-send-now" data-i18n="btn.btn-weekly-send-now">Envoyer maintenant</button>
+            <button class="btn ghost sm" id="btn-weekly-save" data-i18n="btn.btn-weekly-save" data-role-min="admin">Enregistrer</button>
+            <button class="btn ghost sm" id="btn-weekly-send-now" data-i18n="btn.btn-weekly-send-now" data-role-min="admin">Envoyer maintenant</button>
           </div>
         </div>
       </div>
@@ -569,7 +679,7 @@
             </label>
             <button class="btn ghost sm" id="btn-backup-schedule-save" data-i18n="btn.btn-backup-schedule-save">Enregistrer</button>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap overflow-x-auto -mx-1">
             <table class="data-table" id="table-backups"><thead><tr><th data-i18n="th.fichier">Fichier</th><th data-i18n="th.description">Description</th><th data-i18n="th.date">Date</th><th data-i18n="th.sha-256">SHA-256</th><th></th></tr></thead><tbody></tbody></table>
           </div>
         </div>
@@ -589,7 +699,7 @@
         </div>
         <div class="card">
           <div class="card-header"><h3 data-i18n="h3.journal-d-audit">Journal d'audit</h3><button class="btn ghost sm" data-view-link="audit">Voir tout →</button></div>
-          <div class="table-wrap">
+          <div class="table-wrap overflow-x-auto -mx-1">
             <table class="data-table" id="table-audit-preview"><thead><tr><th data-i18n="th.entree">Entrée</th></tr></thead><tbody></tbody></table>
           </div>
         </div>
@@ -610,7 +720,7 @@
         <button class="btn ghost sm" id="btn-audit-reset-filters">Réinitialiser</button>
       </div>
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-audit">
             <thead><tr><th>Date</th><th>IP source</th><th>Action</th><th>Détail</th></tr></thead>
             <tbody></tbody>
@@ -626,54 +736,118 @@
 
     <!-- ---------- RÉGLAGES ---------- -->
     <section class="view" id="view-settings">
-      <div class="view-header"><div><h1 data-i18n="view.settings.title">Réglages</h1><p data-i18n="view.settings.subtitle">Comportement de la console</p></div></div>
-      <div class="card" style="max-width:560px;">
-        <div class="stack">
-          <div class="field">
-            <label data-i18n="label.seuil-en-ligne-secondes">Seuil "en ligne" (secondes)</label>
-            <input class="input" type="number" id="setting-online-threshold" min="10" max="3600" />
-            <span class="field-hint">Délai après le dernier handshake avant de considérer un client comme inactif.</span>
+      <div class="tw-page" style="max-width:880px;">
+        <div class="tw-page-header">
+          <h1 class="tw-h1" data-i18n="view.settings.title">Réglages</h1>
+          <p class="tw-subtitle" data-i18n="view.settings.subtitle">Comportement de la console, notifications, localisation et politiques de conformité.</p>
+        </div>
+
+        <div class="tw-settings-section">
+          <div class="tw-settings-section-header">
+            <span class="tw-settings-icon"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.2 5.2l1.4 1.4M13.4 13.4l1.4 1.4M14.8 5.2l-1.4 1.4M6.6 13.4l-1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+            <div><h2 class="tw-h2">Général</h2><p class="tw-p-muted">Détection d'activité et rétention des données</p></div>
           </div>
-          <div class="field">
-            <label data-i18n="label.retention-des-donnees-jours">Rétention des données (jours)</label>
-            <input class="input" type="number" id="setting-retention-days" min="1" max="3650" />
-            <span class="field-hint">Logs, échantillons de débit et historique d'alertes plus anciens sont purgés automatiquement chaque nuit.</span>
-          </div>
-          <div class="field"><label><input type="checkbox" id="setting-desktop-notifications" /> Notifications desktop pour les alertes critiques</label>
-            <span class="field-hint">Nécessite l'autorisation du navigateur (demandée à l'activation) ; ne fonctionne que si cet onglet reste ouvert.</span></div>
-          <div class="field"><label><input type="checkbox" id="setting-webpush" /> Notifications Web Push (fonctionne même onglet fermé)</label>
-            <span class="field-hint" id="webpush-hint">Vérification de la disponibilité…</span>
-            <button class="btn ghost sm" id="btn-webpush-test" style="margin-top:6px;" hidden data-i18n="btn.btn-webpush-test">Envoyer une notification de test</button></div>
-          <div class="field-row" style="display:flex;gap:10px;">
-            <div class="field" style="flex:1;"><label data-i18n="label.format-de-date">Format de date</label>
-              <select class="select" id="setting-date-format" style="width:100%;">
-                <option value="DD/MM/YYYY">JJ/MM/AAAA</option>
-                <option value="MM/DD/YYYY">MM/JJ/AAAA</option>
-                <option value="YYYY-MM-DD">AAAA-MM-JJ</option>
-              </select></div>
-            <div class="field" style="flex:1;"><label data-i18n="label.fuseau-horaire">Fuseau horaire</label><input class="input" id="setting-timezone" placeholder="Europe/Paris" /></div>
-            <div class="field" style="flex:1;"><label>Langue / Language</label>
-              <select class="select" id="setting-language" style="width:100%;">
-                <option value="fr">Français</option>
-                <option value="en">English</option>
-              </select></div>
-          </div>
-          <div style="display:flex;gap:10px;">
-            <button class="btn primary" id="btn-save-settings" data-i18n="btn.btn-save-settings">Enregistrer</button>
-            <button class="btn ghost" id="btn-purge-now" data-i18n="btn.btn-purge-now">Purger les données anciennes maintenant</button>
+          <div class="tw-card">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label class="tw-label" data-i18n="label.seuil-en-ligne-secondes">Seuil « en ligne » (secondes)</label>
+                <input class="tw-input" type="number" id="setting-online-threshold" min="10" max="3600" />
+                <p class="tw-hint">Délai après le dernier handshake avant de considérer un client comme inactif.</p>
+              </div>
+              <div>
+                <label class="tw-label" data-i18n="label.retention-des-donnees-jours">Rétention des données (jours)</label>
+                <input class="tw-input" type="number" id="setting-retention-days" min="1" max="3650" />
+                <p class="tw-hint">Logs, échantillons de débit et historique d'alertes purgés automatiquement chaque nuit au-delà.</p>
+              </div>
+            </div>
+            <div class="mt-5 pt-5 border-t border-slate-200 flex items-center gap-3">
+              <button class="tw-btn-primary" id="btn-save-settings" data-i18n="btn.btn-save-settings">Enregistrer</button>
+              <button class="tw-btn-ghost" id="btn-purge-now" data-i18n="btn.btn-purge-now">Purger les données anciennes maintenant</button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="card" style="max-width:560px;margin-top:var(--sp-4);">
-        <div class="card-header"><h3 data-i18n="h3.politiques-de-conformite-par-tag">Politiques de conformité par tag</h3></div>
-        <div class="stack" style="padding:0 var(--sp-4) var(--sp-4);">
-          <div class="field"><label data-i18n="label.seuil-d-inactivite-par-defaut-jours">Seuil d'inactivité par défaut (jours)</label><input class="input" type="number" id="policy-default-days" style="max-width:120px;" /></div>
-          <div class="field"><label>Seuils par tag (format <code>tag:jours</code>, un par ligne)</label>
-            <textarea class="input" id="policy-by-tag" rows="3" style="width:100%;" placeholder="vip:180&#10;externe:30"></textarea></div>
-          <div class="field"><label data-i18n="label.clients-exclus-des-controles-un-par-ligne-avec-jus">Clients exclus des contrôles (un par ligne, avec justification en commentaire)</label>
-            <textarea class="input" id="policy-exceptions" rows="2" style="width:100%;" placeholder="serveur-monitoring  # exclu : sonde toujours active"></textarea></div>
-          <button class="btn ghost sm" id="btn-save-policies" style="align-self:flex-start;" data-i18n="btn.btn-save-policies">Enregistrer les politiques</button>
+        <div class="tw-settings-section">
+          <div class="tw-settings-section-header">
+            <span class="tw-settings-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M6 8a4 4 0 0 1 8 0c0 3.5 1.5 4.5 1.5 4.5h-11S6 11.5 6 8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8.5 15a1.6 1.6 0 0 0 3 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+            <div><h2 class="tw-h2">Notifications</h2><p class="tw-p-muted">Alertes critiques suivies en temps réel dans le navigateur</p></div>
+          </div>
+          <div class="tw-card">
+            <div class="space-y-5">
+              <label class="tw-toggle-row">
+                <input type="checkbox" id="setting-desktop-notifications" class="tw-checkbox" />
+                <span>
+                  <span class="tw-toggle-title">Notifications desktop pour les alertes critiques</span>
+                  <span class="tw-hint block">Nécessite l'autorisation du navigateur ; ne fonctionne que si cet onglet reste ouvert.</span>
+                </span>
+              </label>
+              <label class="tw-toggle-row">
+                <input type="checkbox" id="setting-webpush" class="tw-checkbox" />
+                <span>
+                  <span class="tw-toggle-title">Notifications Web Push</span>
+                  <span class="tw-hint block" id="webpush-hint">Vérification de la disponibilité…</span>
+                  <button class="tw-btn-ghost mt-2" id="btn-webpush-test" hidden data-i18n="btn.btn-webpush-test">Envoyer une notification de test</button>
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="tw-settings-section">
+          <div class="tw-settings-section-header">
+            <span class="tw-settings-icon"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 10h15M10 2.5c2 2.2 3 5 3 7.5s-1 5.3-3 7.5c-2-2.2-3-5-3-7.5s1-5.3 3-7.5Z" stroke="currentColor" stroke-width="1.4"/></svg></span>
+            <div><h2 class="tw-h2">Localisation</h2><p class="tw-p-muted">Format d'affichage et langue de l'interface</p></div>
+          </div>
+          <div class="tw-card">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div>
+                <label class="tw-label" data-i18n="label.format-de-date">Format de date</label>
+                <select class="tw-select" id="setting-date-format">
+                  <option value="DD/MM/YYYY">JJ/MM/AAAA</option>
+                  <option value="MM/DD/YYYY">MM/JJ/AAAA</option>
+                  <option value="YYYY-MM-DD">AAAA-MM-JJ</option>
+                </select>
+              </div>
+              <div>
+                <label class="tw-label" data-i18n="label.fuseau-horaire">Fuseau horaire</label>
+                <input class="tw-input" id="setting-timezone" placeholder="Europe/Paris" />
+              </div>
+              <div>
+                <label class="tw-label">Langue / Language</label>
+                <select class="tw-select" id="setting-language">
+                  <option value="fr">Français</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tw-settings-section" data-role-min="admin">
+          <div class="tw-settings-section-header">
+            <span class="tw-settings-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 3 3 6.5v4c0 4 3 6.8 7 7.5 4-.7 7-3.5 7-7.5v-4L10 3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+            <div><h2 class="tw-h2">Politiques de conformité</h2><p class="tw-p-muted">Seuils d'inactivité par tag et exceptions documentées</p></div>
+          </div>
+          <div class="tw-card">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label class="tw-label" data-i18n="label.seuil-d-inactivite-par-defaut-jours">Seuil d'inactivité par défaut (jours)</label>
+                <input class="tw-input" type="number" id="policy-default-days" />
+              </div>
+              <div>
+                <label class="tw-label">Seuils par tag</label>
+                <textarea class="tw-textarea" id="policy-by-tag" rows="3" placeholder="vip:180&#10;externe:30"></textarea>
+                <p class="tw-hint">Format <code>tag:jours</code>, un par ligne.</p>
+              </div>
+            </div>
+            <div class="mt-5">
+              <label class="tw-label" data-i18n="label.clients-exclus-des-controles-un-par-ligne-avec-jus">Clients exclus des contrôles</label>
+              <textarea class="tw-textarea" id="policy-exceptions" rows="2" placeholder="serveur-monitoring  # exclu : sonde toujours active"></textarea>
+            </div>
+            <div class="mt-5 pt-5 border-t border-slate-200">
+              <button class="tw-btn-primary" id="btn-save-policies" data-i18n="btn.btn-save-policies" data-role-min="admin">Enregistrer les politiques</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -685,7 +859,7 @@
         <div class="view-actions"><button class="btn primary" id="btn-add-user">Ajouter un utilisateur</button></div>
       </div>
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-users">
             <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead>
             <tbody></tbody>
@@ -702,7 +876,7 @@
       </div>
       <div class="card">
         <p class="cell-muted" style="padding:var(--sp-3) var(--sp-4) 0;">Chaque token a un scope (lecture / écriture / admin) et une expiration optionnelle. Le token en clair n'est affiché qu'une seule fois, à la génération.</p>
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto -mx-1">
           <table class="data-table" id="table-tokens">
             <thead><tr><th>Nom</th><th>Scope</th><th>Créé par</th><th>Expire</th><th>Dernier usage</th><th></th></tr></thead>
             <tbody></tbody>
@@ -713,15 +887,134 @@
 
     <!-- ---------- AIDE (page dediee, B1) ---------- -->
     <section class="view" id="view-help">
-      <div class="view-header"><div><h1>Aide</h1><p>Procédures pas-à-pas pour les tâches courantes</p></div></div>
-      <div class="help-grid" id="help-cards-grid"></div>
+      <div class="tw-page">
+        <div class="tw-page-header">
+          <h1 class="tw-h1">Centre d'aide</h1>
+          <p class="tw-subtitle">Procédures de référence pour les tâches courantes d'administration de la plateforme.</p>
+        </div>
+        <div class="tw-help-grid" id="help-cards-grid"></div>
+      </div>
     </section>
 
-    <!-- ---------- MODALE : detail d'une procedure d'aide ---------- -->
-    <div class="modal-overlay" id="modal-help-detail">
+    <!-- ---------- AIDE : page de detail dediee ---------- -->
+    <section class="view" id="view-help-detail">
+      <div class="tw-page" style="max-width:760px;">
+        <button class="tw-back-link" data-view-link="help">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M12 4 6 10l6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Retour au centre d'aide
+        </button>
+        <div class="tw-page-header">
+          <span class="tw-help-detail-icon" id="help-detail-icon"></span>
+          <h1 class="tw-h1" id="help-detail-title-page">Procédure</h1>
+          <p class="tw-subtitle" id="help-detail-summary"></p>
+        </div>
+        <div class="tw-card">
+          <ol class="tw-help-steps" id="help-detail-steps"></ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SIGNALEMENT D'UN BUG (formulaire, tout utilisateur) ---------- -->
+    <section class="view" id="view-report-bug">
+      <div class="tw-page">
+        <div class="tw-page-header">
+          <h1 class="tw-h1">Signaler un problème</h1>
+          <p class="tw-subtitle">Décrivez ce qui ne fonctionne pas comme attendu. Votre signalement est transmis directement à l'équipe d'administration.</p>
+        </div>
+
+        <form id="bug-report-form" class="tw-card max-w-2xl">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label class="tw-label">Catégorie</label>
+              <select id="bug-category" class="tw-select">
+                <option value="display">Affichage / interface</option>
+                <option value="performance">Performance</option>
+                <option value="data">Données incorrectes</option>
+                <option value="permissions">Droits d'accès</option>
+                <option value="feature_request">Suggestion d'amélioration</option>
+                <option value="other">Autre</option>
+              </select>
+            </div>
+            <div>
+              <label class="tw-label">Sévérité</label>
+              <select id="bug-severity" class="tw-select">
+                <option value="low">Faible — gêne mineure</option>
+                <option value="medium" selected>Moyenne — impacte l'usage</option>
+                <option value="high">Élevée — fonctionnalité bloquée</option>
+                <option value="critical">Critique — production affectée</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mt-5">
+            <label class="tw-label">Titre</label>
+            <input id="bug-title" class="tw-input" placeholder="Résumez le problème en une phrase" maxlength="200" />
+          </div>
+
+          <div class="mt-5">
+            <label class="tw-label">Description détaillée</label>
+            <textarea id="bug-description" class="tw-textarea" rows="6" placeholder="Que s'est-il passé ? Que vous attendiez-vous à voir ? Comment reproduire le problème ?"></textarea>
+          </div>
+
+          <div class="mt-5 tw-note">
+            <span class="tw-note-label">Contexte technique joint automatiquement</span>
+            <span id="bug-context-preview" class="tw-note-value"></span>
+          </div>
+
+          <div class="mt-6 flex items-center gap-3">
+            <button type="button" id="btn-submit-bug-report" class="tw-btn-primary">Envoyer le signalement</button>
+            <span id="bug-report-status" class="text-sm text-slate-500"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ---------- BOITE DE RECEPTION DES SIGNALEMENTS (admin) ---------- -->
+    <section class="view" id="view-bug-inbox">
+      <div class="tw-page">
+        <div class="tw-page-header flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 class="tw-h1">Signalements</h1>
+            <p class="tw-subtitle">Suivi des problèmes remontés par les utilisateurs du dashboard.</p>
+          </div>
+          <div class="flex gap-2">
+            <select id="bug-inbox-filter-status" class="tw-select w-auto">
+              <option value="">Tous les statuts</option>
+              <option value="new">Nouveau</option>
+              <option value="in_progress">En cours</option>
+              <option value="resolved">Résolu</option>
+              <option value="wont_fix">Ne sera pas corrigé</option>
+            </select>
+            <select id="bug-inbox-filter-severity" class="tw-select w-auto">
+              <option value="">Toute sévérité</option>
+              <option value="critical">Critique</option>
+              <option value="high">Élevée</option>
+              <option value="medium">Moyenne</option>
+              <option value="low">Faible</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="tw-card">
+          <div id="bug-inbox-list" class="divide-y divide-slate-200"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- MODALE : detail d'un signalement (admin) ---------- -->
+    <div class="modal-overlay" id="modal-bug-detail">
       <div class="modal" style="max-width:600px;">
-        <div class="modal-header"><h3 id="help-detail-title">Procédure</h3><button class="icon-btn" data-close-modal>✕</button></div>
-        <div class="modal-body" id="help-detail-body"></div>
+        <div class="modal-header"><h3 id="bug-detail-title">Signalement</h3><button class="icon-btn" data-close-modal>✕</button></div>
+        <div class="modal-body" id="bug-detail-body"></div>
+        <div class="modal-footer">
+          <select id="bug-detail-status" class="tw-select w-auto">
+            <option value="new">Nouveau</option>
+            <option value="in_progress">En cours</option>
+            <option value="resolved">Résolu</option>
+            <option value="wont_fix">Ne sera pas corrigé</option>
+          </select>
+          <button class="btn primary" id="btn-save-bug-status">Mettre à jour</button>
+        </div>
       </div>
     </div>
 

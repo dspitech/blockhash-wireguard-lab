@@ -238,6 +238,7 @@ const VIEW_TITLES = {
   overview: "Vue d'ensemble", clients: "Clients", journal: "Journal des connexions",
   monitoring: "Monitoring", alerts: "Alertes", compliance: "Conformité",
   system: "Système", settings: "Réglages", users: "Utilisateurs", tokens: "Tokens API", help: "Aide", audit: "Journal d'audit",
+  "report-bug": "Signaler un problème", "bug-inbox": "Signalements", "help-detail": "Aide",
 };
 
 function switchView(view) {
@@ -263,6 +264,9 @@ function loadView(view) {
     case "users": return renderUsers();
     case "tokens": return renderTokens();
     case "help": return renderHelp();
+    case "help-detail": return renderHelpDetail();
+    case "report-bug": return renderBugReportForm();
+    case "bug-inbox": return renderBugInbox();
   }
 }
 
@@ -369,6 +373,13 @@ async function runDashboard(forceDemo) {
         STATE.currentUser = await apiGet("/api/auth/me");
       } catch { STATE.currentUser = { username: "?", role: "admin" }; }
       applyRoleVisibility();
+      if (STATE.currentUser.role === "admin") {
+        apiGet("/api/bug-reports/count-new").then(d => {
+          const badge = document.getElementById("nav-bug-badge");
+          badge.textContent = d.count;
+          badge.hidden = d.count === 0;
+        }).catch(() => {});
+      }
     } catch (err) {
       if (err.status === 401) {
         // Jeton présent mais invalide/expiré côté serveur (ex: dashboard.env
@@ -663,10 +674,7 @@ document.getElementById("btn-help").addEventListener("click", () => {
   switchView("help");
 });
 document.getElementById("btn-feedback").addEventListener("click", () => {
-  const context = `Page actuelle : ${STATE.currentView || "inconnue"}\nNavigateur : ${navigator.userAgent}\nURL : ${window.location.href}`;
-  const subject = encodeURIComponent("[BLOCKHash] Signalement");
-  const body = encodeURIComponent(`Décrivez le problème ou la suggestion ici :\n\n\n---\nContexte technique (pré-rempli, ne pas modifier) :\n${context}`);
-  window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  switchView("report-bug");
 });
 
 const ONBOARDING_FLAG_KEY = "blockhash_onboarded_v1";
@@ -686,9 +694,17 @@ async function maybeShowOnboarding() {
 // ---------------------------------------------------------------
 // Aide (item B1) : cartes thematiques -> modale de detail pas-a-pas
 // ---------------------------------------------------------------
+const HELP_ICON_USER = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const HELP_ICON_UPLOAD = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const HELP_ICON_DOWNLOAD = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const HELP_ICON_LOGS = '<svg viewBox="0 0 20 20" fill="none"><path d="M5 3.5h10v13H5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.5 7h5M7.5 10h5M7.5 13h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+const HELP_ICON_BELL = '<svg viewBox="0 0 20 20" fill="none"><path d="M6 8a4 4 0 0 1 8 0c0 3.5 1.5 4.5 1.5 4.5h-11S6 11.5 6 8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8.5 15a1.6 1.6 0 0 0 3 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const HELP_ICON_RESTORE = '<svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const HELP_ICON_KEY = '<svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="13" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M9.5 10.5 16 4M12.5 7 15 9.5M14.5 5 17 7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 const HELP_TOPICS = [
   {
-    id: "create-client", title: "Créer un client", icon: "👤",
+    id: "create-client", title: "Créer un client", icon: HELP_ICON_USER,
     summary: "Ajouter un nouveau client WireGuard et récupérer sa configuration.",
     steps: [
       "Ouvrez la page <strong>Clients</strong>.",
@@ -699,7 +715,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "bulk-import", title: "Importer des clients en masse", icon: "📥",
+    id: "bulk-import", title: "Importer des clients en masse", icon: HELP_ICON_UPLOAD,
     summary: "Créer plusieurs clients d'un coup, en collant une liste ou en important un CSV.",
     steps: [
       "Sur la page <strong>Clients</strong>, cliquez sur <strong>Ajouter plusieurs clients</strong>.",
@@ -710,7 +726,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "download-config", title: "Télécharger une configuration", icon: "⬇️",
+    id: "download-config", title: "Télécharger une configuration", icon: HELP_ICON_DOWNLOAD,
     summary: "Récupérer le fichier .conf ou le QR code d'un client existant.",
     steps: [
       "Page <strong>Clients</strong>, repérez la ligne du client concerné.",
@@ -719,7 +735,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "view-logs", title: "Consulter les logs", icon: "📜",
+    id: "view-logs", title: "Consulter les logs", icon: HELP_ICON_LOGS,
     summary: "Explorer l'historique des connexions et sessions.",
     steps: [
       "Ouvrez la page <strong>Journal</strong>.",
@@ -730,7 +746,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "create-alert", title: "Créer une alerte", icon: "🔔",
+    id: "create-alert", title: "Créer une alerte", icon: HELP_ICON_BELL,
     summary: "Configurer les règles et canaux de notification.",
     steps: [
       "Ouvrez la page <strong>Alertes</strong> puis cliquez sur <strong>Configurer les canaux</strong>.",
@@ -740,7 +756,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "restore-backup", title: "Restaurer une sauvegarde", icon: "🗄️",
+    id: "restore-backup", title: "Restaurer une sauvegarde", icon: HELP_ICON_RESTORE,
     summary: "Revenir à une configuration antérieure du tunnel.",
     steps: [
       "Ouvrez la page <strong>Système</strong>.",
@@ -750,7 +766,7 @@ const HELP_TOPICS = [
     ],
   },
   {
-    id: "manage-users", title: "Gérer les utilisateurs", icon: "🔑",
+    id: "manage-users", title: "Gérer les utilisateurs", icon: HELP_ICON_KEY,
     summary: "Ajouter des comptes, définir des rôles, générer des tokens API.",
     steps: [
       "Ouvrez la page <strong>Utilisateurs</strong> (réservée aux comptes admin).",
@@ -764,21 +780,126 @@ const HELP_TOPICS = [
 function renderHelp() {
   const grid = document.getElementById("help-cards-grid");
   grid.innerHTML = HELP_TOPICS.map(topic => `
-    <button class="help-card" data-help-topic="${topic.id}">
-      <span class="help-card-icon">${topic.icon}</span>
-      <span class="help-card-title">${escapeHtml(topic.title)}</span>
-      <span class="help-card-summary">${escapeHtml(topic.summary)}</span>
+    <button class="tw-help-card" data-help-topic="${topic.id}">
+      <span class="tw-help-card-icon">${topic.icon}</span>
+      <span class="tw-help-card-title">${escapeHtml(topic.title)}</span>
+      <span class="tw-help-card-summary">${escapeHtml(topic.summary)}</span>
+      <span class="tw-help-card-cta">Voir la procédure
+        <svg viewBox="0 0 20 20" fill="none"><path d="M8 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
     </button>`).join("");
-  grid.querySelectorAll("[data-help-topic]").forEach(btn => btn.addEventListener("click", () => openHelpDetail(btn.dataset.helpTopic)));
+  grid.querySelectorAll("[data-help-topic]").forEach(btn => btn.addEventListener("click", () => {
+    STATE._activeHelpTopic = btn.dataset.helpTopic;
+    switchView("help-detail");
+  }));
 }
 
-function openHelpDetail(topicId) {
-  const topic = HELP_TOPICS.find(t => t.id === topicId);
-  if (!topic) return;
-  document.getElementById("help-detail-title").textContent = topic.title;
-  document.getElementById("help-detail-body").innerHTML = `<ol class="help-steps">${topic.steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
-  openModal("modal-help-detail");
+function renderHelpDetail() {
+  const topic = HELP_TOPICS.find(t => t.id === STATE._activeHelpTopic) || HELP_TOPICS[0];
+  document.getElementById("help-detail-icon").innerHTML = topic.icon;
+  document.getElementById("help-detail-title-page").textContent = topic.title;
+  document.getElementById("help-detail-summary").textContent = topic.summary;
+  document.getElementById("help-detail-steps").innerHTML = topic.steps.map((s, i) => `
+    <li><span class="tw-help-step-number">${i + 1}</span><span class="tw-help-step-text">${s}</span></li>`).join("");
 }
+
+// ---------------------------------------------------------------
+// Signalement de bug : formulaire (tout utilisateur) + boite de
+// reception admin
+// ---------------------------------------------------------------
+function renderBugReportForm() {
+  document.getElementById("bug-context-preview").textContent =
+    `page=${STATE.currentView || "?"} · navigateur=${navigator.userAgent.slice(0, 80)} · url=${window.location.href}`;
+  document.getElementById("bug-title").value = "";
+  document.getElementById("bug-description").value = "";
+  document.getElementById("bug-report-status").textContent = "";
+}
+document.getElementById("btn-submit-bug-report").addEventListener("click", async () => {
+  const title = document.getElementById("bug-title").value.trim();
+  const description = document.getElementById("bug-description").value.trim();
+  const statusEl = document.getElementById("bug-report-status");
+  if (!title || !description) { statusEl.textContent = "Titre et description requis."; statusEl.className = "text-sm text-red-600"; return; }
+  if (STATE.demoMode) { statusEl.textContent = "Indisponible en mode démonstration."; return; }
+  try {
+    await apiSend("POST", "/api/bug-reports", {
+      title, description,
+      category: document.getElementById("bug-category").value,
+      severity: document.getElementById("bug-severity").value,
+      page: STATE.currentView,
+      context: `${navigator.userAgent} | ${window.location.href}`,
+    });
+    statusEl.textContent = "Signalement envoyé, merci !";
+    statusEl.className = "text-sm text-emerald-600";
+    document.getElementById("bug-report-form").reset();
+    document.getElementById("bug-title").value = "";
+    document.getElementById("bug-description").value = "";
+  } catch (err) {
+    statusEl.textContent = `Échec : ${err.message}`;
+    statusEl.className = "text-sm text-red-600";
+  }
+});
+
+const BUG_SEVERITY_LABELS = { critical: "Critique", high: "Élevée", medium: "Moyenne", low: "Faible" };
+const BUG_STATUS_LABELS = { new: "Nouveau", in_progress: "En cours", resolved: "Résolu", wont_fix: "Ne sera pas corrigé" };
+const BUG_CATEGORY_LABELS = { display: "Affichage", performance: "Performance", data: "Données", permissions: "Droits d'accès", feature_request: "Suggestion", other: "Autre" };
+
+async function renderBugInbox() {
+  const list = document.getElementById("bug-inbox-list");
+  if (STATE.demoMode) { list.innerHTML = `<div class="p-6 text-sm text-slate-500">Indisponible en mode démonstration.</div>`; return; }
+  try {
+    const status = document.getElementById("bug-inbox-filter-status").value;
+    const severity = document.getElementById("bug-inbox-filter-severity").value;
+    const params = new URLSearchParams({ limit: 100 });
+    if (status) params.set("status", status);
+    if (severity) params.set("severity", severity);
+    const data = await apiGet(`/api/bug-reports?${params.toString()}`);
+    list.innerHTML = data.rows.length ? data.rows.map(r => `
+      <div class="tw-row" data-bug-id="${r.id}">
+        <div>
+          <div class="tw-row-title">${escapeHtml(r.title)}</div>
+          <div class="tw-row-meta">${escapeHtml(BUG_CATEGORY_LABELS[r.category] || r.category)} · signalé par ${escapeHtml(r.reported_by || "anonyme")} · ${fmtDate(r.created_ts * 1000)}</div>
+        </div>
+        <div class="flex gap-2 flex-shrink-0">
+          <span class="tw-badge tw-badge-${r.severity}">${BUG_SEVERITY_LABELS[r.severity] || r.severity}</span>
+          <span class="tw-badge tw-badge-${r.status}">${BUG_STATUS_LABELS[r.status] || r.status}</span>
+        </div>
+      </div>`).join("") : `<div class="p-6 text-sm text-slate-500">Aucun signalement pour ces filtres.</div>`;
+    list.querySelectorAll("[data-bug-id]").forEach(el => el.addEventListener("click", () => openBugDetail(parseInt(el.dataset.bugId, 10), data.rows)));
+
+    const newCount = data.rows.filter(r => r.status === "new").length;
+    const badge = document.getElementById("nav-bug-badge");
+    badge.textContent = newCount;
+    badge.hidden = newCount === 0;
+  } catch (err) { list.innerHTML = `<div class="p-6 text-sm text-red-600">Erreur : ${escapeHtml(err.message)}</div>`; }
+}
+["bug-inbox-filter-status", "bug-inbox-filter-severity"].forEach(id => document.getElementById(id).addEventListener("change", renderBugInbox));
+
+function openBugDetail(id, rows) {
+  const r = rows.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById("bug-detail-title").textContent = r.title;
+  document.getElementById("bug-detail-body").innerHTML = `
+    <div class="flex gap-2 mb-4">
+      <span class="tw-badge tw-badge-${r.severity}">${BUG_SEVERITY_LABELS[r.severity] || r.severity}</span>
+      <span class="tw-badge" style="background:var(--bg-inset);color:var(--text-tertiary);">${escapeHtml(BUG_CATEGORY_LABELS[r.category] || r.category)}</span>
+    </div>
+    <p class="cell-muted" style="white-space:pre-wrap;margin-bottom:14px;">${escapeHtml(r.description)}</p>
+    <div class="tw-note mb-3"><span class="tw-note-label">Signalé par</span><span class="tw-note-value">${escapeHtml(r.reported_by || "anonyme")} — ${fmtDate(r.created_ts * 1000)}</span></div>
+    ${r.context ? `<div class="tw-note"><span class="tw-note-label">Contexte technique</span><span class="tw-note-value">${escapeHtml(r.context)}</span></div>` : ""}`;
+  document.getElementById("bug-detail-status").value = r.status;
+  document.getElementById("btn-save-bug-status").dataset.id = id;
+  openModal("modal-bug-detail");
+}
+document.getElementById("btn-save-bug-status").addEventListener("click", async () => {
+  const id = document.getElementById("btn-save-bug-status").dataset.id;
+  const status = document.getElementById("bug-detail-status").value;
+  try {
+    await apiSend("PATCH", `/api/bug-reports/${id}`, { status });
+    toast("success", "Signalement mis à jour");
+    closeModal("modal-bug-detail");
+    renderBugInbox();
+  } catch (err) { toast("danger", "Échec", err.message); }
+});
 
 // ---------------------------------------------------------------
 // Chrome global : nav, thème, sidebar, recherche, refresh
@@ -1034,6 +1155,43 @@ function chartGridColor() {
   return getComputedStyle(document.documentElement).getPropertyValue("--border-subtle").trim() || "#1c2740";
 }
 
+function openKebabMenu(event, btn) {
+  event.stopPropagation();
+  const menu = btn.parentElement.querySelector(".kebab-menu");
+  const wasOpen = menu.dataset.open === "true";
+  closeAllKebabMenus();
+  if (wasOpen) return;
+
+  // Deplace le menu dans le body (une seule fois) : en position fixed, il
+  // echappe ainsi a l'overflow-x:auto du tableau parent, qui le tronquait
+  // ou le faisait passer derriere les lignes suivantes.
+  if (menu.parentElement !== document.body) {
+    menu._originalParent = btn.parentElement;
+    document.body.appendChild(menu);
+  }
+  const rect = btn.getBoundingClientRect();
+  menu.hidden = false;
+  menu.dataset.open = "true";
+  const menuRect = menu.getBoundingClientRect();
+  let left = rect.right - menuRect.width;
+  let top = rect.bottom + 4;
+  if (top + menuRect.height > window.innerHeight - 8) top = rect.top - menuRect.height - 4;
+  left = Math.max(8, Math.min(left, window.innerWidth - menuRect.width - 8));
+  menu.style.position = "fixed";
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  if (!STATE._kebabDocListenerAttached) {
+    document.addEventListener("click", closeAllKebabMenus);
+    window.addEventListener("scroll", closeAllKebabMenus, true);
+    window.addEventListener("resize", closeAllKebabMenus);
+    STATE._kebabDocListenerAttached = true;
+  }
+}
+function closeAllKebabMenus() {
+  document.querySelectorAll(".kebab-menu").forEach(m => { m.hidden = true; m.dataset.open = "false"; });
+}
+
 function buildLineChart(canvasId, labels, datasets) {
   const ctx = document.getElementById(canvasId);
   if (!ctx || typeof Chart === "undefined") return;
@@ -1172,9 +1330,10 @@ function drawClientsTable() {
     updateBulkBar();
     return;
   }
+  const canOperate = ROLE_RANK[STATE.currentUser.role] >= ROLE_RANK.operator;
   tbody.innerHTML = pageRows.map(p => `
     <tr>
-      <td><input type="checkbox" class="client-select" data-name="${escapeHtml(p.name)}" ${STATE.clientsSelected.has(p.name) ? "checked" : ""} /></td>
+      <td ${canOperate ? "" : "hidden"}><input type="checkbox" class="client-select" data-name="${escapeHtml(p.name)}" ${STATE.clientsSelected.has(p.name) ? "checked" : ""} /></td>
       <td class="row-flex"><span class="peer-avatar">${initials(p.name)}</span><span class="cell-primary">${escapeHtml(p.name)}</span></td>
       <td>${statusBadge(peerStatus(p))}</td>
       <td class="cell-muted">${escapeHtml(p.email || p.telephone || "—")}</td>
@@ -1185,7 +1344,7 @@ function drawClientsTable() {
       <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "—"}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}" title="${p.enabled ? "Désactiver" : "Activer"}">
+          <button class="icon-btn sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}" title="${p.enabled ? "Désactiver" : "Activer"}" ${canOperate ? "" : "hidden"}>
             ${p.enabled
               ? '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
               : '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}
@@ -1195,7 +1354,7 @@ function drawClientsTable() {
               <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="4.5" r="1.3" fill="currentColor"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor"/></svg>
             </button>
             <div class="kebab-menu" hidden>
-              <button data-action="edit" data-name="${escapeHtml(p.name)}">
+              <button data-action="edit" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
                 <svg viewBox="0 0 20 20" fill="none"><path d="M13.5 3.5 16.5 6.5 7 16H4V13L13.5 3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
                 Modifier
               </button>
@@ -1211,11 +1370,11 @@ function drawClientsTable() {
                 <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
                 Config (.conf)
               </button>
-              <button data-action="regenerate" data-name="${escapeHtml(p.name)}">
+              <button data-action="regenerate" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
                 <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Régénérer les clés
               </button>
-              <button data-action="revoke" data-name="${escapeHtml(p.name)}" class="danger">
+              <button data-action="revoke" data-name="${escapeHtml(p.name)}" class="danger" ${canOperate ? "" : "hidden"}>
                 <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4.5h4V6M6 6v9.5h8V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Révoquer
               </button>
@@ -1226,17 +1385,8 @@ function drawClientsTable() {
     </tr>
   `).join("");
 
-  tbody.querySelectorAll('[data-action="kebab-toggle"]').forEach(btn => btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const menu = btn.parentElement.querySelector(".kebab-menu");
-    const wasOpen = !menu.hidden;
-    document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true);
-    menu.hidden = wasOpen;
-  }));
-  if (!STATE._kebabDocListenerAttached) {
-    document.addEventListener("click", () => document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true));
-    STATE._kebabDocListenerAttached = true;
-  }
+  tbody.querySelectorAll('[data-action="kebab-toggle"]').forEach(btn => btn.addEventListener("click", (e) => openKebabMenu(e, btn)));
+  document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true);
   tbody.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
   tbody.querySelectorAll('[data-action="edit"]').forEach(btn => btn.addEventListener("click", () => openEditClientModal(btn.dataset.name)));
   tbody.querySelectorAll('[data-action="detail"]').forEach(btn => btn.addEventListener("click", () => showClientDetail(btn.dataset.name)));
@@ -1253,7 +1403,8 @@ function drawClientsTable() {
 
 function updateBulkBar() {
   const n = STATE.clientsSelected.size;
-  document.getElementById("clients-bulk-bar").hidden = n === 0;
+  const allowed = ROLE_RANK[STATE.currentUser.role] >= ROLE_RANK.operator;
+  document.getElementById("clients-bulk-bar").hidden = n === 0 || !allowed;
   document.getElementById("clients-selected-count").textContent = n;
   document.getElementById("clients-select-all").checked =
     n > 0 && document.querySelectorAll(".client-select").length > 0 &&
@@ -1827,13 +1978,13 @@ async function renderJournalHeatmap() {
       const ratio = n / max;
       return `color-mix(in srgb, var(--teal-mid) ${Math.round(20 + ratio * 80)}%, var(--bg-inset))`;
     };
-    let html = `<div style="display:grid;grid-template-columns:36px repeat(24, 20px);gap:2px;font-size:10px;align-items:center;">`;
+    let html = `<div class="grid grid-cols-[36px_repeat(24,20px)] gap-0.5 text-[10px] items-center">`;
     html += `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="cell-muted" style="text-align:center;">${h % 3 === 0 ? h : ""}</div>`).join("");
     for (let d = 0; d < 7; d++) {
       html += `<div class="cell-muted">${days[d]}</div>`;
       for (let h = 0; h < 24; h++) {
         const n = grid[d][h];
-        html += `<div title="${days[d]} ${h}h : ${n} évènement(s)" style="width:20px;height:16px;border-radius:2px;background:${cellColor(n)};"></div>`;
+        html += `<div title="${days[d]} ${h}h : ${n} évènement(s)" class="w-5 h-4 rounded-sm" style="background:${cellColor(n)};"></div>`;
       }
     }
     html += `</div>`;

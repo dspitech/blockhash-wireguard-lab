@@ -303,6 +303,62 @@ def api_auth_me():
     return jsonify(user)
 
 
+BUG_REPORT_CATEGORIES = ("display", "performance", "data", "permissions", "feature_request", "other")
+BUG_REPORT_SEVERITIES = ("low", "medium", "high", "critical")
+
+
+@app.post("/api/bug-reports")
+def api_bug_reports_create():
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()[:200]
+    description = (body.get("description") or "").strip()[:5000]
+    category = body.get("category") or "other"
+    severity = body.get("severity") or "medium"
+    if not title or not description:
+        raise WgctlError("Le titre et la description sont requis.", status=422)
+    if category not in BUG_REPORT_CATEGORIES:
+        category = "other"
+    if severity not in BUG_REPORT_SEVERITIES:
+        severity = "medium"
+    reported_by = g.current_user["username"] if hasattr(g, "current_user") else None
+    report_id = store.create_bug_report(
+        category, severity, title, description,
+        reported_by=reported_by,
+        page=(body.get("page") or "")[:100],
+        context=(body.get("context") or "")[:2000],
+    )
+    audit("bug_report_submitted", id=report_id, category=category, severity=severity)
+    return jsonify({"ok": True, "id": report_id}), 201
+
+
+@app.get("/api/bug-reports")
+def api_bug_reports_list():
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+    return jsonify(store.list_bug_reports(
+        status=request.args.get("status"), severity=request.args.get("severity"),
+        limit=limit, offset=offset,
+    ))
+
+
+@app.get("/api/bug-reports/count-new")
+def api_bug_reports_count_new():
+    return jsonify({"count": store.count_new_bug_reports()})
+
+
+@app.patch("/api/bug-reports/<int:report_id>")
+def api_bug_reports_update(report_id):
+    if not store.get_bug_report(report_id):
+        raise WgctlError("Signalement introuvable.", status=404)
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    if status and status not in ("new", "in_progress", "resolved", "wont_fix"):
+        raise WgctlError("Statut invalide.", status=422)
+    store.update_bug_report(report_id, status=status, admin_notes=body.get("admin_notes"))
+    audit("bug_report_updated", id=report_id, by=g.current_user["username"], status=status)
+    return jsonify({"ok": True})
+
+
 @app.get("/api/users")
 def api_users_list():
     return jsonify(store.list_users())
@@ -1522,7 +1578,14 @@ def api_reports_pdf():
     if not isinstance(rows, list):
         raise WgctlError("Le champ 'rows' doit être une liste.", status=422)
 
-    pdf_bytes = reports.build_table_pdf(title, subtitle, columns, rows)
+    try:
+        pdf_bytes = reports.build_table_pdf(title, subtitle, columns, rows)
+    except ImportError as exc:
+        raise WgctlError(
+            f"Génération PDF indisponible : dépendance manquante côté serveur ({exc}). "
+            "Vérifiez que fpdf2 est installé dans le venv (pip install -r requirements.txt).",
+            status=503,
+        )
     from io import BytesIO
 
     return send_file(
@@ -1550,6 +1613,9 @@ def api_reports_weekly_send():
         result = reports.send_weekly_report()
     except Exception as exc:
         raise WgctlError(f"Échec de l'envoi du rapport : {exc}", status=502)
+    if not result.get("sent"):
+        result.setdefault("error", result.get("reason"))
+        return jsonify(result), 422
     return jsonify(result)
 
 

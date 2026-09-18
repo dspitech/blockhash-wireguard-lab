@@ -125,6 +125,22 @@ def init_db():
                 created_ts INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS bug_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_ts INTEGER NOT NULL,
+                reported_by TEXT,
+                category TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                page TEXT,
+                context TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                admin_notes TEXT,
+                updated_ts INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status);
+
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
@@ -599,6 +615,70 @@ def list_push_subscriptions():
     with closing(get_conn()) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(r) for r in conn.execute("SELECT * FROM push_subscriptions").fetchall()]
+
+
+# ------------------------------------------------------------------
+# Signalements de bugs (formulaire dedie + boite de reception admin)
+# ------------------------------------------------------------------
+def create_bug_report(category, severity, title, description, reported_by=None, page=None, context=None, ts=None):
+    init_db()
+    ts = ts if ts is not None else int(datetime.now(tz=timezone.utc).timestamp())
+    with closing(get_conn()) as conn:
+        cur = conn.execute(
+            "INSERT INTO bug_reports (created_ts, reported_by, category, severity, title, description, page, context, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')",
+            (ts, reported_by, category, severity, title, description, page, context),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_bug_reports(status=None, severity=None, limit=50, offset=0):
+    init_db()
+    clauses, params = [], []
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if severity:
+        clauses.append("severity = ?"); params.append(severity)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with closing(get_conn()) as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(f"SELECT COUNT(*) FROM bug_reports {where}", params).fetchone()[0]
+        cur = conn.execute(
+            f"SELECT * FROM bug_reports {where} ORDER BY created_ts DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        )
+        return {"rows": [dict(r) for r in cur.fetchall()], "total": total}
+
+
+def get_bug_report(report_id):
+    init_db()
+    with closing(get_conn()) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM bug_reports WHERE id = ?", (report_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_bug_report(report_id, status=None, admin_notes=None):
+    init_db()
+    sets, params = [], []
+    if status is not None:
+        sets.append("status = ?"); params.append(status)
+    if admin_notes is not None:
+        sets.append("admin_notes = ?"); params.append(admin_notes)
+    if not sets:
+        return
+    sets.append("updated_ts = ?"); params.append(int(datetime.now(tz=timezone.utc).timestamp()))
+    params.append(report_id)
+    with closing(get_conn()) as conn:
+        conn.execute(f"UPDATE bug_reports SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+
+
+def count_new_bug_reports():
+    init_db()
+    with closing(get_conn()) as conn:
+        return conn.execute("SELECT COUNT(*) FROM bug_reports WHERE status = 'new'").fetchone()[0]
 
 
 # ------------------------------------------------------------------

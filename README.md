@@ -1,1057 +1,1192 @@
-# LAB WireGuard VPN- BLOCKHash
- 
-**Guide complet d'installation, de configuration et de supervision d'un serveur VPN WireGuard sur une VM Ubuntu dans Microsoft Azure.**
- 
-Ce document est un support de formation (TP) destiné aux professionnels et étudiants souhaitant maîtriser le déploiement d'une infrastructure VPN moderne, de l'infrastructure-as-code jusqu'à la supervision opérationnelle.
+<div align="center">
+
+# BLOCKHash
+
+### Plateforme de supervision et d'administration WireGuard de niveau entreprise
+
+Infrastructure-as-Code · Console d'administration web · Sécurité par conception · Multi-utilisateurs
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](./LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![WireGuard](https://img.shields.io/badge/WireGuard-Kernel%20module-88C0D0)
+![Terraform](https://img.shields.io/badge/Terraform-Azure-844FBA)
+![Status](https://img.shields.io/badge/Status-Production--ready%20lab-success)
+
+</div>
+
+---
+
+## À propos de ce document
+
+Ce README est la documentation de référence complète du projet **BLOCKHash**. Il s'adresse aussi bien à un·e ingénieur·e réseau qui découvre WireGuard qu'à une équipe plateforme qui évalue l'intégration du projet dans son système d'information. Il couvre, sans rien omettre :
+
+- Les fondamentaux de WireGuard (le protocole VPN sur lequel tout repose) ;
+- L'architecture complète du système, composant par composant ;
+- Le détail de chaque dossier et fichier du dépôt ;
+- La stack technique utilisée, et pourquoi ;
+- L'intégralité des fonctionnalités de la plateforme ;
+- Le déploiement pas à pas, de zéro à un environnement opérationnel ;
+- Le modèle de sécurité et le guide de durcissement ;
+- L'exploitation courante (sauvegardes, mises à jour, supervision) ;
+- Le dépannage des incidents les plus courants.
 
 ---
 
 ## Sommaire
 
-Ce guide est organisé en deux parties : **suivez la Partie I dans l'ordre** pour déployer le LAB de bout en bout ; **consultez la Partie II au besoin**, une fois le LAB opérationnel, comme documentation de référence (fonctionnalités avancées, sécurité, dépannage, commandes).
+**Partie I — Comprendre WireGuard**
+1. [Qu'est-ce que WireGuard](#1-quest-ce-que-wireguard)
+2. [Pourquoi WireGuard : comparaison avec IPsec et OpenVPN](#2-pourquoi-wireguard--comparaison-avec-ipsec-et-openvpn)
+3. [Fondations cryptographiques](#3-fondations-cryptographiques)
+4. [Fonctionnement technique : Cryptokey Routing](#4-fonctionnement-technique--cryptokey-routing)
+5. [Avantages et limites](#5-avantages-et-limites)
+6. [Cas d'usage type en entreprise](#6-cas-dusage-type-en-entreprise)
 
-**Partie I — Guide de configuration (procédure pas à pas)**
+**Partie II — Qu'est-ce que BLOCKHash**
+7. [Présentation générale](#7-présentation-générale)
+8. [Proposition de valeur](#8-proposition-de-valeur)
+9. [Ce que BLOCKHash n'est pas](#9-ce-que-blockhash-nest-pas)
 
-1. [Présentation du LAB](#1-présentation-du-lab)
-2. [Prérequis](#2-prérequis)
-3. [Architecture](#3-architecture)
-4. [Étape 1 — Déploiement de l'infrastructure Azure](#4-étape-1--déploiement-de-linfrastructure-azure-terraform)
-5. [Étape 2 — Installation du serveur WireGuard](#5-étape-2--installation-du-serveur-wireguard)
-6. [Étape 3 — Création et distribution des clients](#6-étape-3--création-et-distribution-des-clients)
-7. [Étape 4 — Dashboard : installation et accès](#7-étape-4--dashboard-de-supervision-blockhash)
-8. [Étape 5 — Journalisation et logs](#8-étape-5--journalisation-et-logs)
-9. [Étape 6 — Tests et validation du tunnel](#9-étape-6--tests-et-validation-du-tunnel)
+**Partie III — Architecture**
+10. [Vue d'ensemble de l'architecture](#10-vue-densemble-de-larchitecture)
+11. [Composants du système](#11-composants-du-système)
+12. [Flux réseau et ports](#12-flux-réseau-et-ports)
+13. [Cycle de vie d'une connexion client](#13-cycle-de-vie-dune-connexion-client)
+14. [Modèle de séparation des privilèges](#14-modèle-de-séparation-des-privilèges)
 
-**Partie II — Documentation de référence**
+**Partie IV — Stack technique**
+15. [Infrastructure](#15-infrastructure)
+16. [Système et réseau](#16-système-et-réseau)
+17. [Backend](#17-backend)
+18. [Frontend](#18-frontend)
+19. [Dépendances complètes](#19-dépendances-complètes)
 
-10. [Dashboard BLOCKHash — Fonctionnalités avancées](#10-dashboard-blockhash--fonctionnalités-avancées)
-    - 10.1 Gestion des clients (activer/désactiver/renommer/expirer/limiter/régénérer/révoquer)
-    - 10.2 Monitoring et alerting avancés
-    - 10.3 Administration système
-    - 10.4 Reporting et export
-    - 10.5 Temps réel, journal SQLite et fiabilité
-    - 10.6 Interface utilisateur avancée
-11. [Commandes Linux de référence](#11-commandes-linux-de-référence)
-12. [Durcissement et bonnes pratiques de sécurité](#12-durcissement-et-bonnes-pratiques-de-sécurité)
-13. [Dépannage (Troubleshooting)](#13-dépannage-troubleshooting)
-14. [Nettoyage / destruction du LAB](#14-nettoyage--destruction-du-lab)
-15. [Annexe- Exercices pour les stagiaires](#15-annexe--exercices-pour-les-stagiaires)
-16. [Licence et conditions de diffusion](#16-licence-et-conditions-de-diffusion)
+**Partie V — Structure du projet**
+20. [Vue d'ensemble de l'arborescence](#20-vue-densemble-de-larborescence)
+21. [`terraform/`](#21-terraform)
+22. [`scripts/`](#22-scripts)
+23. [`dashboard/backend/`](#23-dashboardbackend)
+24. [`dashboard/frontend/`](#24-dashboardfrontend)
+25. [`dashboard/backend/tests/`](#25-dashboardbackendtests)
+
+**Partie VI — Déploiement**
+26. [Prérequis](#26-prérequis)
+27. [Étape 1 — Provisionner l'infrastructure Azure](#27-étape-1--provisionner-linfrastructure-azure)
+28. [Étape 2 — Installer le serveur WireGuard](#28-étape-2--installer-le-serveur-wireguard)
+29. [Étape 3 — Créer et distribuer des clients](#29-étape-3--créer-et-distribuer-des-clients)
+30. [Étape 4 — Installer le dashboard BLOCKHash](#30-étape-4--installer-le-dashboard-blockhash)
+31. [Étape 5 — Journalisation, monitoring et tâches planifiées](#31-étape-5--journalisation-monitoring-et-tâches-planifiées)
+32. [Étape 6 — Valider le déploiement](#32-étape-6--valider-le-déploiement)
+
+**Partie VII — Configuration de référence**
+33. [Variables d'environnement](#33-variables-denvironnement)
+34. [Fichiers de configuration persistés](#34-fichiers-de-configuration-persistés)
+35. [Service systemd](#35-service-systemd)
+36. [Reverse proxy Caddy](#36-reverse-proxy-caddy)
+37. [Tâches planifiées (cron)](#37-tâches-planifiées-cron)
+
+**Partie VIII — Fonctionnalités**
+38. [Vue d'ensemble (dashboard)](#38-vue-densemble-dashboard)
+39. [Gestion des clients](#39-gestion-des-clients)
+40. [Journal des connexions](#40-journal-des-connexions)
+41. [Monitoring](#41-monitoring)
+42. [Alertes](#42-alertes)
+43. [Conformité](#43-conformité)
+44. [Système](#44-système)
+45. [Réglages](#45-réglages)
+46. [Utilisateurs et rôles](#46-utilisateurs-et-rôles)
+47. [Tokens API](#47-tokens-api)
+48. [Aide intégrée](#48-aide-intégrée)
+49. [Fonctionnalités transverses](#49-fonctionnalités-transverses)
+
+**Partie IX — Sécurité**
+50. [Modèle d'authentification](#50-modèle-dauthentification)
+51. [Contrôle d'accès par rôle (RBAC)](#51-contrôle-daccès-par-rôle-rbac)
+52. [Protection des données et RGPD](#52-protection-des-données-et-rgpd)
+53. [Traçabilité et audit](#53-traçabilité-et-audit)
+54. [Checklist de durcissement](#54-checklist-de-durcissement)
+
+**Partie X — Référence API**
+55. [Authentification des appels API](#55-authentification-des-appels-api)
+56. [Catalogue des endpoints](#56-catalogue-des-endpoints)
+
+**Partie XI — Exploitation**
+57. [Sauvegardes et rétention](#57-sauvegardes-et-rétention)
+58. [Mise à jour de la plateforme](#58-mise-à-jour-de-la-plateforme)
+59. [Supervision de la plateforme elle-même](#59-supervision-de-la-plateforme-elle-même)
+60. [Capacité et dimensionnement](#60-capacité-et-dimensionnement)
+
+**Partie XII — Dépannage**
+61. [Méthodologie générale](#61-méthodologie-générale)
+62. [Incidents courants](#62-incidents-courants)
+
+**Partie XIII — Limites connues et feuille de route**
+63. [Hors périmètre assumé](#63-hors-périmètre-assumé)
+64. [Feuille de route](#64-feuille-de-route)
+
+**Annexes**
+65. [Glossaire](#65-glossaire)
+66. [Aide-mémoire des commandes](#66-aide-mémoire-des-commandes)
+67. [Licence](#67-licence)
 
 ---
 
-# Partie I — Guide de configuration (à suivre dans l'ordre)
+# Partie I — Comprendre WireGuard
 
-## 1. Présentation du LAB
+## 1. Qu'est-ce que WireGuard
 
-WireGuard est un protocole VPN moderne, léger (~4 000 lignes de code contre plusieurs centaines de milliers pour IPsec/OpenVPN), reposant sur une cryptographie de nouvelle génération (Curve25519, ChaCha20, Poly1305, BLAKE2s). Il est aujourd'hui intégré nativement au noyau Linux.
+**WireGuard** est un protocole et une implémentation logicielle de réseau privé virtuel (VPN) conçus pour être **simples, rapides et modernes en matière de cryptographie**. Créé par **Jason A. Donenfeld** et publié pour la première fois en 2016, WireGuard a été intégré au noyau Linux officiel à partir de la version **5.6** (mars 2020) — une reconnaissance rare pour un projet aussi jeune, saluée publiquement par Linus Torvalds pour la qualité de son code.
 
-Ce LAB permet de reproduire, en environnement cloud isolé, un déploiement complet et réaliste :
+Contrairement aux VPN traditionnels (IPsec, OpenVPN) qui ont accumulé des décennies d'extensions, d'options de configuration et de modes de compatibilité, WireGuard part d'une feuille blanche avec un objectif unique : **faire une seule chose, et la faire extrêmement bien**. Le résultat tient dans environ **4 000 lignes de code** — contre plus de **400 000 lignes** pour OpenSSL/OpenVPN ou StrongSwan/IPsec. Cette compacité n'est pas un détail esthétique : un code plus petit est un code plus facile à auditer, avec une surface d'attaque considérablement réduite.
 
-- Provisionnement d'une infrastructure Azure via **Infrastructure as Code** (Terraform, en modules réutilisables)
-- Installation et configuration d'un **serveur WireGuard** sur Ubuntu 22.04 LTS
-- Génération et distribution de **configurations clients** (fichier `.conf` + QR code)
-- Un **dashboard web maison** (HTML/CSS/JS + API Flask) de supervision des tunnels, avec journal pagine et interrogeable en SQL (recherche/tri/filtre), gestion complète du cycle de vie des clients (ajout, activation/désactivation, renommage, expiration, limitation de débit, révocation), **monitoring avancé** (débit long terme, ressources serveur, détection d'anomalies, carte GeoIP des endpoints), **alerting configurable** (email/Slack/Discord/Telegram), **administration système** (sauvegardes versionnées, rotation de clés, multi-serveurs), **reporting** (export CSV/PDF, rapport hebdomadaire, vue conformité), **mises à jour en temps réel** (Server-Sent Events) et une **interface soignée** (thème clair/sombre, recherche globale, mode NOC, vraiment responsive mobile)
-- **Journalisation** des connexions (logs CSV, rotation, audit)
-- Durcissement du pare-feu (NSG Azure + `ufw` + `iptables`)
+> **Repère :** un utilisateur avec de solides connaissances en systèmes peut lire et comprendre l'intégralité du code source de WireGuard en une journée. C'est structurellement impossible avec OpenVPN ou IPsec.
 
-**Public visé :** administrateurs systèmes, ingénieurs réseau, étudiants en cybersécurité, formateurs.
+### Positionnement technique
 
-**Durée estimée du TP :** 2 à 3 heures.
+WireGuard opère à la **couche 3** (réseau) du modèle OSI. Il crée une interface réseau virtuelle (`wg0` par exemple) qui se comporte comme n'importe quelle autre interface réseau du système : on peut lui assigner une adresse IP, des routes, des règles de pare-feu. Le trafic qui entre dans cette interface est chiffré et encapsulé dans des paquets **UDP** avant d'être envoyé sur le réseau physique ; à l'arrivée, le paquet est déchiffré et présenté à l'interface comme un paquet IP normal.
 
 ---
 
-## 2. Prérequis
+## 2. Pourquoi WireGuard : comparaison avec IPsec et OpenVPN
+
+| Critère | WireGuard | OpenVPN | IPsec/IKEv2 |
+|---|---|---|---|
+| Taille du code source | ~4 000 lignes | ~400 000+ lignes (avec OpenSSL) | ~600 000+ lignes |
+| Emplacement d'exécution | Noyau Linux (module natif depuis 5.6) | Espace utilisateur | Noyau (démon userspace pour IKE) |
+| Suite cryptographique | Fixe, moderne, non négociable | Configurable (risque de mauvaise configuration) | Configurable (risque de mauvaise configuration) |
+| Négociation de protocole | Aucune (pas de "cipher suite negotiation") | Oui (source de vulnérabilités historiques) | Oui (source de vulnérabilités historiques) |
+| Performance | Très élevée (latence/débit proches du natif) | Modérée (overhead espace utilisateur + TLS) | Élevée, mais configuration complexe |
+| Vitesse d'établissement du tunnel | Millisecondes | Plusieurs centaines de ms (poignée de main TLS) | Variable, plusieurs échanges |
+| Roaming (Wi-Fi → 4G) | Natif et transparent | Reconnexion nécessaire | Reconnexion nécessaire (MOBIKE limite le problème) |
+| Configuration | Fichier `.conf` minimal (clé + endpoint) | Fichiers complexes (certificats, TLS, options) | Complexe (policies, proposals, PSK/certificats) |
+| Surface exposée sans authentification | Aucune (paquets non authentifiés ignorés) | Port ouvert, poignée de main TLS visible | Port ouvert, échanges IKE visibles |
+| Audit de sécurité | Formellement vérifié (preuves du protocole Noise) | Dépend de la configuration OpenSSL | Dépend de l'implémentation |
+
+### Le principe du « silence radio »
+
+L'une des propriétés de sécurité les plus notables de WireGuard est que le serveur **ne répond jamais** à un paquet non authentifié avec une clé autorisée. Un scan `nmap` sur un serveur WireGuard ne révèle **rien** : le port UDP paraît filtré, indiscernable d'un port fermé. C'est une sécurité par **minimisation de la surface d'attaque**, intégrée au protocole lui-même plutôt que reposant uniquement sur un pare-feu.
+
+---
+
+## 3. Fondations cryptographiques
+
+WireGuard repose sur le **Noise Protocol Framework**, un cadre de conception de protocoles cryptographiques créé par Trevor Perrin (également à l'origine du protocole utilisé par Signal). Plutôt qu'un catalogue d'algorithmes interchangeables, WireGuard fait des choix fermes, tous considérés comme état de l'art :
+
+| Fonction | Algorithme | Rôle |
+|---|---|---|
+| Échange de clés | **Curve25519** (ECDH) | Établit un secret partagé sans jamais transmettre la clé privée |
+| Chiffrement symétrique | **ChaCha20** | Chiffre le trafic du tunnel — rapide même sans accélération matérielle AES |
+| Authentification des messages | **Poly1305** | Garantit qu'un paquet n'a pas été altéré en transit |
+| Fonction de hachage | **BLAKE2s** | Utilisée dans la dérivation de clés et la poignée de main |
+| Dérivation de clé | **HKDF** | Dérive les clés de session à partir du secret partagé |
+| Résistance au rejeu | **Compteurs + fenêtre glissante** | Empêche la réinjection d'un paquet capturé |
+
+Ce choix figé élimine toute une classe de vulnérabilités liées à la négociation de protocole (*downgrade attacks*), qui a historiquement touché TLS/SSL et donc OpenVPN (POODLE, BEAST...). Avec WireGuard, il n'y a rien à négocier, donc rien à dégrader.
+
+### La poignée de main (handshake)
+
+WireGuard utilise une poignée de main en une seule paire de messages (**1-RTT**), basée sur le motif Noise `IKpsk2`, qui fournit :
+- **Confidentialité persistante** (*forward secrecy*) : une nouvelle paire de clés éphémères est générée à chaque poignée de main (renouvelée automatiquement toutes les 2 minutes), donc la compromission d'une clé à long terme ne permet pas de déchiffrer les communications passées ;
+- **Authentification mutuelle** : chaque partie prouve la possession de sa clé privée sans la révéler ;
+- **Résistance aux attaques par rejeu et par déni de service**, grâce à un mécanisme de "cookies" comparable à celui de TCP SYN.
+
+---
+
+## 4. Fonctionnement technique : Cryptokey Routing
+
+Le concept central de WireGuard est le **Cryptokey Routing** (routage par clé cryptographique). Chaque interface WireGuard maintient une table simple qui associe :
+
+```
+Clé publique d'un pair  ⟷  Liste d'adresses IP autorisées (AllowedIPs)
+```
+
+Quand un paquet sortant doit être envoyé vers une IP donnée, WireGuard consulte cette table pour déterminer **avec quelle clé publique le chiffrer**. Quand un paquet arrive et se déchiffre avec succès via la clé d'un pair, WireGuard vérifie que l'IP source du paquet déchiffré correspond aux `AllowedIPs` déclarés pour ce pair — sinon il est silencieusement rejeté.
+
+Ce mécanisme unifie en une seule table ce qui nécessite, en IPsec, plusieurs concepts distincts (Security Associations, Security Policy Database, routage). C'est ce qui permet à une configuration WireGuard de tenir en une dizaine de lignes :
+
+```ini
+[Interface]
+PrivateKey = <clé privée du client>
+Address = 10.66.66.2/32
+
+[Peer]
+PublicKey = <clé publique du serveur>
+AllowedIPs = 0.0.0.0/0
+Endpoint = vpn.exemple.com:51820
+PersistentKeepalive = 25
+```
+
+### Le rôle du serveur : un pair parmi d'autres
+
+Conceptuellement, WireGuard ne distingue pas "serveur" et "client" : ce sont tous des **pairs** (*peers*), chacun avec sa propre paire de clés. Ce qu'on appelle usuellement "serveur" est simplement le pair qui écoute sur un port connu et dont l'`Endpoint` est fixe ; les "clients" ont une IP publique qui peut changer (roaming). Cette symétrie rend WireGuard pertinent aussi bien en **site-à-site** qu'en **accès distant** ou en **maillage** entre serveurs.
+
+---
+
+## 5. Avantages et limites
+
+### Avantages
+
+- **Performance** — overhead minimal, exécution en espace noyau, chiffrement optimisé pour le matériel moderne.
+- **Simplicité** — configuration réduite au strict nécessaire, aucun arbre de décision cryptographique.
+- **Sécurité par conception** — pas de négociation de protocole, forward secrecy native, code auditable.
+- **Roaming transparent** — un client change de réseau (Wi-Fi → 4G → Ethernet) sans jamais rompre sa session applicative.
+- **Empreinte réduite** — adapté aux environnements contraints (routeurs, IoT, mobile) sans sacrifier la sécurité.
+- **Cryptokey Routing** — un modèle mental unique et cohérent pour le routage et la sécurité.
+
+### Limites et points de vigilance
+
+- **Pas d'authentification utilisateur native** — WireGuard authentifie des **clés**, pas des personnes. L'association « quelle clé appartient à quelle personne » doit être gérée en dehors du protocole : c'est précisément le rôle qu'assure BLOCKHash (Partie II).
+- **Pas d'attribution d'adresse IP dynamique** (pas de DHCP) — les adresses sont statiques par pair, ce qui impose une gestion d'allocation (également prise en charge par BLOCKHash).
+- **Confidentialité des métadonnées limitée** — comme tout VPN UDP, le volume et le rythme du trafic restent observables par un intermédiaire réseau, même si le contenu est chiffré.
+- **Pas de révocation en temps réel dans le protocole** — révoquer un pair signifie le retirer de la configuration ; il n'existe pas de liste de révocation façon PKI X.509. Là encore, c'est à l'outillage (BLOCKHash) de combler ce manque par une gestion opérationnelle rigoureuse.
+
+---
+
+## 6. Cas d'usage type en entreprise
+
+| Cas d'usage | Description |
+|---|---|
+| **Accès distant sécurisé** | Remplacement d'un VPN d'entreprise classique pour permettre aux collaborateurs de rejoindre le réseau interne depuis n'importe où. |
+| **Interconnexion site-à-site** | Relier deux datacenters, deux bureaux, ou un datacenter et un environnement cloud, avec chiffrement de bout en bout. |
+| **Bastion réseau administrateur** | Restreindre l'accès SSH/RDP aux serveurs de production à des IP uniquement joignables via le tunnel — le modèle déployé par ce projet. |
+| **Maillage multi-cloud** | Connecter des ressources hébergées chez plusieurs fournisseurs (Azure, AWS, GCP, on-premise) dans un réseau privé unique. |
+| **Sécurisation IoT / Edge** | Faible empreinte CPU/mémoire, adapté aux appareils contraints (Raspberry Pi, routeurs embarqués). |
+| **Environnements réglementés** | Auditabilité du code et cryptographie non négociable, appréciées en finance, santé, secteur public. |
+
+---
+
+# Partie II — Qu'est-ce que BLOCKHash
+
+## 7. Présentation générale
+
+**BLOCKHash** est une plateforme complète qui transforme un serveur WireGuard « nu » en une **console d'administration VPN de niveau entreprise**. Le projet comprend deux couches indissociables :
+
+1. **La couche infrastructure** : provisionnement Azure via Terraform, installation et durcissement du serveur WireGuard, scripts d'exploitation en ligne de commande.
+2. **La couche applicative** : un dashboard web (backend Flask + frontend HTML/CSS/JS) qui pilote ce serveur WireGuard au travers d'une interface graphique complète — création et cycle de vie des clients, supervision temps réel, alerting, sauvegardes, conformité, comptes utilisateurs à rôles, tokens API, etc.
+
+Le nom du projet reflète sa fonction : **BLOCK**ing/monitoring pour WireGuard, avec une architecture qui s'appuie fortement sur le **Hash**ing (jetons, mots de passe, intégrité des sauvegardes).
+
+## 8. Proposition de valeur
+
+WireGuard, pris isolément, est un protocole — pas une plateforme. Il ne fournit ni interface de gestion, ni notion d'utilisateur, ni journalisation exploitable, ni alerting, ni contrôle d'accès. BLOCKHash comble précisément ce vide :
+
+| Besoin métier | Ce que WireGuard seul ne fournit pas | Ce que BLOCKHash ajoute |
+|---|---|---|
+| Onboarding/offboarding des utilisateurs | Édition manuelle de fichiers `.conf` | Création, import en masse, révocation en un clic, QR code |
+| Visibilité opérationnelle | Rien (juste `wg show`) | Dashboard temps réel, graphiques de débit, carte GeoIP, heatmap |
+| Alerting | Rien | Règles configurables (connexion, inactivité, hors-horaires...), envoi email/Slack/Discord/Telegram/Web Push |
+| Traçabilité | Rien | Journal des connexions interrogeable, journal d'audit des actions admin |
+| Reprise après incident | Sauvegarde manuelle du fichier `wg0.conf` | Sauvegardes versionnées, intègres (SHA-256), planifiées, restauration à double confirmation |
+| Gouvernance des accès | Un seul secret partagé pour tout le monde | Comptes nominatifs, rôles (lecteur/opérateur/admin), tokens API scopés et révocables |
+| Conformité | Rien | Politiques d'inactivité par tag, export RGPD par client, rapports PDF |
+
+## 9. Ce que BLOCKHash n'est pas
+
+Par souci de transparence (voir aussi la Partie XIII) :
+
+- **Ce n'est pas un fournisseur d'identité d'entreprise.** BLOCKHash gère ses propres comptes utilisateurs ; il ne s'intègre pas (encore) à un SSO/LDAP/Active Directory/OIDC externe.
+- **Ce n'est pas une solution multi-tenant SaaS.** Le projet est conçu pour être déployé et exploité par une seule organisation, sur sa propre infrastructure.
+- **Ce n'est pas un WAF ni un IDS/IPS.** La sécurité réseau périmétrique (NSG, pare-feu OS) reste de la responsabilité de l'infrastructure sous-jacente, documentée en Partie VI.
+
+---
+
+# Partie III — Architecture
+
+## 10. Vue d'ensemble de l'architecture
+
+```
+                                    Internet
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │ UDP 51820         │ TCP 443            │ TCP 22
+                    │ (tunnel WireGuard)│ (dashboard, HTTPS) │ (SSH admin)
+                    ▼                   ▼                    ▼
+        ┌──────────────────────────────────────────────────────────────┐
+        │              Azure NSG « nsg-wireguard-lab »                 │
+        │   AllowWireGuard · AllowDashboard-Admin · AllowSSH-Admin ·    │
+        │   DenyAllOtherInbound (règle « deny all » explicite)          │
+        └──────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+        ┌──────────────────────────────────────────────────────────────┐
+        │                VM Ubuntu (Standard_B2s par défaut)            │
+        │                                                                │
+        │   ┌────────────────┐        ┌─────────────────────────────┐  │
+        │   │  Noyau Linux    │        │   Caddy (reverse proxy)      │  │
+        │   │  module wireguard│       │   TLS interne, HTTP/2        │  │
+        │   │  interface wg0   │◄──┐   │   /api/events/stream : flush │  │
+        │   └────────────────┘    │   │   immédiat (SSE)              │  │
+        │           ▲              │   └───────────┬─────────────────┘  │
+        │           │ wg show      │                │ 127.0.0.1:8080     │
+        │           │ (root only)  │                ▼                    │
+        │   ┌───────┴────────┐    │   ┌─────────────────────────────┐  │
+        │   │ wgctl.py         │◄──┘   │  Gunicorn (2 workers gevent) │  │
+        │   │ wgops.py         │◄──────┤  Application Flask (app.py)  │  │
+        │   │ (sudo -n, root)  │       │  73 routes API               │  │
+        │   └──────────────────┘       └───────────┬─────────────────┘  │
+        │                                            │                    │
+        │   ┌────────────────────────────────────────┼─────────────┐    │
+        │   │  /var/log/wireguard/blockhash.db (SQLite, 0660)       │    │
+        │   │  /var/log/wireguard/audit.log                         │    │
+        │   │  /etc/blockhash/*.json (réglages, alertes, rapports)  │    │
+        │   │  /etc/wireguard/wg0.conf + backups/                   │    │
+        │   └────────────────────────────────────────────────────────┘   │
+        │                                                                │
+        │   Cron : capture d'état (5 min) · purge (nuit) · alertes      │
+        │   (5 min) · expirations (nuit) · sauvegardes planifiées       │
+        └──────────────────────────────────────────────────────────────┘
+```
+
+## 11. Composants du système
+
+| Composant | Rôle | Exécuté en tant que |
+|---|---|---|
+| **Module noyau `wireguard`** | Chiffrement/déchiffrement du trafic, gestion de l'interface `wg0` | Noyau (root) |
+| **`wgctl.py`** | Logique privilégiée de gestion du cycle de vie des clients (ajout, activation, renommage, révocation, régénération de clés, contact/RGPD) | root, invoqué via `sudo -n` par www-data |
+| **`wgops.py`** | Opérations système privilégiées (sauvegardes, restauration, rotation des clés serveur, redémarrage du tunnel, export, diagnostic) | root, invoqué via `sudo -n` par www-data |
+| **`app.py` (Flask)** | API HTTP (73 routes), authentification, autorisation par rôle, orchestration | www-data, sans privilège root |
+| **Gunicorn** | Serveur d'application WSGI, 2 workers en mode **gevent** (coroutines) | www-data |
+| **Caddy** | Reverse proxy HTTPS, terminaison TLS, sert le frontend statique | root (bind sur le port 443), ou www-data selon le durcissement |
+| **SQLite (`blockhash.db`)** | Persistance des métriques, logs de connexion, alertes, utilisateurs, sessions, tokens API, abonnements Web Push | Écrit par **www-data ET root** (voir §14) |
+| **Cron (root)** | Capture périodique de l'état WireGuard, purge, évaluation des alertes, vérification des expirations, sauvegardes planifiées | root |
+
+## 12. Flux réseau et ports
+
+| Port | Protocole | Usage | Exposition |
+|---|---|---|---|
+| 51820 (configurable) | UDP | Tunnel WireGuard | Publique (Internet) |
+| 443 | TCP | Dashboard (HTTPS via Caddy) | Publique, restreinte par NSG à l'IP admin si souhaité |
+| 22 | TCP | SSH d'administration de la VM | Publique, restreinte par NSG à l'IP admin |
+| 8080 | TCP | Gunicorn (backend Flask) | **Local uniquement** (`127.0.0.1`), jamais exposé directement |
+
+## 13. Cycle de vie d'une connexion client
+
+1. Le client WireGuard initie une poignée de main UDP vers l'`Endpoint` du serveur.
+2. Le noyau Linux (module `wireguard`) authentifie et déchiffre les paquets suivants sans intervention applicative.
+3. Toutes les 5 minutes, un script cron exécuté en root interroge `wg show wg0 dump`, calcule les deltas de trafic (octets reçus/émis depuis le dernier échantillon) et les insère dans `blockhash.db`.
+4. Le flux **Server-Sent Events** (`/api/events/stream`) compare l'état courant à l'état précédent à chaque itération (toutes les 3 secondes) et pousse un événement `peer_connected`/`peer_disconnected` à tous les onglets ouverts dès qu'une transition est détectée.
+5. Si une règle d'alerte correspond à la transition (ex. connexion hors horaires), une notification est déclenchée sur les canaux configurés (email, Slack, Discord, Telegram, Web Push).
+6. L'historique de connexion reste consultable dans la page **Journal**, avec filtres, pagination et heatmap.
+
+## 14. Modèle de séparation des privilèges
+
+BLOCKHash applique le principe du **moindre privilège** de bout en bout :
+
+- Le processus Flask (`app.py`) tourne **sans aucun privilège root**, sous l'utilisateur système `www-data`.
+- Toute opération nécessitant un accès root (lecture de l'état WireGuard, écriture dans `/etc/wireguard/`, redémarrage du tunnel, rotation de clés) passe **exclusivement** par deux scripts dédiés, `wgctl.py` et `wgops.py`, invoqués via une règle `sudo -n` strictement scoped (pas de mot de passe interactif, pas d'accès shell).
+- Un attaquant qui compromettrait le processus Flask n'obtient **pas** automatiquement un accès root : il est limité aux actions explicitement exposées par ces deux scripts, elles-mêmes validées côté Flask (nom de client, chemin de sauvegarde, etc.) avant l'appel privilégié.
+
+> **Point d'attention opérationnel documenté :** certaines données (sessions utilisateur, comptes, tokens API, alertes) sont désormais écrites par **le processus www-data lui-même**, alors que la base SQLite historique n'était pensée que pour un écrivain root (le cron de capture). Le fichier est donc configuré en mode `0660` avec le bit **setgid** posé sur son répertoire parent, pour que les deux écrivains (root et www-data) y aient un accès garanti dans la durée. Voir Partie XII, [§62](#62-incidents-courants), pour le détail de cet arbitrage.
+
+---
+
+# Partie IV — Stack technique
+
+## 15. Infrastructure
+
+| Technologie | Usage dans le projet |
+|---|---|
+| **Terraform** (>= 1.5) | Infrastructure-as-Code : provisionnement complet de l'environnement Azure (réseau, VM, NSG, disques) en modules réutilisables |
+| **Microsoft Azure** | Fournisseur cloud cible (groupe de ressources, réseau virtuel, VM, IP publique) |
+| **cloud-init** | Bootstrap de la VM à la création (fichier `cloud-init.yaml.tpl`), pour une configuration reproductible dès le premier démarrage |
+
+## 16. Système et réseau
+
+| Technologie | Usage |
+|---|---|
+| **Ubuntu 22.04 LTS** | Système d'exploitation de la VM |
+| **WireGuard** (module noyau + `wireguard-tools`) | Cœur du VPN (voir Partie I) |
+| **systemd** | Gestion du service `wg-quick@wg0` et du service `blockhash-dashboard` |
+| **Caddy** | Reverse proxy HTTPS, terminaison TLS (certificat interne auto-signé), HTTP/2, gestion dédiée du flux SSE |
+| **cron** | Orchestration des tâches périodiques (capture d'état, purge, alertes, expirations, sauvegardes planifiées) |
+| **logrotate** | Rotation des journaux CSV/texte |
+| **ufw / iptables** | Durcissement du pare-feu local, en complément du NSG Azure |
+
+## 17. Backend
+
+| Technologie | Version | Usage |
+|---|---|---|
+| **Python** | 3.10+ | Langage du backend |
+| **Flask** | 3.0.3 | Framework web, 73 routes API REST |
+| **Gunicorn** | 22.0.0 | Serveur WSGI de production |
+| **gevent** | 24.2.1 | Worker asynchrone à base de coroutines — indispensable pour supporter de nombreuses connexions **Server-Sent Events** simultanées sans épuiser un pool de threads |
+| **SQLite 3** (bibliothèque standard) | — | Persistance embarquée : métriques, logs, alertes, comptes, sessions, tokens, abonnements push — sans service de base de données externe à opérer |
+| **Werkzeug (`security`)** | via Flask | Hachage des mots de passe (scrypt/pbkdf2 selon la version) |
+| **pywebpush** | 2.5.0 | Envoi de notifications Web Push standard (RFC 8030), génération/gestion des clés VAPID |
+| **psutil** | 6.0.0 | Métriques système (CPU, mémoire, disque, connexions TCP) |
+| **fpdf2** | 2.7.9 | Génération de rapports PDF (conformité, audit) |
+
+## 18. Frontend
+
+| Technologie | Usage |
+|---|---|
+| **HTML5 / CSS3 / JavaScript vanilla (ES2020+)** | Aucun framework front (pas de React/Vue/Angular) : un unique fichier `app.js`, volontairement dépendance-minimale et vendorisé localement (aucun CDN externe requis en production) |
+| **Chart.js** (vendorisé) | Graphiques de débit long terme |
+| **chartjs-plugin-zoom** (vendorisé) | Zoom molette / pan par glisser sur les graphiques |
+| **Leaflet** (vendorisé) | Carte de géolocalisation des endpoints clients (GeoIP) |
+| **Service Worker (`sw.js`)** | Réception des notifications Web Push, y compris onglet fermé |
+| **Web Push API / Notification API** | Alertes navigateur en temps réel |
+| **Server-Sent Events (`EventSource`)** | Mise à jour temps réel du dashboard sans polling |
+| **i18n maison** (`i18n/fr.json`, `i18n/en.json`) | Internationalisation FR/EN de l'interface statique |
+
+## 19. Dépendances complètes
+
+Fichier `dashboard/backend/requirements.txt` :
+
+```
+Flask==3.0.3
+gunicorn==22.0.0
+gevent==24.2.1
+pywebpush==2.5.0
+psutil==6.0.0
+fpdf2==2.7.9
+```
+
+Aucune dépendance frontend n'est installée via un gestionnaire de paquets : les bibliothèques JS tierces (Chart.js, le plugin zoom, Leaflet) sont **vendorisées** (copiées localement dans `dashboard/frontend/js/vendor/`), afin que le dashboard reste pleinement fonctionnel même sur une infrastructure à accès Internet sortant restreint.
+
+---
+
+# Partie V — Structure du projet
+
+## 20. Vue d'ensemble de l'arborescence
+
+```
+blockhash-wireguard-lab/
+├── LICENSE
+├── README.md                        ← ce document
+├── terraform/                       ← Infrastructure-as-Code (Azure)
+│   ├── main.tf, variables.tf, providers.tf, outputs.tf
+│   ├── terraform.tfvars.example
+│   ├── deploy.ps1                   ← script de déploiement Windows/PowerShell
+│   └── modules/
+│       ├── network/                 ← VNet, subnet, NSG, IP publique
+│       └── compute/                 ← VM, cloud-init, disque
+├── scripts/                         ← Scripts d'exploitation (bash), à exécuter sur la VM
+│   ├── 01-install-wireguard-server.sh
+│   ├── 02-add-client.sh
+│   ├── 03-install-dashboard.sh
+│   ├── 04-logging-monitoring.sh
+│   ├── 05-revoke-client.sh
+│   ├── 06-manage-client.sh
+│   ├── 07-check-expirations.sh
+│   └── 09-check-alerts.sh
+└── dashboard/
+    ├── backend/                     ← API Flask (~5 360 lignes Python, 73 routes)
+    │   ├── app.py                   ← point d'entrée, routes, auth, orchestration (1 642 lignes)
+    │   ├── auth.py                  ← rôles, sessions, tokens API (135 lignes)
+    │   ├── wgctl.py                 ← gestion privilégiée des clients (688 lignes)
+    │   ├── wgops.py                 ← opérations système privilégiées (442 lignes)
+    │   ├── wgstate.py               ← lecture d'état WireGuard, logs (269 lignes)
+    │   ├── store.py                 ← couche SQLite (901 lignes)
+    │   ├── alerts.py                ← moteur de règles d'alerte (445 lignes)
+    │   ├── reports.py               ← génération PDF, rapport hebdomadaire (201 lignes)
+    │   ├── webpush.py               ← notifications Web Push / VAPID (106 lignes)
+    │   ├── geoip.py                 ← résolution géographique des endpoints (127 lignes)
+    │   ├── system_monitor.py        ← métriques système (138 lignes)
+    │   ├── anomalies.py             ← détection d'anomalies de débit (76 lignes)
+    │   ├── settings_store.py        ← réglages persistés (73 lignes)
+    │   ├── servers_store.py         ← registre multi-serveurs (116 lignes)
+    │   ├── requirements.txt / requirements-dev.txt
+    │   ├── pytest.ini
+    │   └── tests/                   ← suite de tests (606 lignes, voir §25)
+    └── frontend/                    ← interface web (HTML/CSS/JS vanilla)
+        ├── index.html               ← squelette applicatif (SPA à sections)
+        ├── sw.js                    ← service worker (Web Push)
+        ├── js/
+        │   ├── app.js                ← logique applicative complète
+        │   ├── config.js             ← configuration runtime
+        │   └── vendor/                ← bibliothèques tierces vendorisées
+        ├── css/
+        │   ├── style.css              ← design system
+        │   └── leaflet.css / images/
+        ├── i18n/
+        │   ├── fr.json
+        │   └── en.json
+        └── data/
+            └── sample-data.json      ← jeu de données pour le mode démonstration
+```
+
+## 21. `terraform/`
+
+Provisionne l'intégralité de l'infrastructure Azure nécessaire, en **deux modules indépendants** :
+
+- **`modules/network/`** — Réseau virtuel (`vnet-wireguard-lab`), sous-réseau dédié, groupe de sécurité réseau (`nsg-wireguard-lab`) avec quatre règles explicites : `AllowSSH-Admin`, `AllowWireGuard`, `AllowDashboard-Admin`, et une règle **`DenyAllOtherInbound`** en toute fin de chaîne (défense en profondeur — rien n'est autorisé par défaut).
+- **`modules/compute/`** — Machine virtuelle (taille par défaut `Standard_B2s`), IP publique, disque, et injection d'un script `cloud-init.yaml.tpl` pour une préparation reproductible dès le premier démarrage.
+
+Le fichier `terraform.tfvars.example` documente toutes les variables surchargeables (région, taille de VM, ports, IP autorisées, nom d'utilisateur admin...). Le script `deploy.ps1` encapsule le cycle `terraform init/plan/apply` pour les utilisateurs Windows/PowerShell.
+
+## 22. `scripts/`
+
+Scripts bash idempotents, numérotés dans l'ordre d'exécution recommandé, à lancer **sur la VM** (en root ou via `sudo`) :
+
+| Script | Rôle |
+|---|---|
+| `01-install-wireguard-server.sh` | Installe WireGuard, génère les clés serveur, crée `wg0.conf`, active le service |
+| `02-add-client.sh` | Ajoute un client en ligne de commande (usage direct, hors dashboard) |
+| `03-install-dashboard.sh` | Installe le dashboard complet : venv Python, dépendances, service systemd, règles `sudo`, Caddy, permissions (setgid inclus) |
+| `04-logging-monitoring.sh` | Met en place la capture d'état périodique (cron 5 min), la purge nocturne, les sauvegardes planifiées, et `logrotate` |
+| `05-revoke-client.sh` | Révoque un client en ligne de commande |
+| `06-manage-client.sh` | Fine couche CLI au-dessus de `wgctl.py`, pour l'administration avancée sans passer par le dashboard |
+| `07-check-expirations.sh` | Désactive automatiquement les clients expirés (conçu pour cron nocturne) |
+| `09-check-alerts.sh` | Évalue les règles d'alerte (conçu pour cron toutes les 5 minutes) |
+
+## 23. `dashboard/backend/`
+
+| Fichier | Responsabilité |
+|---|---|
+| **`app.py`** | Point d'entrée Flask. Définit les 73 routes API, la logique d'authentification (`check_auth`, `enforce_auth`), le contrôle d'accès par rôle, le flux SSE, le journal d'audit, et orchestre tous les autres modules. |
+| **`auth.py`** | Modèle de comptes multi-utilisateurs : hiérarchie des rôles (`reader` / `operator` / `admin`), création/vérification de sessions, résolution des tokens API, migration du compte historique unique vers le nouveau modèle. |
+| **`wgctl.py`** | Exécuté en root via `sudo -n`. Toute la logique de cycle de vie d'un client WireGuard : génération de clés, allocation d'IP, activation/désactivation, renommage, révocation, régénération, expiration, limitation de bande passante, champs de contact et RGPD, génération de QR code. |
+| **`wgops.py`** | Exécuté en root via `sudo -n`. Opérations système : sauvegardes (création, liste, intégrité SHA-256, restauration sécurisée), rotation des clés serveur, redémarrage du tunnel, export global, diagnostic système. |
+| **`wgstate.py`** | Lecture seule de l'état WireGuard (`wg show`), calcul des statuts (en ligne/inactif/jamais connecté), requêtage paginé du journal de connexions. |
+| **`store.py`** | Couche d'accès SQLite unique pour tout le projet : schéma, migrations idempotentes, requêtes pour métriques, logs, alertes, comptes, sessions, tokens API, abonnements Web Push, dernière IP connue par client. |
+| **`alerts.py`** | Moteur de règles d'alerte : catalogue de règles (inactivité, bande passante, service down, connexion/déconnexion, hors-horaires, tentatives échouées, expiration proche, nouvelle IP, seuils CPU/disque), déduplication, limitation de débit, envoi multi-canal. |
+| **`reports.py`** | Génération de rapports PDF, synthèse hebdomadaire, envoi par e-mail (réutilise la configuration SMTP des alertes). |
+| **`webpush.py`** | Gestion des clés VAPID, envoi de notifications Web Push à tous les abonnements enregistrés. |
+| **`geoip.py`** | Résolution approximative de la localisation géographique des endpoints clients (pour la carte). |
+| **`system_monitor.py`** | Métriques système : CPU, mémoire, disque, connexions TCP actives, latence réseau, température CPU (si disponible), état des services. |
+| **`anomalies.py`** | Détection simple d'anomalies de débit. |
+| **`settings_store.py` / `servers_store.py`** | Persistance des réglages du dashboard et du registre multi-serveurs. |
+
+## 24. `dashboard/frontend/`
+
+Application web monopage (SPA) **sans framework**, organisée en sections `<section class="view">` togglées par une fonction `switchView()` unique :
+
+| Fichier | Contenu |
+|---|---|
+| `index.html` | Squelette complet : sidebar de navigation, topbar, l'ensemble des sections/vues, toutes les modales |
+| `js/app.js` | Toute la logique applicative : appels API, rendu des tableaux, gestion d'état, i18n, thème, raccourcis clavier, Web Push, graphiques |
+| `js/config.js` | Configuration runtime (URL de l'API si différente de l'origine, etc.) |
+| `js/vendor/` | Bibliothèques tierces vendorisées : `chart.umd.js`, `chartjs-plugin-zoom.min.js`, `leaflet.js` |
+| `css/style.css` | Design system complet (tokens de couleur, thème clair/sombre/auto, composants) |
+| `sw.js` | Service worker (réception des notifications Web Push) |
+| `i18n/fr.json`, `i18n/en.json` | Dictionnaires de traduction |
+| `data/sample-data.json` | Jeu de données utilisé en **mode démonstration** (sans connexion API réelle) |
+
+## 25. `dashboard/backend/tests/`
+
+Suite de tests **pytest** (606 lignes, exécutée via le client de test Flask, sans dépendance à une VM réelle — VM WireGuard simulée par fixtures) :
+
+| Fichier | Couverture |
+|---|---|
+| `conftest.py` | Fixtures partagées : environnement isolé (répertoires temporaires), rechargement des modules entre tests |
+| `test_app.py` | Endpoints Flask (santé, version, clients...) |
+| `test_auth.py` | Authentification multi-utilisateurs : connexion, rôles, retro-compatibilité du jeton historique, protection du dernier compte admin, scopes des tokens API |
+| `test_alerts.py` | Moteur de règles d'alerte |
+| `test_store.py` | Couche SQLite |
+| `test_wgstate.py` | Lecture d'état WireGuard et pagination du journal |
+
+Exécution :
+```bash
+cd dashboard/backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+DASHBOARD_TOKEN=test ALLOW_NO_AUTH=true python3 -m pytest tests/ -v
+```
+
+---
+
+# Partie VI — Déploiement
+
+## 26. Prérequis
 
 | Élément | Détail |
 |---|---|
-| Abonnement Azure | Actif, avec droits de création de groupe de ressources |
+| Abonnement Azure | Actif, droits de création de groupe de ressources |
 | Terraform | CLI >= 1.5 ([téléchargement](https://developer.hashicorp.com/terraform/install)) |
-| Azure CLI | `az` CLI installée et authentifiée (`az login`)- utilisée par le provider Terraform `azurerm` |
+| Azure CLI | `az` installée et authentifiée (`az login`) — utilisée par le provider `azurerm` |
 | Client SSH | OpenSSH (intégré à Windows 10/11, macOS, Linux) |
-| Application WireGuard | [wireguard.com/install](https://www.wireguard.com/install/) sur le poste client (Windows/macOS/Linux/iOS/Android) |
-| Connaissances de base | Ligne de commande Linux, notions de réseau (NAT, CIDR, ports) |
-
-Vérifiez votre connexion à Azure avant de commencer si vous êtes en local :
+| Application WireGuard | [wireguard.com/install](https://www.wireguard.com/install/) sur chaque poste client |
+| Connaissances requises | Ligne de commande Linux, notions réseau de base (NAT, CIDR, ports) |
 
 ```bash
 az login
 az account show
 ```
 
-si vous êtes dan sle portail Azure lancez le Cloud Shell.
-
-<img width="1540" height="431" alt="image" src="https://github.com/user-attachments/assets/d962187a-f522-4344-b53d-02c307cff626" />
-
-
----
-
-## 3. Architecture
-
-```
-                         Internet
-                             │
-                             │  UDP 51820 (WireGuard)
-                             │  TCP 22    (SSH admin)
-                             │  TCP 8080  (Dashboard admin)
-                             ▼
-                 ┌───────────────────────────┐
-                 │   Azure NSG : nsg-wireguard-lab │
-                 └───────────────────────────┘
-                             │
-                 ┌───────────────────────────┐
-                 │  VM Ubuntu 22.04 LTS          │
-                 │  vm-wireguard-lab             │
-                 │  10.10.0.10 (privée)          │
-                 │                                │
-                 │  ┌──────────────────────────┐  │
-                 │  │ Interface wg0            │  │
-                 │  │ 10.66.66.1/24            │  │
-                 │  │ + peers clients (.2, .3…)│  │
-                 │  └──────────────────────────┘  │
-                 │                                │
-                 │  Dashboard BLOCKHash (port 8080)│
-                 │  Flask API + HTML/CSS/JS        │
-                 │  Logs CSV (/var/log/wireguard)  │
-                 └───────────────────────────┘
-                             │
-                 ┌───────────┴────────────┐
-                 ▼                        ▼
-          Client A (portable)      Client B (mobile)
-          10.66.66.2               10.66.66.3
-```
-
-Ressources Azure créées (via Terraform) : 1 groupe de ressources, 1 VNet, 1 sous-réseau, 1 NSG, 1 IP publique statique avec DNS label, 1 interface réseau, 1 VM Ubuntu 22.04 LTS.
-
-### Arborescence du projet
-
-```
-blockhash-wireguard-lab/
-├── README.md
-├── terraform/                    # Infrastructure as Code (remplace Bicep)
-│   ├── main.tf                   # Racine : resource group + appel des modules
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── providers.tf
-│   ├── terraform.tfvars.example
-│   ├── deploy.ps1                # Assistant de déploiement (optionnel)
-│   └── modules/
-│       ├── network/               # VNet, subnet, NSG et règles
-│       └── compute/                # IP publique, NIC, VM Ubuntu + cloud-init
-├── scripts/
-│   ├── 01-install-wireguard-server.sh
-│   ├── 02-add-client.sh
-│   ├── 03-install-dashboard.sh    # Déploie le dashboard BLOCKHash (Flask + frontend)
-│   ├── 04-logging-monitoring.sh
-│   ├── 05-revoke-client.sh
-│   ├── 06-manage-client.sh        # CLI : activer/désactiver/renommer/expirer/limiter/régénérer/révoquer (voir 10.1)
-│   ├── 07-check-expirations.sh    # Cron : désactive les clients dont l'expiration est dépassée
-│   └── 09-check-alerts.sh         # Cron : évalue les règles d'alerte et notifie (voir 10.2.4)
-└── dashboard/                      # Dashboard web maison
-    ├── backend/                    # API Flask (lit wg show + tunnels.csv, pilote wgctl.py)
-    │   ├── app.py
-    │   ├── wgctl.py                # Logique privilégiée : gestion clients (voir 10.1.1)
-    │   ├── wgops.py                # Logique privilégiée : opérations système (voir 10.3.1)
-    │   ├── wgstate.py              # Lecture wg0.conf/wg show partagée, sans Flask
-    │   ├── store.py                # SQLite : métriques, JOURNAL DES CONNEXIONS, alertes, cache GeoIP
-    │   ├── settings_store.py       # Réglages ajustables à chaud (seuil "en ligne", etc.)
-    │   ├── system_monitor.py       # CPU/RAM/disque (psutil) + statut des services systemd
-    │   ├── anomalies.py            # Détection simple (pic de trafic, endpoint flapping)
-    │   ├── alerts.py               # Moteur de notification (email/Slack/Discord/Telegram)
-    │   ├── reports.py              # Export PDF générique + rapport hebdomadaire
-    │   ├── servers_store.py        # Registre multi-serveurs (voir 10.3.5)
-    │   ├── geoip.py                # Résolution IP -> position (carte des endpoints, voir 10.5.5)
-    │   ├── tests/                  # Suite pytest (voir 10.5.6)
-    │   ├── pytest.ini
-    │   ├── requirements.txt
-    │   └── requirements-dev.txt    # + pytest, pour le développement/CI uniquement
-    └── frontend/                    # HTML/CSS/JS statique, aucun framework
-        ├── index.html
-        ├── css/style.css
-        ├── css/leaflet.css          # Vendorisé (carte GeoIP, voir 10.5.5)
-        ├── js/app.js
-        ├── js/vendor/leaflet.js     # Vendorisé
-        └── data/sample-data.json    # Jeu de données de démo (mode hors-ligne, lecture seule)
-```
-
----
-
-## 4. Étape 1- Déploiement de l'infrastructure Azure (Terraform)
-
-Fichiers concernés : `terraform/` (racine + modules `network` et `compute`)
-
-L'infrastructure est organisée en **modules Terraform réutilisables**, pattern standard en entreprise pour industrialiser des LABs ou des environnements multiples (dev/staging/prod) à partir des mêmes briques :
-
-- `modules/network` : VNet, sous-réseau, NSG et ses règles (SSH, WireGuard, dashboard, deny-all)
-- `modules/compute` : IP publique, interface réseau, VM Ubuntu 22.04 LTS avec cloud-init
-
-### 4.1 Personnaliser les variables
+## 27. Étape 1 — Provisionner l'infrastructure Azure
 
 ```bash
-git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/terraform && cp terraform.tfvars.example terraform.tfvars
-```
-
-<img width="1881" height="522" alt="image" src="https://github.com/user-attachments/assets/af50a882-71b6-4e0c-8831-c14575fab6bd" />
-
-Éditez `terraform.tfvars` :
-
-```hcl
-admin_password   = "VotreMotDePasseFort!2026"  # Mot de passe de la VM
-admin_source_ip  = "203.0.113.10/32"   # votre IP publique -> whatismyipaddress.com
-dns_label_prefix = "blockhash-wg-lab"  # doit etre unique dans la region Azure
-```
-
-<img width="1731" height="656" alt="image" src="https://github.com/user-attachments/assets/2c87a7b5-5df8-4407-86c0-9d4aa9d7f066" />
-
-
-> **Bonne pratique :** en environnement de production, ne laissez jamais `admin_source_ip` en `*`. Restreignez systématiquement l'accès SSH et au dashboard à votre IP (ou à une plage d'IP d'entreprise / un VPN d'administration). Préférez également `use_ssh_key = true` avec une clé publique plutôt qu'un mot de passe.
-
-`terraform.tfvars` contient des secrets : ne le committez jamais dans un dépôt Git public (il est déjà exclu via `.gitignore`- voir section 16).
-
-### 4.2 Lancer le déploiement
-
-```bash
-terraform fmt && terraform init && terraform validate && terraform plan && terraform apply -auto-approve
-```
-
-<img width="1923" height="750" alt="image" src="https://github.com/user-attachments/assets/d8414692-ab83-4c8d-9601-17f2fc25188d" />
-
-<img width="791" height="287" alt="image" src="https://github.com/user-attachments/assets/e434bde9-f4ee-4c3c-87a8-783dfd3f04f4" />
-
-<img width="1330" height="581" alt="image" src="https://github.com/user-attachments/assets/577d0639-18a8-423b-86f1-e801b8d571aa" />
-
-
-Ou, sous Windows, via l'assistant fourni :
-
-```powershell
 cd terraform
-./deploy.ps1
+cp terraform.tfvars.example terraform.tfvars
+# éditer terraform.tfvars : région, taille de VM, IP autorisées, nom d'utilisateur admin...
+terraform init
+terraform plan
+terraform apply
 ```
 
-À la fin du déploiement, Terraform affiche les sorties utiles :
+Sous Windows/PowerShell, le script `deploy.ps1` encapsule ce cycle. À l'issue, Terraform affiche en sortie (`outputs.tf`) l'adresse IP publique de la VM et les informations de connexion SSH.
+
+## 28. Étape 2 — Installer le serveur WireGuard
 
 ```bash
-terraform output
-# vm_public_ip, vm_fqdn, ssh_command, dashboard_url
+ssh wgadmin@<IP_PUBLIQUE>
+sudo ./scripts/01-install-wireguard-server.sh
 ```
 
-### 4.3 Vérification
+Ce script installe le paquet `wireguard`, génère la paire de clés du serveur, crée `/etc/wireguard/wg0.conf`, configure le forwarding IP et active `wg-quick@wg0` au démarrage.
+
+## 29. Étape 3 — Créer et distribuer des clients
 
 ```bash
-az vm show -g RG-Lab-WireGuard -n vm-wireguard-lab -d -o table
-terraform state list
+sudo ./scripts/02-add-client.sh alice-laptop
 ```
 
-<img width="1507" height="220" alt="image" src="https://github.com/user-attachments/assets/46ff6640-6cc4-406c-8eec-4edae5a27ad3" />
-<img width="1272" height="425" alt="image" src="https://github.com/user-attachments/assets/c95b3999-2cb3-4c65-b8af-f0e2b8dd97cf" />
+Le script génère la paire de clés du client, alloue une adresse IP dans le sous-réseau du tunnel, et affiche/enregistre le fichier `.conf` prêt à être importé dans l'application WireGuard officielle (ou scanné via QR code une fois le dashboard installé — voir Partie VIII).
 
-
-### 4.4 Pourquoi des modules ?
-
-Structurer l'infrastructure en modules (`network`, `compute`) plutôt qu'un fichier unique permet, en contexte professionnel, de :
-- réutiliser le module `network` pour d'autres LABs (pentest, formation Kubernetes, etc.) ;
-- faire évoluer la taille de VM ou la région sans toucher aux règles réseau ;
-- versionner et tester chaque module indépendamment (`terraform validate` par module) ;
-- préparer une future publication interne sur un **registre Terraform privé** de BLOCKHash.
-
----
-
-## 5. Étape 2- Installation du serveur WireGuard
-
-Fichier concerné : `scripts/01-install-wireguard-server.sh`
-
-### 5.1 Connexion à la VM
+## 30. Étape 4 — Installer le dashboard BLOCKHash
 
 ```bash
-ssh wgadmin@<FQDN_ou_IP_publique>
+# Copier le dossier dashboard/ sur la VM, puis :
+sudo ./scripts/03-install-dashboard.sh
 ```
-<img width="1115" height="495" alt="image" src="https://github.com/user-attachments/assets/0158a223-1c92-46f3-b4ea-4ad68d605428" />
 
-### 5.2 Transfert et exécution du script
+Ce script réalise, dans l'ordre :
+1. Création du répertoire applicatif (`/opt/blockhash-dashboard`), de l'environnement virtuel Python et installation des dépendances (`requirements.txt`).
+2. Génération d'un jeton d'authentification (`DASHBOARD_TOKEN`), d'un nom d'utilisateur et d'un mot de passe administrateur, écrits dans `/etc/blockhash/dashboard.env`.
+3. Création du service systemd `blockhash-dashboard` (Gunicorn, 2 workers `gevent`).
+4. Mise en place d'une règle `sudo -n` étroitement scoped pour que `www-data` puisse invoquer `wgctl.py`/`wgops.py` sans mot de passe interactif ni accès shell.
+5. Configuration de Caddy comme reverse proxy HTTPS (TLS interne auto-signé), avec un bloc dédié au flux SSE (`flush_interval -1`, pas de compression).
+6. Application des permissions sur `/var/log/wireguard` : propriétaire/groupe `www-data`, **bit setgid** (voir §14 et §62).
 
-Depuis votre poste local :
+À l'issue, l'identifiant et le mot de passe administrateur générés sont affichés **une seule fois** dans le terminal — à noter immédiatement dans un gestionnaire de secrets.
+
+## 31. Étape 5 — Journalisation, monitoring et tâches planifiées
 
 ```bash
-git clone https://github.com/dspitech/blockhash-wireguard-lab.git && cd blockhash-wireguard-lab/scripts
-```
-<img width="1656" height="487" alt="image" src="https://github.com/user-attachments/assets/263e064a-65e3-41e3-8fbe-9350bfeee8af" />
-
-Sur la VM :
-
-```bash
-chmod +x *.sh
-sudo ./01-install-wireguard-server.sh
-```
-
-<img width="1584" height="402" alt="image" src="https://github.com/user-attachments/assets/9ac8ae0e-e982-421d-b20c-89ebea908748" />
-
-
-### 5.3 Ce que fait le script
-
-- Met à jour le système (`apt update && apt upgrade`)
-- Installe `wireguard`, `wireguard-tools`, `qrencode`, `ufw`
-- Active le routage IPv4 (`net.ipv4.ip_forward=1`)
-- Génère la paire de clés du serveur (Curve25519)
-- Crée `/etc/wireguard/wg0.conf` avec les règles NAT (`iptables MASQUERADE`)
-- Ouvre le port UDP 51820 dans `ufw`
-- Active et démarre le service `wg-quick@wg0`
-
-### 5.4 Vérification
-
-```bash
-sudo systemctl status wg-quick@wg0
-sudo wg show
-ip a show wg0
-```
-
-Vous devez voir l'interface `wg0` active avec l'adresse `10.66.66.1/24` et la clé publique du serveur affichée.
-
-<img width="1371" height="660" alt="image" src="https://github.com/user-attachments/assets/da7a9a1f-752b-454a-8789-929e71d4161f" />
-
-<img width="1077" height="352" alt="image" src="https://github.com/user-attachments/assets/afa8c1b6-24d5-44b3-ae28-caf4ec38a201" />
-
-<img width="1280" height="287" alt="image" src="https://github.com/user-attachments/assets/16f2eaa0-9a9e-452a-9c3b-ffbd0c74679f" />
-
-
-
----
-
-## 6. Étape 3- Création et distribution des clients
-
-Fichier concerné : `scripts/02-add-client.sh`
-
-### 6.1 Ajouter un client
-
-```bash
-sudo ./02-add-client.sh ordinateur-alice
-```
-
-Le script :
-- génère une paire de clés + une clé pré-partagée (PSK) pour ce client ;
-- attribue automatiquement la prochaine IP libre du tunnel (`10.66.66.2`, `.3`, ...) ;
-- ajoute le bloc `[Peer]` correspondant dans `wg0.conf` **sans redémarrer le service** (`wg syncconf`) ;
-- génère le fichier `clients/ordinateur-alice.conf` prêt à l'emploi ;
-- affiche un **QR code** dans le terminal (scannable directement depuis l'app mobile WireGuard).
-
-<img width="1686" height="981" alt="image" src="https://github.com/user-attachments/assets/3bac56b1-3d42-447b-9939-b0589e512c0a" />
-
-### 6.2 Distribuer la configuration
-
-**Poste desktop (Windows/macOS/Linux) :**
-
-1. **Installer l'application WireGuard sur Windows** -téléchargez l'installeur officiel sur [wireguard.com/install](https://www.wireguard.com/install/) (lien "Windows"), puis lancez-le. C'est un simple `.exe`, aucune configuration nécessaire à l'installation.
-2. **Récupérer le fichier `.conf` généré sur le serveur** -ce fichier a déjà été créé par le script `02-add-client.sh` sur la VM (ex. `ordinateur-alice.conf`). Depuis Windows, ouvrez PowerShell (Windows 10/11 embarque `scp`) et tapez :
-```powershell
-   scp wgadmin@<FQDN>:/etc/wireguard/clients/ordinateur-alice.conf C:\Users\VotreNom\Desktop\
-```
-   -ou utilisez [WinSCP](https://winscp.net/) si vous préférez une interface graphique.
-3. **Importer le fichier dans l'application WireGuard** -ouvrez WireGuard, cliquez sur **"Import tunnel(s) from file"**, puis sélectionnez le fichier `.conf` récupéré à l'étape précédente. Le tunnel apparaît automatiquement dans la liste à gauche : rien à créer ou configurer manuellement, l'import fait tout.
-4. **Activer le tunnel** -sélectionnez le tunnel dans la liste et cliquez sur **"Activate"** (ou basculez l'interrupteur). La connexion VPN démarre immédiatement.
-5. **Vérifier que ça fonctionne** -ouvrez un navigateur et allez sur [whatismyipaddress.com](https://whatismyipaddress.com), ou dans PowerShell tapez `curl ifconfig.me`. L'IP affichée doit être celle du serveur (Azure ou votre box), pas votre IP personnelle habituelle.
-
-<img width="1435" height="987" alt="image" src="https://github.com/user-attachments/assets/8489a755-287c-458e-84dd-fe7fc71c70e1" />
-
-
-### 6.3 Révoquer un client (optionnel)
-
-```bash
-sudo ./05-revoke-client.sh ordinateur-alice
-```
-
-Retire le peer à chaud (sans coupure de service) et archive ses clés dans `clients/revoked/`.
-
----
-
-## 7. Étape 4- Dashboard de supervision BLOCKHash
-
-Fichiers concernés : `dashboard/` (backend Flask + frontend HTML/CSS/JS), `scripts/03-install-dashboard.sh`
-
-Ce LAB inclut un **dashboard**, conçu et maintenu par BLOCKHash- pas de dépendance à un outil tiers. Il affiche en temps réel :
-
-- des **cartes indicateurs** (tunnels actifs, volume reçu/émis, alertes) et un graphique de débit en direct ;
-- un **journal des connexions triable et filtrable** (clic sur chaque colonne, recherche libre, filtres par statut) alimenté par les logs CSV de l'étape 5 ;
-- une **grille de clients** avec statut (en ligne / inactif / jamais connecté), dernier handshake et volumes de données ;
-- un **mode démonstration** automatique : si l'API est injoignable, le dashboard bascule sur un jeu de données d'exemple (`dashboard/frontend/data/sample-data.json`)- utile pour présenter le produit à un client avant tout déploiement réel.
-
-### 7.1 Architecture du dashboard
-
-```
-Navigateur ──HTTP──▶ gunicorn (Flask, /opt/blockhash-dashboard)
-                        ├── GET /api/overview  → wg show wg0 dump + tunnels.csv
-                        └── / (statique)        → index.html / style.css / app.js
-```
-
-Aucune base de données : l'API lit directement l'état WireGuard en direct (`wg show`) et le fichier de logs CSV généré par `04-logging-monitoring.sh`. C'est volontairement simple et sans dépendance lourde, adapté à un LAB comme à un petit déploiement de production.
-
-### 7.2 Installation
-
-Depuis la VM, dans le dossier `dashboard/` lancez le script d'installation :
-
-```bash
-cd ~/blockhash-wireguard-lab
-ls dashboard          # doit lister backend/ et frontend/ 
-sudo ./scripts/03-install-dashboard.sh 8080
-```
-
-Le script :
-- installe Python 3, crée un environnement virtuel et installe Flask + gunicorn ;
-- copie l'application dans `/opt/blockhash-dashboard` ;
-- génère un jeton d'API (`/etc/blockhash/dashboard.env`) ;
-- autorise le service à lire l'état WireGuard sans lui donner les droits root complets (`sudoers` restreint à `wg show`, ou capacité `CAP_NET_ADMIN`- voir le script) ;
-- crée et démarre le service systemd `blockhash-dashboard` (gunicorn, 2 workers) ;
-- ouvre le port choisi (8080 par défaut) dans `ufw`.
-
-<img width="1740" height="982" alt="image" src="https://github.com/user-attachments/assets/78de9d13-bdc5-44ae-b824-e692bb488cb6" />
-
-### 7.3 Accès au Dashboard
-
-```
-https://<IP-PUBLIQUE-DE-LA-VM>
-```
-
-> **Important — accès direct par IP publique, protégé par identifiant + clé (voir 7.4) :** le dashboard est joignable directement depuis l'IP publique de la VM, **sans avoir besoin d'être connecté au VPN WireGuard au préalable**. `gunicorn` écoute toujours uniquement sur `127.0.0.1` ; c'est `Caddy` qui expose l'interface en TLS sur l'IP publique (port `443` par défaut). La protection repose sur un **écran de connexion (identifiant + clé)** généré à l'installation, plus un verrouillage anti force-brute — combinez-la avec une règle NSG/ufw restreinte à votre IP admin (`ADMIN_SOURCE_IP`) dès que possible. Le certificat étant auto-signé (`tls internal`), le navigateur affichera un avertissement la première fois : c'est attendu.
-
-### 7.4 Pourquoi ce choix, et comment revenir en arrière
-
-- **Avant (VPN-only)** : `gunicorn` en loopback pur, `Caddy` en frontal TLS uniquement sur l'IP privée du tunnel WireGuard (`10.66.66.1`) — il fallait être *dans* le tunnel pour même atteindre l'écran de connexion. C'est le modèle le plus étanche, mais il impose d'avoir déjà un client WireGuard configuré avant de pouvoir administrer quoi que ce soit (pratique gênante pour un lab qu'on veut piloter depuis un poste sans client VPN installé).
-- **Maintenant (accès direct)** : `Caddy` expose le dashboard en TLS sur toutes les interfaces (port `DASHBOARD_TLS_PORT`, 443 par défaut). La sécurité ne repose plus sur la position réseau du client mais sur l'authentification applicative (`/api/login`, identifiant + clé générés à l'installation, voir `/etc/blockhash/dashboard.env`) et sur le verrouillage anti force-brute (`AUTH_MAX_ATTEMPTS`/`AUTH_LOCKOUT_SECONDS`). Restreignez malgré tout qui peut *atteindre* l'écran de connexion via `ADMIN_SOURCE_IP` (passé en variable d'environnement à `scripts/03-install-dashboard.sh`, qui configure `ufw` en conséquence) et via la règle NSG Terraform `AllowDashboard-Admin` (variable `admin_source_ip` / `dashboard_tls_port`).
-- **Si vous préférez revenir au modèle VPN-only** : dans `scripts/03-install-dashboard.sh`, remplacez `:${DASHBOARD_TLS_PORT}` par `${WG_TUNNEL_IP}:${DASHBOARD_TLS_PORT}` dans le Caddyfile généré (étape 7bis), remplacez la règle `ufw` de l'étape 8 par `ufw allow in on wg0 to any port "$DASHBOARD_TLS_PORT" proto tcp`, et retirez la règle NSG `AllowDashboard-Admin` dans `terraform/modules/network/main.tf`.
-- **Identifiant et clé** : générés une seule fois par `scripts/03-install-dashboard.sh` (étape 4), affichés en clair **une seule fois** à la fin de l'installation. Seul le hash (`DASHBOARD_PASSWORD_HASH`) est conservé sur disque, dans `/etc/blockhash/dashboard.env`. Pour changer la clé après coup : régénérez un hash avec `"$APP_DIR/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('nouvelle-cle'))"` et remplacez la ligne `DASHBOARD_PASSWORD_HASH=` dans ce fichier, puis `sudo systemctl restart blockhash-dashboard`.
-
-### 7.5 Personnalisation
-
-- **Palette et identité visuelle** : `dashboard/frontend/css/style.css` (variables CSS en tête de fichier- couleurs, typographies) pour adapter aux couleurs d'un client si vous revendez ce LAB.
-- **Fréquence de rafraîchissement** : `REFRESH_INTERVAL_MS` dans `dashboard/frontend/js/app.js` (30 secondes par défaut).
-- **Seuil "en ligne"** : `HANDSHAKE_ONLINE_THRESHOLD_SEC` dans `dashboard/backend/app.py` (180 secondes par défaut).
-
-### 7.6 Vérification et logs applicatifs
-
-```bash
-sudo systemctl status blockhash-dashboard
-sudo systemctl status caddy
-sudo journalctl -u blockhash-dashboard -f
-curl -s http://127.0.0.1:8080/healthz          # depuis la VM uniquement (loopback)
-curl -sk https://10.66.66.1/healthz             # depuis un client déjà connecté au VPN
-```
-
-<img width="1911" height="877" alt="image" src="https://github.com/user-attachments/assets/dd8e91e8-b821-4531-94e5-91932ffdbaf0" />
-
-
-> **Pour aller plus loin :** la gestion complète des clients (activer/désactiver/renommer/expirer/limiter/régénérer/révoquer), le monitoring et l'alerting avancés, l'administration système, le reporting et les détails techniques (temps réel, SQLite, UI avancée) sont documentés dans le **chapitre 10 — Dashboard BLOCKHash : fonctionnalités avancées** (Partie II).
-
----
-
-## 8. Étape 5- Journalisation et logs
-
-Fichier concerné : `scripts/04-logging-monitoring.sh`
-
-### 8.1 Installation
-
-```bash
-sudo ./04-logging-monitoring.sh
+sudo ./scripts/04-logging-monitoring.sh
 ```
 
 Met en place :
+- La capture d'état WireGuard toutes les 5 minutes (insertion dans SQLite) ;
+- La purge nocturne des données au-delà de la rétention configurée ;
+- Les sauvegardes planifiées (désactivées par défaut, activables depuis le dashboard) ;
+- La rotation des journaux via `logrotate`.
 
-| Composant | Détail |
+Optionnellement :
+```bash
+# Désactivation automatique des clients expirés (cron nocturne recommandé)
+sudo crontab -e
+# 0 3 * * * root /opt/blockhash-dashboard/../scripts/07-check-expirations.sh >> /var/log/wireguard/expirations.log 2>&1
+
+# Évaluation des règles d'alerte (cron toutes les 5 minutes recommandé)
+# */5 * * * * root /opt/blockhash-dashboard/../scripts/09-check-alerts.sh >> /var/log/wireguard/alerts.log 2>&1
+```
+
+## 32. Étape 6 — Valider le déploiement
+
+```bash
+# État du service
+sudo systemctl status blockhash-dashboard wg-quick@wg0 caddy
+
+# Test de connectivité locale de l'API
+curl -sk https://127.0.0.1/healthz
+
+# Test du tunnel depuis un poste client (après import de la config .conf)
+wg show
+ping <adresse_IP_du_serveur_dans_le_tunnel>
+```
+
+Puis ouvrir `https://<IP_PUBLIQUE>/` dans un navigateur, se connecter avec les identifiants générés à l'étape 4, et suivre l'assistant de premier lancement.
+
+---
+
+# Partie VII — Configuration de référence
+
+## 33. Variables d'environnement
+
+Fichier `/etc/blockhash/dashboard.env`, chargé par le service systemd :
+
+| Variable | Rôle | Valeur par défaut |
+|---|---|---|
+| `DASHBOARD_TOKEN` | Jeton d'authentification historique (rétro-compatibilité, voir Partie IX) | généré à l'installation |
+| `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD_HASH` | Compte administrateur initial, migré automatiquement vers le nouveau modèle multi-utilisateurs au premier démarrage | générés à l'installation |
+| `DASHBOARD_SESSION_TTL_SECONDS` | Durée de validité d'une session utilisateur | 2 592 000 (30 jours) |
+| `ALLOW_NO_AUTH` | Désactive l'authentification (usage labo/démo isolé **uniquement**) | `false` |
+| `AUTH_MAX_ATTEMPTS` / `AUTH_LOCKOUT_SECONDS` | Anti force-brute sur le login | `8` / `300` |
+| `WG_INTERFACE`, `WG_DIR`, `WG_CONF_PATH` | Localisation de l'interface et de la configuration WireGuard | `wg0`, `/etc/wireguard`, `/etc/wireguard/wg0.conf` |
+| `WG_SERVER_SUBNET`, `WG_PORT`, `WG_CLIENT_DNS` | Paramètres réseau du tunnel | selon script d'installation |
+| `WG_CONF_GROUP` | Groupe Unix propriétaire de `wg0.conf` | `www-data` |
+| `WG_LOG_CSV` | Journal CSV historique des tunnels | `/var/log/wireguard/tunnels.csv` |
+| `WG_EXPORT_DIR` | Répertoire temporaire des exports (zip) | `/tmp/blockhash-exports` |
+| `WG_MAX_BACKUPS` | Nombre maximal de sauvegardes conservées | `50` |
+| `CLIENT_MANAGEMENT_ENABLED` / `SYSTEM_OPS_ENABLED` | Active/désactive respectivement la gestion des clients et les opérations système (`wgctl.py`/`wgops.py`) | `true` |
+| `METRICS_DB_PATH` / `METRICS_DB_GROUP` | Emplacement et groupe de la base SQLite | `/var/log/wireguard/blockhash.db` / `www-data` |
+| `METRICS_RETENTION_DAYS` | Rétention par défaut avant purge (surchargeable depuis Réglages) | `35` |
+| `AUDIT_LOG_PATH` | Journal d'audit append-only | `/var/log/wireguard/audit.log` |
+| `SETTINGS_PATH`, `ALERTS_CONFIG_PATH`, `REPORTS_CONFIG_PATH`, `SERVERS_CONFIG_PATH` | Fichiers JSON de configuration persistée | voir §34 |
+| `BLOCKHASH_CONFIG_DIR` | Répertoire des clés VAPID (Web Push) | `/etc/blockhash` |
+| `VAPID_CONTACT_EMAIL` | Adresse de contact incluse dans les revendications VAPID | `mailto:admin@example.com` |
+| `GEOIP_TTL_SEC` | Durée de mise en cache des résolutions GeoIP | selon `geoip.py` |
+| `FRONTEND_DIR`, `PORT` | Chemin du frontend statique et port d'écoute de Gunicorn | `$APP_DIR/frontend`, `8080` |
+
+## 34. Fichiers de configuration persistés
+
+| Fichier | Contenu |
 |---|---|
-| `/var/log/wireguard/tunnels.csv` | Capture toutes les 5 min (cron) : horodatage, clé publique du peer, endpoint, IP allouée, dernier handshake, octets reçus/envoyés |
-| `logrotate` (`/etc/logrotate.d/wireguard`) | Rotation hebdomadaire, 12 semaines conservées, compression |
-| Logs systemd | `journalctl -u wg-quick@wg0` pour les événements du service |
+| `/etc/blockhash/dashboard-settings.json` | Réglages généraux : seuil « en ligne », rétention, format de date, fuseau horaire, langue, notifications desktop, planning de sauvegardes, politiques de conformité |
+| `/etc/blockhash/alerts-config.json` | Configuration complète du moteur d'alertes : règles activées, cooldowns, canaux (SMTP, Slack, Discord, Telegram, Web Push) |
+| `/etc/blockhash/reports-config.json` | Configuration du rapport hebdomadaire (activation, destinataire) |
+| `/etc/blockhash/servers.json` | Registre multi-serveurs (le cas échéant) |
+| `/etc/blockhash/vapid_private_key.pem` | Clé privée VAPID (Web Push), générée automatiquement au premier envoi, permissions `0600` |
 
-### 8.2 Consulter les logs
+## 35. Service systemd
 
-```bash
-# Etat en temps reel
-sudo wg show
+`/etc/systemd/system/blockhash-dashboard.service` (généré par le script d'installation) :
 
-# Historique CSV formate
-column -s, -t < /var/log/wireguard/tunnels.csv | less
-
-# Logs systemd en direct
-sudo journalctl -u wg-quick@wg0 -f
-
-# Export pour analyse (Excel, Power BI, ELK...)
-cat /var/log/wireguard/tunnels.csv
+```ini
+[Service]
+User=www-data
+WorkingDirectory=/opt/blockhash-dashboard/backend
+EnvironmentFile=/etc/blockhash/dashboard.env
+ExecStart=/opt/blockhash-dashboard/venv/bin/gunicorn \
+    -w 2 --worker-class gevent --worker-connections 1000 \
+    --timeout 120 -b 127.0.0.1:8080 app:app
+Restart=on-failure
 ```
-<img width="1917" height="705" alt="image" src="https://github.com/user-attachments/assets/b5e420b4-ac98-42a3-bc13-8477cf251a48" />
 
-<img width="1907" height="986" alt="image" src="https://github.com/user-attachments/assets/57461f0b-4def-40df-8490-d7fb470725ba" />
+Le worker `gevent` (plutôt que le worker synchrone par défaut ou `gthread`) est **indispensable** : le flux SSE maintient une connexion HTTP ouverte en continu par onglet client ; un worker à base de threads OS saturerait rapidement son pool dès quelques onglets ouverts simultanément (voir Partie XII pour le détail de cet incident et de sa correction).
 
-<img width="1897" height="867" alt="image" src="https://github.com/user-attachments/assets/96e8bc6e-d948-41cd-a160-0643244e2b28" />
+## 36. Reverse proxy Caddy
 
-<img width="1917" height="877" alt="image" src="https://github.com/user-attachments/assets/abeefa5d-1343-4638-b706-c4ab415515dd" />
+Extrait représentatif de `/etc/caddy/Caddyfile` :
 
-Ces logs permettent, dans un cadre professionnel, de répondre à des besoins d'**audit** (qui s'est connecté, quand, combien de données échangées) et peuvent être ingérés par un SIEM ou un outil de supervision (ELK, Grafana + Loki, Azure Monitor via l'agent Log Analytics).
+```caddyfile
+https://<IP_ou_domaine> {
+    bind 0.0.0.0
+    tls internal
+
+    @sse path /api/events/stream
+    handle @sse {
+        reverse_proxy 127.0.0.1:8080 {
+            flush_interval -1
+        }
+    }
+    handle {
+        encode gzip
+        reverse_proxy 127.0.0.1:8080
+    }
+}
+```
+
+Le flux SSE est **explicitement exclu** de la compression `gzip` (qui nécessite de bufferiser le contenu — incompatible avec un flux qui ne se termine jamais) et bénéficie d'un `flush_interval -1` pour un envoi immédiat de chaque évènement, sans latence de bufferisation côté proxy.
+
+## 37. Tâches planifiées (cron)
+
+| Fréquence | Commande | Rôle |
+|---|---|---|
+| Toutes les 5 min | Script de capture (`04-logging-monitoring.sh`) | Insère un échantillon de débit par client dans SQLite |
+| Toutes les 5 min | `09-check-alerts.sh` | Évalue les règles d'alerte (inactivité, bande passante, service, expiration, seuils système, nouvelle IP) |
+| Nuit (3h30) | `store.py prune` | Purge les données (logs, échantillons, alertes) au-delà de la rétention configurée |
+| Nuit (4h) | `wgops.py auto-backup` | Sauvegarde planifiée, auto-limitée selon le planning configuré dans Réglages (désactivé/quotidien/hebdomadaire/mensuel) |
+| Nuit | `07-check-expirations.sh` | Désactive automatiquement les clients dont la date d'expiration est dépassée |
 
 ---
 
-## 9. Étape 6- Tests et validation du tunnel
+# Partie VIII — Fonctionnalités
 
-### 9.1 Depuis le serveur
+BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navigation latérale. Cette partie documente chaque fonctionnalité de façon exhaustive.
 
-```bash
-sudo wg show wg0
-# Doit lister chaque peer avec son "latest handshake"
-```
+## 38. Vue d'ensemble (dashboard)
 
-### 9.2 Depuis le client
+- Compteurs en temps réel : clients configurés, en ligne, inactifs, désactivés.
+- Répartition des statuts (graphique).
+- Débit du tunnel (graphique temps réel).
+- Clients connectés, avec durée de connexion.
+- Expirations à venir.
+- Activité récente (flux d'événements).
+- Actions rapides (accès direct aux tâches courantes).
 
-Après activation du tunnel dans l'application WireGuard :
+## 39. Gestion des clients
 
-```bash
-# Verifier l'IP attribuee par le tunnel
-ip a show wg0        # Linux
-# ou ifconfig utun... # macOS
+**Cycle de vie complet**
+- Création unitaire, avec champs de contact (prénom, e-mail, téléphone, adresse, fonction, tags, notes) et consentement RGPD horodaté.
+- Renommage, activation/désactivation, révocation, régénération des clés.
+- Limitation de bande passante (montante/descendante, en Mbit/s).
+- Date d'expiration avec désactivation automatique (cron nocturne) et alerte de rappel configurable (J-N).
 
-# Verifier que le trafic sort bien par le serveur Azure
-curl ifconfig.me
-# Doit renvoyer l'IP publique de la VM Azure, pas votre IP personnelle
+**Création en masse**
+- Ajout multiple par collage d'une liste (`nom,email,téléphone`).
+- Import CSV avec modèle téléchargeable, aperçu en mode **dry-run** avant exécution, rapport d'erreurs ligne par ligne.
 
-# Tester la latence vers le serveur
-ping 10.66.66.1
+**Distribution de configuration**
+- Téléchargement du fichier `.conf`.
+- QR code d'appairage (affichage, téléchargement PNG, copie du texte de configuration).
 
-# Tracer le chemin reseau
-traceroute 8.8.8.8
-```
+**Filtres et recherche**
+- Chips de statut (Tous / En ligne / Inactifs / Désactivés) avec compteurs temps réel.
+- Filtres avancés : date de création, date d'expiration, présence d'e-mail/téléphone.
+- Recherche multi-critères (nom, e-mail, IP, endpoint), filtres sauvegardés en local.
+- Tri par colonne, pagination configurable (10/25/50/100 par page).
 
-### 9.3 Test de bande passante (optionnel)
+**Actions groupées**
+- Sélection multiple, activation/désactivation/révocation/export en masse.
 
-```bash
-# Sur le serveur
-sudo apt install -y iperf3
-iperf3 -s
+**Détail et historique**
+- Fiche détaillée par client : dernier handshake, nombre de reconnexions (24 h), dernier endpoint, sessions récentes.
+- Export RGPD complet (profil + historique de connexion) au format JSON.
 
-# Sur le client
-iperf3 -c 10.66.66.1
-```
+**Export**
+- Export CSV de la liste filtrée.
+
+## 40. Journal des connexions
+
+- Historique paginé au niveau base de données (aucune limite de volume affichable).
+- Recherche texte (client, IP, endpoint), filtre par statut.
+- Filtres avancés : plage de dates, volume minimal/maximal.
+- Recherches sauvegardées (rappel rapide d'une combinaison de filtres).
+- Détail d'une session en un clic (endpoint complet, volumes, clé publique).
+- **Heatmap des connexions** (créneaux horaires × jours de la semaine, 30 derniers jours).
+- Export CSV de la page courante.
+
+## 41. Monitoring
+
+- Graphique de débit long terme, avec **zoom molette et pan par glisser**.
+- Métriques hôte : CPU, mémoire, disque, connexions TCP actives, latence réseau (à la demande), température CPU (si le matériel l'expose).
+- Carte de géolocalisation des endpoints (GeoIP approximatif), avec **top 10 des pays** représentés.
+- Détection d'anomalies de débit.
+- État des services surveillés (`wg-quick@wg0`, `blockhash-dashboard`).
+
+## 42. Alertes
+
+**Catalogue de règles**
+- Connexion / déconnexion d'un client (temps réel).
+- Client inactif depuis N jours (ou jamais connecté).
+- Dépassement d'un seuil de bande passante.
+- Service hors ligne.
+- Connexion hors plage horaire autorisée.
+- Tentatives d'authentification échouées répétées.
+- Expiration de client imminente.
+- Connexion depuis une IP jamais vue pour ce client.
+- Seuils système : charge CPU, occupation disque.
+
+**Canaux de notification**
+- E-mail (SMTP configurable), Slack, Discord, Telegram — chacun activable/désactivable individuellement.
+- **Web Push** (notification navigateur, y compris onglet fermé, via service worker + clés VAPID), réservée par défaut aux alertes critiques.
+- Bouton de test par canal.
+
+**Gouvernance des alertes**
+- Activation globale, cooldown par règle (anti-répétition), plafond global d'alertes par heure (anti-tempête de notifications).
+- Historique complet : filtres par sévérité/client/règle/dates, marquage lu/archivé, suppression, export CSV.
+- Tableau de bord : volume par jour, top clients alertés, délai moyen avant lecture (MTTA).
+- Vue des règles actuellement en cooldown (« déduplication active »).
+
+## 43. Conformité
+
+- Détection des clients inactifs au-delà d'un seuil, avec **politiques par tag** (ex. `#vip` : 180 jours, `#externe` : 30 jours) et liste d'exceptions documentées.
+- Export d'un rapport PDF de conformité.
+- Rapport hebdomadaire automatique par e-mail (activable, configurable).
+
+## 44. Système
+
+- **Sauvegardes** : création manuelle avec description libre, planification (désactivé/quotidien/hebdomadaire/mensuel, auto-limitée sans droit d'écriture sur la crontab pour `www-data`), intégrité vérifiée par empreinte **SHA-256**, téléchargement protégé par re-saisie du mot de passe (avec anti force-brute dédié), **restauration à double confirmation** (mot de passe + saisie du mot « RESTORE »), sauvegarde de sécurité automatique de l'état courant avant toute restauration.
+- **Diagnostic** : état du service `wg-quick`, interface WireGuard active, connectivité réseau sortante, espace disque, permissions des fichiers critiques — rapport consultable depuis l'interface.
+- **Journal d'audit** : aperçu des 5 dernières actions sur la page Système, page dédiée avec filtres complets (action, IP, plage de dates) et export.
+- **Opérations** : redémarrage du tunnel et rotation des clés serveur, avec aperçu du nombre de clients impactés avant confirmation, et entrée systématique au journal d'audit.
+- **Export global** : archive ZIP de l'ensemble des configurations clients.
+
+## 45. Réglages
+
+- Seuil de détection « en ligne », rétention des données (avec purge manuelle immédiate en plus de la purge automatique nocturne).
+- Notifications desktop (Notification API) et **Web Push** (abonnement/désabonnement, test).
+- Format de date, fuseau horaire, langue (FR/EN).
+- Politiques de conformité par tag (voir §43).
+- Thème clair / sombre / automatique (suit les préférences système, mise à jour en direct).
+
+## 46. Utilisateurs et rôles
+
+- Comptes nominatifs avec trois rôles : **lecteur** (consultation), **opérateur** (+ gestion des clients), **admin** (accès complet, y compris opérations système et gouvernance des comptes).
+- CRUD complet : création, modification (rôle, statut actif/inactif, réinitialisation de mot de passe), suppression.
+- Garde-fou intégré : impossible de supprimer ou de rétrograder le **dernier compte admin actif**.
+- Page dédiée, réservée aux comptes admin.
+
+## 47. Tokens API
+
+- Génération de tokens nommés, avec **scope** (lecture / écriture / admin) et expiration optionnelle.
+- Le token en clair n'est affiché **qu'une seule fois** à la création (seule son empreinte est stockée en base).
+- Liste des tokens actifs (créateur, dernière utilisation, expiration), révocation immédiate.
+- Page dédiée, réservée aux comptes admin.
+
+## 48. Aide intégrée
+
+- Page dédiée avec sept fiches procédurales pas-à-pas : créer un client, importer en masse, télécharger une configuration, consulter les logs, créer une alerte, restaurer une sauvegarde, gérer les utilisateurs.
+
+## 49. Fonctionnalités transverses
+
+- **Temps réel** : mise à jour de l'ensemble du dashboard via Server-Sent Events, sans rafraîchissement de page.
+- **Internationalisation** : interface statique disponible en français et anglais.
+- **Thème** : clair / sombre / automatique.
+- **Recherche globale** et **raccourcis clavier** (`g c` / `g a` / `g m` pour naviguer, `/` pour rechercher, `?` pour l'aide, `Échap` pour fermer une fenêtre modale).
+- **Mode démonstration** : le dashboard peut être exploré sans connexion API réelle, à partir d'un jeu de données d'exemple.
+- **Responsive** : utilisable sur mobile et tablette.
+- **Assistant de premier lancement** : vérifications de bon fonctionnement à la première connexion.
+- **Signalement** : bouton d'envoi de retour/bug pré-rempli avec le contexte technique.
 
 ---
 
-# Partie II — Documentation de référence
+# Partie IX — Sécurité
 
-## 10. Dashboard BLOCKHash — Fonctionnalités avancées
+## 50. Modèle d'authentification
 
-> Ce chapitre complète le chapitre 7 (installation et accès de base au dashboard). Il documente les fonctionnalités que vous activerez au fur et à mesure des besoins : gestion complète du cycle de vie des clients, monitoring et alerting, administration système, reporting, et détails techniques (temps réel, SQLite, interface avancée). Rien ici n'est requis pour terminer l'installation du LAB (chapitres 1 à 9) — consultez cette section quand vous en avez besoin.
+BLOCKHash distingue trois mécanismes d'authentification, tous vérifiés par une fonction centrale (`check_auth()` dans `app.py`) :
 
-### 10.1 Gestion des clients depuis le dashboard
+1. **Comptes utilisateurs nominatifs** — `/api/login` échange un couple identifiant/mot de passe contre un **jeton de session** propre à l'utilisateur (aléatoire, haché en SQLite, jamais stocké en clair), valable par défaut 30 jours.
+2. **Tokens API** — jetons nommés et scopés, créés depuis la page **Tokens API**, pour l'automatisation. Le jeton en clair n'est affiché qu'à sa création.
+3. **Jeton historique partagé (`DASHBOARD_TOKEN`)** — conservé pour la rétrocompatibilité avec les déploiements antérieurs au modèle multi-utilisateurs ; traité comme un accès admin implicite. **Recommandation** : le désactiver (retirer la variable de `dashboard.env`) une fois la migration vers des comptes nominatifs terminée.
 
-Fichiers concernés : `dashboard/backend/wgctl.py` (logique privilégiée), `dashboard/backend/app.py` (endpoints `/api/clients/*`), `dashboard/frontend/js/app.js` (modales, tiroir d'historique), `scripts/06-manage-client.sh` et `scripts/07-check-expirations.sh` (équivalents CLI).
+Le mot de passe est haché via `werkzeug.security` (scrypt/pbkdf2 selon version), jamais stocké en clair. Un mécanisme anti force-brute limite les tentatives de connexion par adresse IP (verrouillage temporaire configurable).
 
-Au-delà de la supervision en lecture seule (section 7), le dashboard permet désormais de **gérer le cycle de vie complet des clients WireGuard sans passer par SSH** :
+## 51. Contrôle d'accès par rôle (RBAC)
 
-| Fonctionnalité | Où | Détail |
+Trois rôles, avec une hiérarchie stricte :
+
+| Rôle | Peut consulter | Peut modifier | Peut administrer |
+|---|---|---|---|
+| **reader** | Toutes les pages en lecture | — | — |
+| **operator** | Tout ce que `reader` voit | Clients (création, édition, révocation, import), marquage des alertes | — |
+| **admin** | Tout | Tout ce que `operator` peut faire | Réglages globaux, comptes utilisateurs, tokens API, opérations système, sauvegardes, signalements |
+
+La vérification est appliquée à **deux niveaux**, volontairement redondants :
+- **Backend** (`auth.required_role_for(method, path)`) — la seule source de vérité réelle pour la sécurité ; chaque requête API est évaluée avant exécution.
+- **Frontend** — les boutons et sections réservés à un rôle supérieur sont masqués dynamiquement (attribut `data-role-min`), pour une expérience cohérente plutôt qu'un message d'erreur après un clic. Le masquage frontend est un confort d'usage, **jamais** un mécanisme de sécurité à lui seul.
+
+## 52. Protection des données et RGPD
+
+- Champs de contact client (nom, e-mail, téléphone, adresse, fonction) et **consentement horodaté**.
+- Export complet des données d'un client (profil + historique de connexion) au format JSON, en réponse à une demande d'accès.
+- Politiques de rétention et de purge automatique configurables.
+- Aucune donnée transmise à un service tiers sans configuration explicite (les canaux d'alerte — e-mail, Slack, Discord, Telegram, Web Push — sont tous opt-in et configurés par l'organisation elle-même).
+
+## 53. Traçabilité et audit
+
+- **Journal d'audit** append-only (`/var/log/wireguard/audit.log`) : toute action de modification (création/révocation de client, connexion, échec d'authentification, rotation de clés, restauration, gestion des comptes...) y est consignée avec horodatage, IP source et détail structuré.
+- Consultable depuis l'interface (aperçu + page dédiée avec filtres), exportable.
+- **Signalements de bugs** eux-mêmes tracés (auteur, catégorie, sévérité, statut de traitement).
+
+## 54. Checklist de durcissement
+
+- [ ] Restreindre les règles NSG `AllowSSH-Admin` et `AllowDashboard-Admin` à des plages d'IP connues plutôt qu'à `Internet`.
+- [ ] Désactiver `DASHBOARD_TOKEN` une fois tous les comptes/tokens nominatifs en place.
+- [ ] Remplacer le certificat TLS interne auto-signé de Caddy par un certificat émis par une autorité reconnue (interne à l'organisation ou publique) si le dashboard est exposé au-delà d'un cercle restreint.
+- [ ] Activer les alertes `failed_auth_attempts` et `off_hours`.
+- [ ] Configurer un canal de notification (e-mail a minima) pour être alerté en cas d'événement critique.
+- [ ] Vérifier régulièrement le journal d'audit et la boîte de réception des signalements.
+- [ ] Maintenir à jour le système d'exploitation, le noyau (module WireGuard), et les dépendances Python (`requirements.txt`).
+- [ ] Sauvegarder `wg0.conf` et la base SQLite en dehors de la VM (voir Partie XI).
+
+---
+
+# Partie X — Référence API
+
+## 55. Authentification des appels API
+
+Toutes les routes sous `/api/*` (à l'exception de `/api/login`) exigent un en-tête :
+
+```
+X-API-Token: <jeton_de_session_ou_token_API>
+```
+
+```bash
+# Connexion
+curl -sk -X POST https://<host>/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"••••••••"}'
+# -> {"token": "sess_...", "username": "alice", "role": "operator"}
+
+# Appel authentifié
+curl -sk https://<host>/api/clients -H "X-API-Token: sess_..."
+```
+
+## 56. Catalogue des endpoints
+
+73 routes, regroupées par domaine fonctionnel :
+
+| Domaine | Exemples de routes | Rôle minimal |
 |---|---|---|
-| Activer / désactiver un client | Carte client → bouton *Activer*/*Désactiver* | Retire ou remet le `[Peer]` en direct **sans supprimer** sa configuration (voir 10.1.2) |
-| Révoquer définitivement | Carte client → *Révoquer* (confirmation requise) | Supprime le bloc `[Peer]`, archive les clés dans `clients/revoked/` |
-| Ajouter un client | Bouton *Ajouter un client* (vue Clients) | Formulaire nom + expiration optionnelle → génère les clés, écrit dans `wg0.conf`, affiche le QR code et propose le `.conf` en téléchargement |
-| Renommer un client | Carte client → *Renommer* | Met à jour le commentaire `# Client :` et renomme les fichiers `clients/<nom>.*` associés |
-| Expiration automatique | Carte client → *Expiration* | Date au-delà de laquelle le client est **désactivé automatiquement** (cron quotidien, voir 10.1.4) |
-| Limitation de bande passante | Carte client → *Bande passante* | Débit montant/descendant en Mb/s par pair (`tc`/HTB, voir 10.1.5 - fonctionnalité avancée, best effort) |
-| Régénérer la config/QR | Carte client → *Régénérer* | Nouvelles clés + PSK pour un client existant (même nom, même IP) ; utile en cas de suspicion de compromission |
-| Revoir la config/QR existants | Carte client → *QR / Config* | Réaffiche le `.conf` et le QR déjà générés, sans toucher aux clés |
-| Historique par client | Carte client → *Historique* | Tiroir dédié : graphique de débit propre au client, dernière IP endpoint vue, nombre de reconnexions estimé (voir 10.1.5) |
+| Authentification | `POST /api/login`, `GET /api/auth/me` | public / reader |
+| Clients | `GET/POST /api/clients`, `PATCH/DELETE /api/clients/<nom>`, `/bulk`, `/export`, `/<nom>/config`, `/<nom>/history`, `/<nom>/gdpr-export` | reader (lecture) / operator (écriture) |
+| Journal | `GET /api/logs`, `/api/logs/heatmap` | reader |
+| Monitoring | `GET /api/system`, `/api/geoip`, `/api/anomalies` | reader |
+| Alertes | `GET/PATCH /api/alerts/config`, `/api/alerts/history`, `/api/alerts/test`, `/api/alerts/dedup` | reader (lecture) / admin (configuration) |
+| Conformité | `GET /api/compliance`, `PATCH /api/compliance/policies` | reader (lecture) / admin (écriture) |
+| Rapports | `POST /api/reports/pdf`, `/api/reports/weekly-config`, `/api/reports/weekly-send` | operator (PDF) / admin (hebdomadaire) |
+| Système | `GET/POST /api/system/backups`, `/restore`, `/download`, `/api/system/diagnostics`, `/api/system/audit`, `/restart-tunnel`, `/rotate-server-keys` | admin |
+| Réglages | `GET/PATCH /api/settings` | reader (lecture) / admin (écriture) |
+| Utilisateurs | `GET/POST /api/users`, `PATCH/DELETE /api/users/<nom>` | admin |
+| Tokens API | `GET/POST /api/tokens`, `DELETE /api/tokens/<id>` | admin |
+| Web Push | `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `/unsubscribe`, `/test` | reader / admin (test) |
+| Signalements | `POST /api/bug-reports` (tout rôle), `GET/PATCH /api/bug-reports` (admin) | reader (création) / admin (traitement) |
+| Flux temps réel | `GET /api/events/stream` (Server-Sent Events) | reader |
 
-#### 10.1.1 Sécurité : élévation des droits sudo
+---
 
-Les fonctionnalités ci-dessus **nécessitent d'élargir les droits sudo** de `www-data` (l'utilisateur sous lequel tourne gunicorn), qui n'avait jusque-là que le droit d'exécuter `wg show wg0 dump` (lecture seule, non destructif).
+# Partie XI — Exploitation
 
-Plutôt que d'autoriser directement `wg set`, l'édition de `wg0.conf` ou `wg syncconf` en sudoers (ce qui reviendrait à donner à `www-data` un accès quasi-root à l'interface réseau), ce LAB introduit un **point d'entrée unique et privilégié** : `dashboard/backend/wgctl.py`.
+## 57. Sauvegardes et rétention
 
-```bash
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/wg show wg0 dump
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgctl.py *
-```
+- **Sauvegardes de configuration** (`wg0.conf`) : création manuelle avec description, planification automatique (désactivée par défaut), intégrité vérifiée par SHA-256, conservation des `WG_MAX_BACKUPS` (50 par défaut) plus récentes.
+- **Restauration** : double confirmation (mot de passe + saisie de « RESTORE »), avec sauvegarde de sécurité automatique de l'état courant avant toute écrasement.
+- **Rétention des données applicatives** (logs, métriques, alertes) : purge automatique nocturne selon `METRICS_RETENTION_DAYS`, purge manuelle immédiate disponible depuis Réglages.
+- **Recommandation** : répliquer périodiquement `/etc/wireguard/backups/` et `/var/log/wireguard/blockhash.db` vers un stockage hors VM (snapshot de disque Azure, ou synchronisation externe).
 
-Ce choix de conception limite le risque de plusieurs façons :
-
-- **Surface d'attaque réduite** : `www-data` ne peut exécuter *que* les actions que `wgctl.py` expose (`add`, `enable`, `disable`, `rename`, `revoke`, `regenerate`, `set-expiry`, `set-bandwidth`, `check-expirations`, `list`), jamais une commande shell arbitraire.
-- **Validation systématique** : chaque nom de client est vérifié par une expression régulière stricte (`[A-Za-z0-9_-]{1,32}`) avant toute écriture disque, ce qui empêche l'injection de commande ou l'écriture en dehors de `/etc/wireguard/`.
-- **Fichier root:root, non inscriptible par www-data** : `03-install-dashboard.sh` verrouille `wgctl.py` en `root:root` / `chmod 750` **après** avoir donné la propriété du reste de l'application à `www-data`. C'est essentiel : si `www-data` pouvait modifier `wgctl.py`, la règle sudoers ci-dessus lui donnerait un accès root complet (élévation de privilèges triviale). Le script réapplique cette vérification une seconde fois en toute fin d'installation par sécurité.
-- **Écriture atomique** : `wg0.conf` est toujours réécrit dans un fichier temporaire puis déplacé (`os.replace`), jamais modifié en place, pour éviter une configuration à moitié écrite en cas de coupure.
-- **JSON uniquement sur stdout** : `wgctl.py` ne renvoie jamais de trace Python brute à l'appelant (donc au navigateur), afin de ne pas fuiter de détails d'implémentation en cas d'erreur.
-
-**Si vous préférez garder le dashboard strictement en lecture seule** (recommandé pour un dashboard exposé plus largement, ou en environnement de démonstration public) :
+## 58. Mise à jour de la plateforme
 
 ```bash
-# /etc/blockhash/dashboard.env
-CLIENT_MANAGEMENT_ENABLED=false
+# Sauvegarder avant toute mise à jour
+sudo -u www-data /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/wgops.py backup --label pre-update
+
+# Déployer le nouveau code (dashboard/)
+# ... copier les fichiers mis à jour ...
+
+# Mettre à jour les dépendances si requirements.txt a changé
+sudo -u www-data /opt/blockhash-dashboard/venv/bin/pip install -r /opt/blockhash-dashboard/backend/requirements.txt
+
+# Redémarrer
+sudo systemctl restart blockhash-dashboard
+sudo systemctl status blockhash-dashboard
 ```
 
-puis `sudo systemctl restart blockhash-dashboard`. Le frontend détecte automatiquement ce mode et masque les actions de gestion (voir la bannière *"Gestion des clients indisponible"* dans la vue Clients). Vous pouvez alors soit retirer la règle sudoers `wgctl.py`, soit la laisser en place sans risque supplémentaire tant que le service ne l'utilise pas.
+## 59. Supervision de la plateforme elle-même
 
-Comme toujours dans ce LAB : **ne déployez pas ces droits élargis sur un serveur exposé directement à Internet sans restreindre l'accès au dashboard** (NSG/`ufw` + jeton d'API, voir sections 7.3 et 11).
+- Page **Système > Diagnostic** : état du service `wg-quick`, connectivité sortante, espace disque, permissions.
+- Page **Système > Journal d'audit** : détection d'activité anormale (échecs d'authentification répétés, actions hors horaires).
+- `journalctl -u blockhash-dashboard -f` pour les logs applicatifs en direct.
+- Alerte `service_down` (voir Partie VIII, §42) pour être notifié si `wg-quick@wg0` ou `blockhash-dashboard` s'arrête.
 
-#### 10.1.2 Comment un client désactivé est représenté
+## 60. Capacité et dimensionnement
 
-`wgctl.py` ne supprime jamais un bloc `[Peer]` lors d'une désactivation : il préfixe chacune de ses lignes d'un `#` supplémentaire, ce qui le rend invisible pour `wg-quick strip` (donc pour `wg syncconf`) sans le retirer du fichier :
+| Facteur | Recommandation |
+|---|---|
+| Nombre de clients WireGuard | Quelques centaines sans ajustement particulier (le goulot est le CPU de chiffrement, pas le dashboard) |
+| Connexions dashboard simultanées (onglets ouverts, flux SSE) | Le worker `gevent` gère plusieurs centaines de connexions SSE concurrentes par worker (2 workers par défaut) sans épuisement de threads |
+| Taille de la VM | `Standard_B2s` convient pour un usage PME ; passer à une taille supérieure si le nombre de clients ou la fréquence des rapports/alertes est élevé |
+| Base SQLite | Adaptée jusqu'à plusieurs millions de lignes avec une rétention raisonnable (35 jours par défaut) ; au-delà, envisager une purge plus agressive |
 
-```conf
-[Peer]
-# Client : ordinateur-alice
-# Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
-PublicKey = ...
-PresharedKey = ...
-AllowedIPs = 10.66.66.2/32
-```
+---
 
-devient, une fois désactivé :
+# Partie XII — Dépannage
 
-```conf
-#[Peer]
-## Client : ordinateur-alice
-## Meta : {"created":"2026-09-01T10:00:00+00:00","expires":null,"bw_up_mbit":null,"bw_down_mbit":null}
-#PublicKey = ...
-#PresharedKey = ...
-#AllowedIPs = 10.66.66.2/32
-```
+## 61. Méthodologie générale
 
-Réactiver le client retire ce préfixe et relance `wg syncconf` : le pair revient **avec les mêmes clés et la même IP**, sans que l'utilisateur final ait besoin de réimporter son fichier `.conf`.
+1. Vérifier l'état des services : `systemctl status blockhash-dashboard wg-quick@wg0 caddy`.
+2. Consulter les logs applicatifs : `journalctl -u blockhash-dashboard -n 100 --no-pager`.
+3. Tester l'API en local, en s'affranchissant du reverse proxy : `curl -sk https://127.0.0.1/healthz`.
+4. Vérifier les permissions des fichiers partagés entre root et www-data (voir incident ci-dessous).
+5. Utiliser la page **Système > Diagnostic** du dashboard lui-même.
 
-#### 10.1.3 Utilisation en CLI (sans passer par le dashboard)
+## 62. Incidents courants
 
-Toutes ces actions restent disponibles en SSH via `scripts/06-manage-client.sh`, une fine couche au-dessus de `wgctl.py` :
+### « attempt to write a readonly database » au login ou à toute action utilisateur/token
 
+**Cause.** La base SQLite (`blockhash.db`) est historiquement écrite par un cron **root** (capture d'état WireGuard, purge) et lue par `www-data` (Flask) en lecture seule. Depuis l'introduction des comptes multi-utilisateurs, des tokens API et du marquage des alertes, **Flask a lui aussi besoin d'écrire** dans cette base. Or, si un processus root réécrit physiquement le fichier (ex. `VACUUM` lors de la purge), il redevient root-only en écriture pour `www-data`.
+
+**Correctif appliqué dans ce dépôt.**
 ```bash
-sudo ./06-manage-client.sh add ordinateur-alice 30      # + 30 jours avant expiration
-sudo ./06-manage-client.sh disable ordinateur-alice
-sudo ./06-manage-client.sh enable ordinateur-alice
-sudo ./06-manage-client.sh rename ordinateur-alice pc-alice-rh
-sudo ./06-manage-client.sh expiry pc-alice-rh 2026-12-31
-sudo ./06-manage-client.sh bandwidth pc-alice-rh 20 50   # 20 Mb/s upload, 50 Mb/s download
-sudo ./06-manage-client.sh regenerate pc-alice-rh
-sudo ./06-manage-client.sh revoke pc-alice-rh
-sudo ./06-manage-client.sh list
+# Sur une VM déjà affectée par ce symptôme :
+sudo chown www-data:www-data /var/log/wireguard/blockhash.db*
+sudo chmod 0660 /var/log/wireguard/blockhash.db*
+sudo chmod g+s /var/log/wireguard
 ```
+Le script `03-install-dashboard.sh` applique désormais ce réglage (mode `0660` + bit setgid) dès l'installation, et `store.py::_fix_permissions()` le réapplique automatiquement après chaque écriture, quel que soit le processus (root ou www-data) qui l'a effectuée.
 
-#### 10.1.4 Expiration automatique (cron)
+### La page Alertes affiche « The requested URL was not found on the server »
 
-`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-expirations`, qui exécute chaque nuit à 3h :
-
-```bash
-python3 /opt/blockhash-dashboard/backend/wgctl.py check-expirations
-```
-
-Tout client dont la date d'expiration est dépassée est désactivé (au sens de 10.1.2, pas révoqué) et journalisé dans `/var/log/wireguard/expirations.log`. Vous pouvez lancer la même vérification manuellement avec `sudo ./scripts/07-check-expirations.sh`.
-
-#### 10.1.5 Limites connues
-
-- **Bande passante (`tc`/HTB)** : fonctionnalité *avancée* et *best effort*, explicitement signalée comme telle dans l'énoncé de ce TP. Elle nécessite le module noyau `ifb` et `iproute2` (installés par `03-install-dashboard.sh`). Selon le noyau/la distribution, certaines commandes `tc` peuvent échouer silencieusement côté noyau : le dashboard vous le signale (`tc_applied: false` dans la réponse API, toast d'erreur côté UI) plutôt que de prétendre que la limite est active alors qu'elle ne l'est pas. La limite "logique" (Mb/s enregistrés) est de toute façon conservée dans `wg0.conf` même si `tc` échoue, pour ne pas perdre l'intention si vous corrigez le problème plus tard.
-- **Compteur de reconnexions** : le journal `tunnels.csv` est échantillonné toutes les 5 minutes (cron, voir section 8), pas événementiel. Le dashboard approxime les reconnexions en comptant les changements d'IP endpoint et les écarts de plus de 10 minutes entre deux captures consécutives- une heuristique raisonnable pour un LAB, pas un décompte exact au sens d'un pare-feu stateful.
-- **Régénération de clés** : régénérer un client change ses clés WireGuard ; l'ancien fichier `.conf` distribué au client cesse immédiatement de fonctionner et **doit être réimporté** (nouveau QR code/`.conf` fourni par le dashboard).
-
-### 10.2 Monitoring et alerting avancés
-
-Fichiers concernés : `dashboard/backend/store.py` (métriques long terme + historique d'alertes, SQLite), `dashboard/backend/system_monitor.py` (CPU/RAM/disque/services), `dashboard/backend/anomalies.py` (détection simple), `dashboard/backend/alerts.py` (moteur de notification), `dashboard/backend/settings_store.py` (réglages ajustables à chaud), `dashboard/backend/wgstate.py` (logique de lecture partagée, voir 10.2.1), `scripts/09-check-alerts.sh` (cron), onglets **Monitoring** et **Alertes** du dashboard.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Historique long terme du débit | Onglet Monitoring, sélecteur 1h/24h/7j/30j | Graphique dédié, alimenté par une petite base **SQLite** (pas le CSV) pour rester rapide même sur 30 jours |
-| Alertes configurables | Onglet Alertes | Email (SMTP), Slack, Discord, Telegram - règles : inactivité prolongée, seuil de débit, service down |
-| Seuil "en ligne" ajustable | Onglet Alertes → Réglages généraux | Remplace la constante `HANDSHAKE_ONLINE_THRESHOLD_SEC` figée en dur ; persistée dans un fichier JSON, prise en compte immédiatement (pas de redémarrage du service) |
-| Monitoring du serveur hôte | Onglet Monitoring → Système hôte | CPU, RAM, disque, uptime (via `psutil`) |
-| Détection d'anomalies simples | Onglet Monitoring → Anomalies détectées | Pic de trafic inhabituel (z-score sur le débit récent) ; endpoint qui change trop souvent (indice de clé compromise/partagée) |
-| Statut des services systemd | Onglet Monitoring (Système hôte) et Alertes (règle "service down") | `wg-quick@wg0` et `blockhash-dashboard`, via `systemctl is-active` |
-
-#### 10.2.1 Pourquoi une base SQLite en plus du CSV existant ?
-
-Le CSV (`tunnels.csv`, section 8) reste la source du journal brut et de l'heuristique de reconnexion : le relire intégralement pour un graphique sur 30 jours (des milliers de lignes par client) serait lent et fragile. `store.py` ajoute donc une petite base SQLite (`/var/log/wireguard/blockhash.db`) alimentée par un hook ajouté au **même** script de capture 5 minutes (`wg-log-snapshot.sh`, voir section 8) : rien de nouveau à surveiller, juste une écriture supplémentaire à chaque cycle déjà existant.
-
-**Point technique important** : les compteurs `rx_bytes`/`tx_bytes` renvoyés par `wg show` sont **cumulatifs depuis le démarrage de l'interface**, pas un débit instantané. `store.py` stocke les valeurs brutes puis calcule le **delta** entre deux échantillons consécutifs au moment de la requête (`store.query_series`), pour obtenir un vrai débit par intervalle. Le graphique historique de la vue Monitoring utilise cette méthode ; le petit graphique "Débit du tunnel" de la vue d'ensemble (Étape 4, section 7.3) reste basé sur le CSV et somme les compteurs bruts par fenêtre de 5 minutes - une simplification héritée, suffisante pour un coup d'œil rapide sur les 12 derniers points, mais moins rigoureuse que le nouveau graphique à sélecteur de plage.
-
-Pour eviter toute duplication de logique de lecture entre le service web (`app.py`, sous Flask/gunicorn) et les scripts cron indépendants (`alerts.py`), la lecture de `wg0.conf` et de `wg show` a été extraite dans `wgstate.py`, un module **sans aucune dépendance externe** (bibliothèque standard uniquement) que les deux réutilisent.
-
-#### 10.2.2 Détection d'anomalies : ce que ça fait (et ne fait pas)
-
-- **Pic de trafic** : compare le dernier bucket de débit (fenêtre 24h) à la moyenne et à l'écart-type des buckets précédents ; signale si le dernier dépasse `moyenne + 3×écart-type` (et un plancher minimal pour ne pas signaler du bruit sur un tunnel presque silencieux).
-- **Endpoint flapping** : réutilise l'heuristique de reconnexion déjà calculée pour l'historique par client (section 10.1) ; au-delà de 6 changements d'endpoint en 24h, le client est signalé - un indice possible de clé privée partagée entre plusieurs appareils, pas une certitude.
-
-Ce n'est **pas** un IDS : pas de machine learning, pas de base de référence par client, pas de whitelisting d'IP. C'est volontairement simple et lisible, pour un contexte pédagogique - libre à vous de le remplacer par une vraie stack d'observabilité (Prometheus + Grafana + Alertmanager, par exemple) si ce LAB grandit.
-
-#### 10.2.3 Sécurité de l'alerting
-
-Contrairement à la gestion des clients (section 10.1.1), **l'alerting ne nécessite aucune extension des droits sudo**. `alerts.py` ne fait que :
-- lire `wg0.conf` et `wg show wg0 dump` (déjà autorisé) ;
-- lire/écrire son propre fichier de configuration sous `/etc/blockhash/alerts-config.json` (appartient à `www-data`, `chmod 600` - ce fichier contient des secrets : mot de passe SMTP, URLs de webhook, jeton de bot Telegram) ;
-- effectuer des requêtes HTTP sortantes vers les webhooks/API de notification configurés.
-
-**Masquage des secrets** : `GET /api/alerts/config` ne renvoie jamais un secret en clair - un champ déjà configuré est renvoyé sous la forme `••••••••`. Le formulaire du dashboard renvoie cette même valeur telle quelle si vous ne la modifiez pas (voir `alerts.py:save_config`), donc resauvegarder le formulaire sans toucher au mot de passe SMTP ne l'efface pas. Si vous consultez ce fichier directement sur le serveur (`sudo cat /etc/blockhash/alerts-config.json`), les secrets y sont en clair - c'est un fichier de configuration serveur, pas une couche de chiffrement.
-
-**L'alerting est désactivé par défaut** (`enabled: false`) : aucune notification n'est envoyée tant que vous ne l'activez pas explicitement depuis l'onglet Alertes.
-
-#### 10.2.4 Activation du cron d'évaluation des règles
-
-`03-install-dashboard.sh` installe `/etc/cron.d/blockhash-alerts`, qui exécute toutes les 5 minutes :
-
-```bash
-python3 /opt/blockhash-dashboard/backend/alerts.py check
-```
-
-Chaque règle a son propre délai de répétition (`cooldowns_sec` dans la config) pour éviter le spam : par défaut, 1 alerte d'inactivité par client et par jour, 1 alerte de débit par client et par heure, 1 alerte de service down toutes les 30 minutes tant que le problème persiste. Vous pouvez déclencher une vérification manuelle avec `sudo python3 /opt/blockhash-dashboard/backend/alerts.py check`, ou tester un canal précis sans attendre une vraie condition d'alerte avec le bouton *Tester* de chaque canal dans le dashboard.
-
-#### 10.2.6 Réinitialiser la déduplication (sans SSH)
-
-Chaque règle qui s'est déclenchée reste "en pause" pendant son `cooldowns_sec` (voir 10.2.4) : c'est voulu, pour éviter qu'un client resté inactif ne déclenche une notification à chaque passage du cron. Mais en phase de test - par exemple pour vérifier qu'un webhook Slack fonctionne vraiment en conditions réelles - attendre le cooldown est peu pratique.
-
-L'onglet **Alertes** affiche un panneau *Règles actuellement en pause (déduplication)* qui liste chaque règle en cooldown avec le temps écoulé depuis son dernier déclenchement, et permet de :
-- **Réinitialiser** une règle précise (le bouton en face de chaque ligne) ;
-- **Tout réinitialiser** (bouton en haut du panneau, avec confirmation).
-
-Techniquement, cela vide (entièrement ou une seule ligne selon le cas) la table `alert_state` de `store.py`, via `GET/DELETE /api/alerts/dedup` et `DELETE /api/alerts/dedup/<rule_key>`. Cette table ne stocke que des horodatages de dédup - la vider ne supprime ni l'historique des alertes déjà envoyées (table `alerts`, affichée juste en dessous), ni la configuration des règles/canaux.
-
-Pour les mêmes besoins en CLI (sans dashboard) :
-```bash
-python3 /opt/blockhash-dashboard/backend/store.py dedup-list
-python3 /opt/blockhash-dashboard/backend/store.py dedup-clear --rule-key "inactive:<clé_publique_du_client>"
-python3 /opt/blockhash-dashboard/backend/store.py dedup-clear   # sans --rule-key : reinitialise tout
-```
-
-#### 10.2.7 Limites connues
-
-- **Détection d'anomalies** : heuristiques simples (voir 10.2.2), pas un système de détection d'intrusion.
-- **Dédup des alertes** : si l'envoi d'une notification échoue (ex. webhook injoignable), la règle est quand même marquée comme "envoyée" pour la durée du cooldown - conçu pour un LAB, pas pour une garantie de livraison. Consultez `/var/log/wireguard/alerts.log` en cas de doute, ou réinitialisez la règle concernée depuis l'onglet Alertes (voir 10.2.6) une fois le problème corrigé.
-- **`cpu_percent` au premier appel** : `psutil.cpu_percent()` a besoin d'un point de comparaison ; le tout premier appel après le démarrage du service renvoie `null` plutôt qu'un chiffre trompeur (`0.0`).
-
-### 10.3 Administration système
-
-Fichiers concernés : `dashboard/backend/wgops.py` (opérations privilégiées), `dashboard/backend/servers_store.py` (registre multi-serveurs), onglet **Système** du dashboard.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Sauvegarde/restauration de `wg0.conf` | Onglet Système → *Sauvegardes* | Versionné sur disque (`/etc/wireguard/backups/`), avec **diff** avant application et sauvegarde de sécurité automatique avant toute restauration |
-| Rotation assistée des clés serveur | Onglet Système → *Rotation des clés serveur* | Régénère la paire de clés du serveur **et** le `.conf` de chaque client existant (leurs propres clés ne changent pas) en une seule opération atomique |
-| Redémarrage du tunnel | Onglet Système → *Maintenance du tunnel* | `systemctl restart wg-quick@wg0`, avec confirmation côté UI |
-| Export d'audit | Onglet Système → *Export d'audit* | Zip de tous les `.conf` clients + `wg0.conf` + un manifeste CSV non sensible (nom, clé publique, IP, statut) |
-| Multi-serveurs | Onglet Système → *Multi-serveurs* | Supervision agrégée de plusieurs instances BLOCKHash (voir 10.3.5) |
-
-#### 10.3.1 Sécurité : un second point d'entrée privilégié
-
-Comme pour la gestion des clients (section 10.1.1), ces opérations passent par un **point d'entrée unique et privilégié** : `dashboard/backend/wgops.py`, avec exactement les mêmes garanties que `wgctl.py` (root:root, `chmod 750`, validation stricte des paramètres, écriture atomique, jamais de trace Python brute renvoyée).
-
-Ce module est volontairement **séparé** de `wgctl.py` plutôt que d'y ajouter des actions, et contrôlé par un interrupteur dédié `SYSTEM_OPS_ENABLED` (distinct de `CLIENT_MANAGEMENT_ENABLED`) : la rotation des clés serveur et le redémarrage du tunnel ont un rayon d'impact bien plus large qu'ajouter ou révoquer un client - un exploitant peut vouloir activer la gestion des clients depuis le web sans exposer ces opérations plus sensibles.
-
-```bash
-# /etc/blockhash/dashboard.env
-SYSTEM_OPS_ENABLED=false   # masque ces actions sans toucher a CLIENT_MANAGEMENT_ENABLED
-```
-
-La règle sudoers ajoutée par `03-install-dashboard.sh` :
-```bash
-$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/python3 /opt/blockhash-dashboard/backend/wgops.py *
-```
-
-#### 10.3.2 Sauvegardes : ce qui est protégé
-
-- Chaque sauvegarde est un fichier horodaté (`wg0_AAAAMMJJ-HHMMSS_<label>.conf`) sous `/etc/wireguard/backups/`, avec une rotation automatique (50 sauvegardes conservées par défaut, réglable via `WG_MAX_BACKUPS`).
-- **Avant toute restauration**, une sauvegarde de l'état actuel est créée automatiquement (label `avant-restauration`) - une restauration malheureuse reste donc toujours réversible.
-- Le **diff** (`diff-backup`) utilise `difflib` (bibliothèque standard Python) pour comparer une sauvegarde au `wg0.conf` actuel, ligne par ligne, avant de décider de restaurer.
-- Les noms de fichiers de sauvegarde sont strictement validés côté serveur (regex + vérification que le chemin résolu reste dans le dossier des sauvegardes) pour empêcher tout traversal de chemin depuis l'API.
-
-#### 10.3.3 Rotation des clés serveur : ce qui se passe exactement
-
-1. Sauvegarde de sécurité de `wg0.conf` (label `avant-rotation-cles`).
-2. Nouvelle paire de clés générée (`wg genkey` / `wg pubkey`).
-3. `wg0.conf`, `server_private.key` et `server_public.key` mis à jour.
-4. `wg syncconf` recharge l'interface à chaud, sans couper les tunnels déjà établis.
-5. **Chaque** fichier `.conf` client sous `clients/*.conf` est réécrit : seule sa ligne `PublicKey` (celle qui pointe vers le **serveur**, dans le bloc `[Peer]` du fichier **client**) est remplacée par la nouvelle clé publique serveur. Les clés propres au client (sa `PrivateKey`, son `PresharedKey`, son IP) ne changent pas.
-6. Le dashboard affiche la liste des clients concernés et rappelle qu'ils doivent réimporter leur configuration (nouveau `.conf`/QR à redistribuer, voir section 10.1 pour régénérer un client individuellement si besoin).
-
-**Quand l'utiliser** : rotation périodique de routine (tous les 6-12 mois, voir section 12), ou en urgence si la clé privée du serveur est suspectée compromise.
-
-#### 10.3.4 Export d'audit : contenu et sensibilité
-
-Le zip généré contient :
-- `clients/*.conf` -configuration complète de chaque client, **clé privée incluse** (rappel : ce LAB conserve les clés privées client côté serveur pour la simplicité, voir section 6) ;
-- `wg0.conf` -configuration serveur complète (clé privée serveur incluse) ;
-- `manifest.csv` -un résumé non sensible (nom, clé publique, IP, statut) pour un usage d'audit léger sans manipuler les clés privées.
-
-**Ce zip est aussi sensible que l'ensemble de `/etc/wireguard/`** : à traiter avec les mêmes précautions (transfert chiffré, pas de stockage sur un partage non protégé). Les fichiers d'export sont écrits dans `/tmp/blockhash-exports/` et purgés automatiquement au bout d'une heure.
-
-#### 10.3.5 Multi-serveurs : portée et limites
-
-Le registre (`servers_store.py`) permet d'ajouter d'autres instances BLOCKHash (nom, URL, jeton d'API optionnel) et d'afficher un résumé agrégé (tunnels actifs, injoignabilité) sans quitter le dashboard courant. Techniquement :
-
-- Le jeton d'API de chaque serveur distant est stocké côté serveur uniquement (`/etc/blockhash/servers.json`, `chmod 600`) et **jamais transmis au navigateur** - c'est le backend de *cette* instance qui interroge `/api/overview` du serveur distant pour le compte de l'utilisateur, puis relaie le résultat.
-- **Ceci reste une supervision agrégée, pas une fédération complète** : gérer les clients, consulter le journal détaillé ou configurer les alertes d'un serveur distant se fait en ouvrant *son propre* dashboard (bouton *Ouvrir*), pas depuis cette instance. Étendre chaque vue (Clients, Journal, Monitoring...) pour qu'elle soit elle-même multi-serveur est un chantier plus large, volontairement hors scope de cette itération.
-- Un serveur injoignable (mauvaise URL, jeton invalide, pare-feu) est signalé sans faire échouer le reste de la vue.
-
-### 10.4 Reporting et export
-
-Fichiers concernés : `dashboard/backend/reports.py`, onglets Journal (export), Alertes (rapport hebdomadaire) et Conformité.
-
-| Fonctionnalité | Où | Détail |
-|---|---|---|
-| Export CSV du journal filtré | Onglet Journal → *Export CSV* | Reprend exactement les lignes actuellement affichées (filtre de statut + recherche + tri) |
-| Export PDF du journal filtré | Onglet Journal → *Export PDF* | Même principe, rendu en PDF tabulaire côté serveur |
-| Rapport hebdomadaire automatique | Onglet Alertes → *Rapport hebdomadaire par e-mail* | Résumé du trafic, des alertes et des clients inactifs, envoyé chaque lundi matin |
-| Vue Conformité | Onglet Conformité | Clients actifs sans connexion depuis 7/15/30/60/90 jours (ou jamais connectés), exportable en CSV/PDF |
-
-#### 10.4.1 Export CSV/PDF : cohérence avec ce qui est affiché
-
-L'export CSV est généré **côté navigateur**, directement à partir des lignes déjà filtrées/triées visibles à l'écran (aucun appel serveur supplémentaire) : ce que vous exportez est exactement ce que vous voyez. L'export PDF envoie ces mêmes lignes déjà filtrées au serveur (`POST /api/reports/pdf`), qui les met en forme avec `fpdf2` (bibliothèque Python pure, aucune dépendance système comme `wkhtmltopdf` ou un navigateur headless).
-
-Le même mécanisme (`build_table_pdf`, générique) est réutilisé pour l'export PDF de la vue Conformité - toute nouvelle vue tabulaire du dashboard peut s'en servir sans dupliquer de logique de mise en page.
-
-#### 10.4.2 Vue Conformité : règle de classement
-
-Un client **actif** (non désactivé) est listé s'il n'a pas de handshake depuis au moins 7 jours, ou s'il ne s'est **jamais** connecté. Chaque client est classé dans le plus grand seuil qu'il dépasse (90/60/30/15/7 jours), trié du plus inactif au moins inactif. Les actions *Désactiver*/*Révoquer* de cette vue appellent exactement les mêmes endpoints que l'onglet Clients (voir section 10.1) - la vue Conformité n'est qu'une présentation différente, filtrée, des mêmes données.
-
-#### 10.4.3 Rapport hebdomadaire : configuration
-
-Le rapport réutilise le **canal e-mail déjà configuré dans l'onglet Alertes** (section 10.2) - aucune configuration SMTP séparée. Deux champs propres au rapport :
-- **Envoyer chaque lundi matin** (interrupteur, désactivé par défaut) ;
-- **Destinataire** (optionnel - si vide, réutilise le destinataire e-mail déjà configuré pour les alertes).
-
-Le contenu du rapport (`reports.build_weekly_summary`) : nombre de clients actifs, volume cumulé, nombre d'alertes déclenchées dans la semaine (détail inclus), et liste des clients inactifs depuis plus de 7 jours. Le bouton *Envoyer maintenant* déclenche un envoi immédiat, utile pour vérifier la mise en forme sans attendre lundi.
-
-Le cron correspondant (`/etc/cron.d/blockhash-weekly-report`, installé par `03-install-dashboard.sh`) :
-```bash
-0 8 * * 1 root python3 /opt/blockhash-dashboard/backend/reports.py send-weekly
-```
-Il ne fait rien tant que l'interrupteur n'est pas activé - comme pour l'alerting (section 10.2.3), aucun envoi surprise après une simple installation.
-
-#### 10.4.4 Limites connues
-
-- **Export PDF** : mise en page volontairement simple (tableau + en-tête), pas un moteur de rapport avec graphiques intégrés - pour un besoin plus riche, générez le CSV et importez-le dans l'outil de reporting déjà utilisé par votre organisation.
-- **Rapport hebdomadaire** : format texte brut (pas de mise en forme HTML), pour rester lisible sur n'importe quel client e-mail sans dépendance à un moteur de templates supplémentaire.
-- **Vue Conformité** : se base sur le dernier handshake connu (`wg show`), pas sur un historique d'audit complet - un client désactivé puis réactivé repart avec un compteur d'inactivité à zéro dès sa prochaine connexion.
-
-### 10.5 Temps réel, journal SQLite et fiabilité
-
-Fichiers concernés : `dashboard/backend/store.py` (table `logs`), `dashboard/backend/geoip.py`, `dashboard/backend/tests/` (suite pytest), route `/api/events/stream` et `/healthz`/`/api/version` dans `app.py`.
-
-#### 10.5.1 Le journal des connexions n'est plus lu depuis le CSV
-
-Jusqu'ici, l'API relisait l'intégralité de `tunnels.csv` à chaque requête pour en extraire une page. Le journal est maintenant stocké dans la même base SQLite que les métriques long terme (table `logs` de `store.py`), avec pagination, filtrage et tri **au niveau SQL** (`LIMIT`/`OFFSET`/`WHERE`/`ORDER BY`) - l'API ne charge jamais plus que la page demandée en mémoire, quelle que soit la taille de l'historique.
-
-Le fichier `tunnels.csv` continue d'être écrit par le même cron 5 minutes (`04-logging-monitoring.sh`) : ce n'est plus l'API qui le lit, mais il reste disponible comme trace texte brute (`grep`/`tail` sans outillage, export vers un autre système) - voir le commentaire en tête de ce script pour le détail.
-
-`GET /api/logs` accepte désormais :
-```
-?limit=50&offset=0&search=<texte>&status=<online|idle|never>&sort_key=<timestamp|rx_bytes|tx_bytes|endpoint|allowed_ips>&sort_dir=<asc|desc>
-```
-et renvoie `{"total": N, "rows": [...]}`. Le filtre `status` (qui dépend de l'état **live** des pairs, pas d'une colonne de la table `logs`) est résolu côté serveur en une liste de clés publiques avant d'être combiné à la pagination SQL - un filtre de statut actif ne réduit donc jamais le nombre de lignes réellement disponibles par page, contrairement à un filtrage naïf après coup.
-
-#### 10.5.2 Pagination côté interface
-
-L'onglet Journal affiche désormais une vraie barre de pagination (taille de page 25/50/100/200, boutons Précédent/Suivant, compteur "X–Y sur Z"), remplaçant l'ancienne limite fixe de 100-200 entrées sans navigation. Les exports CSV/PDF (section 10.4.1) portent sur la page actuellement affichée.
-
-#### 10.5.3 Temps réel : Server-Sent Events
-
-`GET /api/events/stream` pousse trois types d'événements dès qu'ils se produisent, plutôt que d'attendre le prochain cycle de rafraîchissement (30 secondes) :
-- `peer_connected` / `peer_disconnected` (changement de statut live d'un pair) ;
-- `alert` (nouvelle ligne dans l'historique des alertes, section 10.2).
-
-Le frontend s'y connecte via `EventSource` au chargement du dashboard et affiche un toast pour chaque événement. **Le rafraîchissement périodique de 30 secondes reste actif en parallèle** : si la connexion SSE échoue (proxy qui la bloque, navigateur ancien), le dashboard continue de fonctionner normalement, juste avec une latence de mise à jour plus longue - SSE est une amélioration de réactivité, pas une dépendance dure.
-
-**Pourquoi pas de bus d'événements partagé entre workers ?** Chaque connexion SSE relit indépendamment l'état déjà partagé sur disque/dans le noyau (`wg show`, la table `alerts`) toutes les 3 secondes et ne pousse un événement que si quelque chose a changé depuis sa dernière lecture. Peu importe quel worker gunicorn traite quelle connexion : la source de vérité est le système de fichiers, pas une mémoire de process partagée - pas besoin de Redis ni d'une file de messages pour ce cas d'usage.
-
-**Point d'attention deploiement**, déjà pris en compte par `03-install-dashboard.sh` : une connexion SSE reste ouverte plusieurs secondes. Avec des workers gunicorn "sync" par défaut, quelques onglets dashboard ouverts simultanément suffiraient à saturer tous les workers et bloquer le reste du trafic (y compris les fichiers statiques). Le service est donc configuré avec `--worker-class gthread --threads 4`, qui permet à chaque worker de gérer plusieurs connexions concurrentes via des threads, sans dépendance supplémentaire (contrairement à gevent/eventlet).
-
-**Authentification SSE** : `EventSource` ne permet pas d'envoyer d'en-têtes personnalisés. Si `DASHBOARD_TOKEN` est configuré, le jeton est accepté en paramètre de requête (`?token=...`) **uniquement** pour cette route précise - un compromis documenté (un jeton en query string peut apparaître dans des logs d'accès), acceptable car l'accès au port du dashboard est déjà restreint au niveau réseau (section 7.3).
-
-#### 10.5.4 Healthcheck complet et `/api/version`
-
-`GET /healthz` ne se contente plus de vérifier que Flask répond : il vérifie aussi que `wg0.conf` est lisible, que `wg show` répond réellement, et que la base de métriques est accessible. Renvoie `503` (et le détail de chaque vérification) si l'un de ces points est en échec - utile derrière une sonde de supervision externe ou un load balancer, qui autrement verrait un service "up" alors que WireGuard lui-même est en panne.
-
-`GET /api/version` renvoie la version du dashboard et l'état des interrupteurs de fonctionnalités (`client_management_enabled`, `system_ops_enabled`) - pratique pour un script d'inventaire ou de compatibilité.
-
-Par ailleurs, un gestionnaire d'erreurs générique (`@app.errorhandler(Exception)`) garantit qu'**aucune** erreur inattendue ne renvoie une page d'erreur HTML Werkzeug ou une trace Python brute au client : toujours du JSON propre (`{"error": "..."}`), le détail complet restant dans les logs serveur (`journalctl -u blockhash-dashboard`) pour le diagnostic. C'est ce filet de sécurité qui a permis de détecter, pendant le développement, un cas réel où `sudo` absent du système faisait remonter une erreur 500 brute plutôt qu'un message clair - corrigé pour renvoyer une erreur 502 explicite.
-
-#### 10.5.5 Carte des endpoints clients (GeoIP)
-
-L'onglet Monitoring affiche une carte (Leaflet + fond de carte OpenStreetMap) plaçant chaque client connecté selon la géolocalisation approximative de son IP publique d'endpoint.
-
-- Résolution via l'API gratuite [ip-api.com](https://ip-api.com/docs) (pas de clé requise, 45 requêtes/minute en usage non commercial), en un seul appel groupé (`/batch`) pour toutes les IP à résoudre.
-- **Mise en cache** dans la base SQLite (table `geoip_cache`, 7 jours par défaut, réglable via `GEOIP_TTL_SEC`) : une même IP n'est réinterrogée qu'une fois la semaine passée, très loin de la limite de 45 requêtes/minute même avec de nombreux clients.
-- Les IP privées/réservées (RFC1918, loopback, lien-local) ne sont **jamais** envoyées à l'API externe - elles ne peuvent de toute façon pas être géolocalisées et sont simplement absentes de la carte.
-- Nécessite un accès Internet sortant depuis le serveur vers `ip-api.com` (HTTP) et `tile.openstreetmap.org` (HTTPS, chargé directement par le navigateur de l'utilisateur, pas par le serveur) - à vérifier si votre pare-feu sortant est restrictif.
-- Best effort : si l'API GeoIP est injoignable, la carte s'affiche quand même (fond de carte vide de marqueurs) plutôt que de faire échouer tout l'onglet Monitoring.
-
-#### 10.5.6 Authentification durcie (verrouillage, audit, refus de démarrage)
-
-- **Refus de démarrage sans jeton** : si `DASHBOARD_TOKEN` est vide, l'application ne démarre plus (`sys.exit`) au lieu de tourner sans authentification par erreur. Pour un lab isolé où c'est un choix assumé, définissez `ALLOW_NO_AUTH=true` dans `/etc/blockhash/dashboard.env`.
-- **Verrouillage anti force-brute** : après `AUTH_MAX_ATTEMPTS` échecs d'authentification depuis la même IP (8 par défaut), les requêtes suivantes reçoivent `429 Too Many Requests` pendant `AUTH_LOCKOUT_SECONDS` (300 par défaut, réglables dans `dashboard.env`). Le compteur est en mémoire process (approximatif entre les workers gunicorn) - suffisant pour ralentir un script automatisé, pas conçu comme une protection distribuée de niveau WAF.
-- **Journal d'audit** (`/var/log/wireguard/audit.log`, créé et permissionné par `03-install-dashboard.sh`) : chaque requête mutante (`POST`/`PATCH`/`DELETE` sur `/api/...`) y est tracée avec IP source, méthode, chemin et code de statut - capturé génériquement via un hook `@app.after_request` plutôt que des appels manuels route par route, pour qu'aucune route actuelle ou future ne puisse être oubliée.
-
-#### 10.5.7 Tests automatisés
-
-Une suite pytest (`dashboard/backend/tests/`) couvre la logique la plus sensible aux régressions silencieuses :
-- `wgstate.py` : parsing des blocs `[Peer]` (actifs/désactivés), fusion avec `wg show`, heuristique de reconnexion ;
-- `store.py` : calcul de **delta** (pas la somme brute des compteurs cumulatifs - la régression la plus facile à réintroduire par erreur), pagination/filtrage du journal, dédup des alertes ;
-- `alerts.py` : masquage des secrets, fusion de config, évaluation des règles avec dédup ;
-- `app.py` : forme des réponses API, codes d'erreur (403 quand une fonctionnalité est désactivée, 422 sur un nom de client invalide), combinaison filtre de statut + pagination.
-
-Chaque test tourne dans un environnement **entièrement isolé** (répertoire temporaire, faux binaire `wg`, variables d'environnement dédiées via la fixture `wg_env`) - aucun test ne touche jamais `/etc/wireguard` ou `/etc/blockhash` du système réel.
-
+**Cause.** Une route Flask manquante (décorateur de route absent, généralement suite à une édition manuelle incomplète du code). Vérifier :
 ```bash
 cd dashboard/backend
-pip install -r requirements-dev.txt --break-system-packages
-pytest                      # toute la suite
-pytest tests/test_store.py -v   # un seul fichier, verbeux
+python3 -c "
+import app
+for r in app.app.url_map.iter_rules():
+    if 'alerts' in str(r): print(r, r.methods)
+"
 ```
+Toutes les routes attendues (`/api/alerts/config`, `/api/alerts/history`, `/api/alerts/dedup`, `/api/alerts/test`...) doivent apparaître.
 
-`requirements-dev.txt` est volontairement séparé de `requirements.txt` : pytest n'a aucune raison d'être installé sur le serveur de production, seulement dans un environnement de développement/CI.
+### Un bouton d'export/téléchargement ne fait rien
 
-### 10.6 Interface utilisateur avancée
+**Cause.** Une navigation directe (`window.open()` ou `window.location.href`) vers une route `/api/*` protégée par jeton ne transmet **pas** l'en-tête `X-API-Token` — la requête échoue en 401 silencieusement (pas de page d'erreur visible, juste rien). Le frontend utilise systématiquement un téléchargement via `fetch()` authentifié suivi de la création d'un lien `<a download>` (voir `downloadWithAuth()` dans `app.js`), jamais de navigation directe vers l'API.
 
-Fichiers concernés : `dashboard/frontend/css/style.css` (variables de thème), `dashboard/frontend/js/app.js`, `dashboard/frontend/js/vendor/leaflet.js`.
+### Le worker Gunicorn "avale" les connexions et le dashboard devient inaccessible
 
-| Fonctionnalité | Détail |
-|---|---|
-| Thème clair/sombre | Bouton dans la barre supérieure ; préférence mémorisée (`localStorage`) et réappliquée au prochain chargement |
-| Recherche globale | Barre unique dans la barre supérieure, cherche simultanément dans les clients (déjà chargés) et le journal (requête `/api/logs?search=` limitée à 5 résultats) ; un clic sur un résultat bascule vers la bonne vue et applique le filtre correspondant |
-| Mode NOC / plein écran | Masque la barre latérale, agrandit les chiffres clés, demande le plein écran navigateur - pensé pour un affichage continu sur un écran de salle |
-| Chargement avec squelettes | Les cartes chiffrées affichent un effet de scintillement pendant le tout premier chargement, plutôt qu'un simple "–" statique |
-| Menu mobile en tiroir | En dessous de 720px de large, la barre latérale devient un tiroir (bouton hamburger, fond assombri, fermeture automatique après un clic de navigation) plutôt qu'une barre horizontale à défilement - voir 10.6.1 |
+**Cause.** Utilisation du worker par défaut (synchrone) ou `gthread` avec un flux SSE ouvert en continu par onglet : le pool de threads s'épuise dès que quelques onglets restent ouverts. **Solution** : `--worker-class gevent`, seule option adaptée à un flux SSE de longue durée (voir Partie VII, §35).
 
-#### 10.6.1 Un vrai bug mobile trouvé par le test visuel
+### Le rapport hebdomadaire ou l'export PDF échoue sans message clair
 
-Avec l'ajout progressif des onglets Conformité et Système, la barre latérale mobile (jusque-là transformée en barre horizontale défilante) ne pouvait plus afficher que 2 des 7 éléments de navigation, sans indice visuel qu'il y avait plus d'options en faisant défiler. Un test dans un vrai navigateur (Chromium headless, capture d'écran à 375px de large) l'a révélé immédiatement - remplacé par un tiroir de navigation classique (voir tableau ci-dessus), un motif d'interface mobile bien plus robuste face à l'ajout futur d'onglets.
-
-#### 10.6.2 Limites connues
-
-- **Recherche globale** : cherche les clients par nom/IP/endpoint et le journal par endpoint/IP/clé publique ; ne cherche pas (encore) dans l'historique des alertes ni les sauvegardes.
-- **Mode NOC** : le plein écran navigateur peut être refusé silencieusement dans certains contextes (ex. iframe) - l'effet visuel (barre latérale masquée, textes agrandis) reste appliqué même si le vrai plein écran système échoue.
-- **Thème clair** : conçu par inversion des mêmes variables CSS que le thème sombre ; les graphiques Chart.js/Leaflet gardent des couleurs adaptées automatiquement, mais un futur composant qui coderait une couleur en dur (plutôt que via une variable CSS) casserait le thème clair pour ce composant seulement.
+- Vérifier que `fpdf2` est installé dans le venv : `pip show fpdf2`.
+- Vérifier qu'un canal e-mail est configuré et testé (page **Alertes > Configurer les canaux**, bouton **Tester**) — le rapport hebdomadaire réutilise cette même configuration SMTP.
+- Depuis cette révision, un échec d'envoi renvoie un code HTTP explicite (422) avec le motif exact, au lieu d'un succès silencieux à tort.
 
 ---
 
-## 11. Commandes Linux de référence
+# Partie XIII — Limites connues et feuille de route
 
-| Commande | Usage |
-|---|---|
-| `wg show` | Affiche l'état de toutes les interfaces WireGuard actives |
-| `wg show wg0 dump` | Sortie machine-readable (utilisée par le script de logging) |
-| `wg genkey` | Génère une clé privée |
-| `wg pubkey < priv.key` | Dérive la clé publique |
-| `wg genpsk` | Génère une clé pré-partagée (PSK) |
-| `wg set wg0 peer <pubkey> remove` | Retire un peer à chaud |
-| `wg syncconf wg0 <(wg-quick strip wg0)` | Recharge la config sans couper le tunnel |
-| `sudo systemctl start\|stop\|restart wg-quick@wg0` | Contrôle du service |
-| `sudo systemctl enable wg-quick@wg0` | Démarrage automatique au boot |
-| `sudo ufw allow 51820/udp` | Ouvre le port WireGuard dans le pare-feu local |
-| `sudo ufw status verbose` | Liste les règles de pare-feu actives |
-| `sudo iptables -t nat -L -n -v` | Vérifie les règles NAT (MASQUERADE) |
-| `sudo journalctl -u wg-quick@wg0 -f` | Suit les logs du service en direct |
-| `ip a show wg0` | Affiche l'adresse IP de l'interface tunnel |
-| `sysctl net.ipv4.ip_forward` | Vérifie que le routage IP est actif |
-| `sudo systemctl status blockhash-dashboard` | État du dashboard (gunicorn) |
-| `sudo journalctl -u blockhash-dashboard -f` | Suit les logs applicatifs du dashboard en direct |
-| `curl -s http://localhost:8080/api/overview \| jq` | Interroge l'API du dashboard localement (formatage JSON) |
-| `sudo ./scripts/06-manage-client.sh list` | Liste tous les clients (actifs et désactivés) avec leurs métadonnées |
-| `sudo ./scripts/06-manage-client.sh add <nom> [jours]` | Ajoute un client (équivalent CLI de "Ajouter un client" dans le dashboard) |
-| `sudo ./scripts/06-manage-client.sh disable\|enable <nom>` | Désactive/réactive un client sans le supprimer |
-| `sudo ./scripts/07-check-expirations.sh` | Force la vérification des expirations (normalement en cron, voir 10.1.4) |
-| `sudo tc -s qdisc show dev wg0` | Vérifie les classes/limites de débit actuellement appliquées par `tc` |
-| `sudo visudo -cf /etc/sudoers.d/blockhash-dashboard` | Valide la syntaxe de la règle sudoers avant de la recharger |
-| `python3 /opt/blockhash-dashboard/backend/store.py series --range 24h` | Affiche la série de débit agrégée (debug, sans passer par l'API) |
-| `sudo python3 /opt/blockhash-dashboard/backend/alerts.py check` | Force une évaluation immédiate des règles d'alerte (hors cron) |
-| `sudo python3 /opt/blockhash-dashboard/backend/alerts.py test slack` | Envoie une notification de test sur un canal (email/slack/discord/telegram) |
-| `python3 /opt/blockhash-dashboard/backend/store.py dedup-list` | Liste les règles d'alerte actuellement en cooldown (voir 10.2.6) |
-| `python3 /opt/blockhash-dashboard/backend/store.py dedup-clear --rule-key "..."` | Réinitialise le cooldown d'une règle précise (ou de toutes, sans `--rule-key`) |
-| `sudo journalctl -u wg-quick@wg0 -f` puis `systemctl is-active wg-quick@wg0` | Vérifie l'état du service surveillé par la règle d'alerte "service down" |
-| `sudo python3 /opt/blockhash-dashboard/backend/wgops.py list-backups` | Liste les sauvegardes de `wg0.conf` (debug, sans passer par l'API) |
-| `sudo python3 /opt/blockhash-dashboard/backend/wgops.py backup --label pre-maintenance` | Crée une sauvegarde manuelle en CLI |
-| `python3 /opt/blockhash-dashboard/backend/reports.py preview-weekly` | Affiche le contenu du rapport hebdomadaire sans l'envoyer |
-| `sudo visudo -cf /etc/sudoers.d/blockhash-dashboard` | Valide la syntaxe de la règle sudoers (wgctl.py **et** wgops.py) avant de la recharger |
-| `python3 /opt/blockhash-dashboard/backend/store.py logs --limit 20 --search 51820` | Interroge le journal SQLite directement (debug, sans passer par l'API) |
-| `curl -sN http://localhost:8080/api/events/stream` | Suit le flux d'événements temps réel en direct dans le terminal |
-| `curl -s http://localhost:8080/healthz \| jq` | Vérifie l'état détaillé du service (wg show, base de métriques) |
-| `cd dashboard/backend && pytest` | Exécute la suite de tests automatisés (voir 10.5.7) |
+## 63. Hors périmètre assumé
 
----
+Ces choix sont **documentés et délibérés**, pas des oublis :
 
-## 12. Durcissement et bonnes pratiques de sécurité
-
-- **Restreindre les sources** : ne jamais laisser `adminSourceIp` en `*` en production ; limiter le SSH et le dashboard à des IP nommées ou à un VPN d'administration dédié.
-- **Rotation des clés** : régénérer les clés serveur/clients périodiquement (tous les 6-12 mois ou en cas de suspicion de compromission) - le bouton *Régénérer* du dashboard (ou `06-manage-client.sh regenerate`) automatise cette rotation pour un client donné.
-- **PSK (clé pré-partagée)** : toujours l'utiliser en complément des clés Curve25519 (résistance additionnelle post-quantique partielle)- déjà activé par défaut dans `02-add-client.sh` et dans `wgctl.py`.
-- **Authentification SSH par clé** : désactiver l'authentification par mot de passe une fois la VM opérationnelle (`PasswordAuthentication no` dans `/etc/ssh/sshd_config`).
-- **Mise à jour automatique** : activer `unattended-upgrades` sur la VM.
-- **Principe du moindre privilège** : un compte administrateur dédié par technicien, pas de partage de clé SSH.
-- **Sauvegarde** : sauvegarder `/etc/wireguard/` (hors clés privées client si politique stricte) et l'exporter vers un coffre-fort de secrets (Azure Key Vault).
-- **Surveillance** : envisager l'envoi des logs CSV vers Azure Monitor / Log Analytics pour alerting (ex. handshake absent depuis > 24h sur un peer critique).
-- **Élévation sudo du dashboard (`wgctl.py`)** : voir la discussion dédiée en section 10.1.1. Points clés à ne pas oublier lors d'un durcissement ultérieur :
-  - vérifier périodiquement que `dashboard/backend/wgctl.py` appartient bien à `root:root` (`ls -l /opt/blockhash-dashboard/backend/wgctl.py` doit afficher `-rwxr-x---` `root root`) ;
-  - si vous n'avez pas besoin de la gestion des clients depuis le web, repassez `CLIENT_MANAGEMENT_ENABLED=false` dans `/etc/blockhash/dashboard.env` et retirez la ligne `wgctl.py` de `/etc/sudoers.d/blockhash-dashboard` ;
-  - surveillez `/var/log/wireguard/expirations.log` et les logs `journalctl -u blockhash-dashboard` pour repérer un usage anormal (rafale de créations/révocations de clients, par exemple).
-- **Secrets d'alerting (`/etc/blockhash/alerts-config.json`)** : contient en clair le mot de passe SMTP, les URLs de webhook Slack/Discord et le jeton de bot Telegram si vous les configurez. Le fichier est `chmod 600` et appartient à `www-data` (voir 10.2.3) - ne l'ajoutez jamais à un dépôt Git ni à une sauvegarde non chiffrée sans le traiter comme un secret.
-- **Opérations système (`wgops.py`)** : mêmes précautions que pour `wgctl.py` (`root:root`, `chmod 750`, vérification périodique). Le rayon d'impact d'une compromission de `www-data` est ici plus large (redémarrage du service, rotation de clés) - envisagez de désactiver `SYSTEM_OPS_ENABLED` sur les déploiements où seule la lecture seule/la gestion des clients est nécessaire (voir 10.3.1).
-- **Registre multi-serveurs (`/etc/blockhash/servers.json`)** : contient les jetons d'API d'autres instances BLOCKHash en clair. Traitez-le comme un secret au même titre que `alerts-config.json` ; si un serveur distant n'a plus besoin d'être supervisé, retirez-le du registre plutôt que de laisser un jeton inutilisé trainer.
-
----
-
-## 13. Dépannage (Troubleshooting)
-
-| Symptôme | Cause probable | Solution |
+| Fonctionnalité | Statut | Raison |
 |---|---|---|
-| Le tunnel ne se connecte pas | Port UDP 51820 fermé | Vérifier NSG Azure + `ufw status` |
-| Connecté mais pas d'accès Internet | `ip_forward` désactivé ou règle NAT absente | `sysctl net.ipv4.ip_forward` doit renvoyer `1` ; vérifier `iptables -t nat -L` |
-| "Handshake did not complete" | Horloge système désynchronisée, clé publique erronée | `timedatectl` ; vérifier la correspondance des clés client/serveur |
-| Dashboard inaccessible | Port 8080 fermé ou service arrêté | `sudo systemctl status blockhash-dashboard` ; vérifier NSG/ufw |
-| Dashboard affiche "Mode démonstration" en continu | L'API `/api/overview` ne répond pas (service arrêté, permissions `wg show`) | `sudo journalctl -u blockhash-dashboard -f` ; vérifier `/etc/sudoers.d/blockhash-dashboard` |
-| Journal vide dans le dashboard alors que `wg show` fonctionne | Le script `04-logging-monitoring.sh` n'a pas encore tourné | Vérifier `/var/log/wireguard/tunnels.csv` et la tâche cron (`crontab -l`) |
-| Bannière "Gestion des clients indisponible" dans la vue Clients | `CLIENT_MANAGEMENT_ENABLED=false`, mode démonstration, ou règle sudoers `wgctl.py` absente | Vérifier `/etc/blockhash/dashboard.env` puis `sudo -u www-data sudo -n python3 /opt/blockhash-dashboard/backend/wgctl.py list` |
-| Erreur "Réponse invalide de wgctl.py" côté dashboard | Règle sudoers manquante/mal formée, ou `wgctl.py` non exécutable | `sudo visudo -cf /etc/sudoers.d/blockhash-dashboard` ; vérifier les permissions (`root:root`, `750`) sur `wgctl.py` |
-| Limite de bande passante enregistrée mais sans effet réel | `tc`/`ifb` a échoué côté noyau (`tc_applied: false`) | `sudo tc -s qdisc show dev wg0` ; vérifier que le module `ifb` est chargé (`lsmod \| grep ifb`) et que `iproute2` est installé |
-| Un client réactivé garde le statut "Jamais connecté" | Normal juste après la réactivation : `wg show` n'a pas encore vu de nouveau handshake | Attendre la prochaine tentative de connexion du client, ou forcer une reconnexion côté client |
-| Le graphique "historique long terme" (onglet Monitoring) reste vide | Le cron de capture (`04-logging-monitoring.sh`) n'a pas encore tourné 5 minutes, ou `store.py` absent (dashboard pas encore installé au moment de l'installation du logging) | Attendre le prochain cycle cron ; vérifier `python3 /opt/blockhash-dashboard/backend/store.py series --range 1h` |
-| Aucune alerte n'est jamais envoyée alors qu'une condition est clairement remplie | Alerting désactivé (`enabled: false` par défaut), ou canal non configuré | Activer l'interrupteur dans l'onglet Alertes ; vérifier `/var/log/wireguard/alerts.log` pour voir si le cron tourne |
-| Une alerte ne se redéclenche jamais après une résolution puis une nouvelle occurrence | Cooldown de dédup pas encore écoulé (voir `cooldowns_sec` dans la config, 10.2.4) | Onglet Alertes → *Règles actuellement en pause* → *Réinitialiser* (ou *Tout réinitialiser*) - voir 10.2.6. Passer par `sqlite3` en SSH n'est plus nécessaire |
-| `psutil non installé côté serveur` dans l'onglet Monitoring | `pip install -r requirements.txt` n'a pas installé `psutil` (échec de compilation, dépendances manquantes) | Vérifier `sudo $APP_DIR/venv/bin/pip show psutil` ; `apt install python3-dev gcc` puis réinstaller si besoin |
-| Test d'un canal d'alerte échoue avec une erreur réseau | Webhook/API bloqué par le pare-feu sortant, ou identifiants invalides | Vérifier la connectivité sortante de la VM (`curl -I <url_webhook>`) et les identifiants saisis |
-| Onglet Système affiche "opérations système désactivées" | `SYSTEM_OPS_ENABLED=false`, ou règle sudoers `wgops.py` absente | Vérifier `/etc/blockhash/dashboard.env` puis `sudo -u www-data sudo -n python3 /opt/blockhash-dashboard/backend/wgops.py list-backups` |
-| Rotation des clés échoue avec "Section [Interface] sans PrivateKey" | `wg0.conf` a été édité manuellement et ne suit plus le format attendu | Restaurer une sauvegarde connue (onglet Système) avant de relancer la rotation |
-| Après une rotation de clés, un client ne se reconnecte plus | Son `.conf` n'a pas été réimporté (nouvelle clé publique serveur) | Redistribuer le `.conf`/QR à jour depuis l'onglet Clients → *QR / Config* |
-| Export d'audit ou export PDF renvoie une erreur 502/500 | `fpdf2` non installé dans le venv, ou espace disque insuffisant sous `/tmp` | `sudo $APP_DIR/venv/bin/pip show fpdf2` ; vérifier `df -h /tmp` |
-| Rapport hebdomadaire jamais reçu bien qu'activé | Aucun serveur SMTP configuré dans l'onglet Alertes (le rapport réutilise ce canal) | Configurer et tester le canal e-mail dans Alertes, puis *Envoyer maintenant* depuis le rapport hebdomadaire |
-| Un serveur distant apparaît "injoignable" dans Multi-serveurs | URL incorrecte, jeton invalide, pare-feu entre les deux VM | Vérifier l'URL/le jeton, tester `curl -H "X-API-Token: ..." <url>/api/overview` depuis le serveur courant |
-| `/healthz` renvoie 503 | Un des sous-systèmes vérifiés est en panne (`wg show` ne répond pas, `wg0.conf` illisible, base de métriques inaccessible) | Regarder le détail dans `checks` de la réponse JSON pour cibler le bon sous-système |
-| Aucune notification de toast en temps réel, tout passe par le rafraîchissement 30s | Connexion SSE bloquée (proxy, ancien navigateur) ou pas assez de threads gunicorn | Vérifier `curl -sN http://localhost:8080/api/events/stream` ; vérifier que le service tourne bien avec `--worker-class gthread` (voir 10.5.3) |
-| Le dashboard répond très lentement dès que 2-3 onglets sont ouverts | Workers gunicorn saturés par des connexions SSE si `--worker-class gthread --threads` n'a pas été appliqué (mise à jour depuis une version antérieure) | Vérifier `systemctl cat blockhash-dashboard \| grep ExecStart`, réappliquer 03-install-dashboard.sh si besoin |
-| La carte des endpoints clients reste vide | Pas d'accès Internet sortant vers `ip-api.com`/`tile.openstreetmap.org`, ou tous les endpoints sont des IP privées | Tester `curl http://ip-api.com/json` depuis le serveur ; la carte reste vide par conception pour des endpoints privés (LAN, VPN imbriqué) |
-| Le menu mobile (hamburger) ne s'ouvre pas | JavaScript bloqué, ou largeur d'écran juste au-dessus du seuil de 720px | Vérifier la console navigateur ; le seuil est réglable dans `style.css` (`@media (max-width: 720px)`) |
-| IP dupliquée entre deux clients | Attribution manuelle en doublon | Toujours utiliser `02-add-client.sh` pour l'auto-incrémentation |
-| Logs vides dans `tunnels.csv` | Tâche cron non enregistrée | `crontab -l` / vérifier `/etc/crontab` ; relancer `04-logging-monitoring.sh` |
+| SSO / LDAP / Active Directory / OIDC | Non implémenté | Nécessiterait une intégration à un fournisseur d'identité externe, hors périmètre d'un projet auto-hébergé de cette taille |
+| Authentification à deux facteurs (2FA/TOTP) | Non implémenté | Techniquement compatible avec le modèle multi-utilisateurs actuel, mais volontairement reporté pour éviter de complexifier l'authentification avant sa stabilisation |
+| Internationalisation du contenu généré côté serveur | Partiel | Les messages d'alerte, le journal d'audit et les erreurs API restent en français ; seule l'interface statique est traduite (FR/EN) |
+| Vraie notification Web Push à grande échelle | Implémenté en best-effort | Repose sur le protocole standard (VAPID) sans infrastructure de file d'attente dédiée ; convient à un usage d'équipe, pas à des milliers d'abonnés |
+| Multi-tenant | Non implémenté | Le projet est conçu pour une organisation unique |
+
+## 64. Feuille de route
+
+- Authentification à deux facteurs (TOTP) pour les comptes admin.
+- Intégration SSO (OIDC a minima).
+- Rétention et purge automatique différenciées par type de donnée (au-delà du réglage global actuel).
+- Export/import chiffré de sauvegardes pour la reprise après sinistre cross-instance.
 
 ---
 
-## 14. Nettoyage / destruction du LAB
+# Annexes
 
-Pour éviter toute facturation Azure inutile après le TP :
+## 65. Glossaire
+
+| Terme | Définition |
+|---|---|
+| **Pair (peer)** | Toute extrémité d'un tunnel WireGuard, serveur ou client, identifiée par sa clé publique |
+| **Handshake** | Poignée de main cryptographique établissant un tunnel WireGuard |
+| **AllowedIPs** | Plage d'adresses IP qu'un pair est autorisé à envoyer/recevoir via le tunnel (cœur du Cryptokey Routing) |
+| **Forward secrecy** | Propriété garantissant que la compromission d'une clé à long terme ne compromet pas les communications passées |
+| **RBAC** | *Role-Based Access Control* — contrôle d'accès fondé sur des rôles |
+| **VAPID** | *Voluntary Application Server Identification* — mécanisme d'authentification des notifications Web Push |
+| **SSE** | *Server-Sent Events* — flux HTTP permettant au serveur de pousser des évènements en continu vers le navigateur |
+| **NSG** | *Network Security Group* — groupe de règles de pare-feu au niveau réseau Azure |
+
+## 66. Aide-mémoire des commandes
 
 ```bash
-cd terraform && terraform destroy -auto-approve
+# État général
+sudo systemctl status blockhash-dashboard wg-quick@wg0 caddy
+sudo wg show
+
+# Logs
+sudo journalctl -u blockhash-dashboard -f
+sudo tail -f /var/log/wireguard/audit.log
+
+# Gestion manuelle d'un client (hors dashboard)
+sudo /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/wgctl.py add --name alice
+sudo /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/wgctl.py revoke --name alice
+
+# Sauvegarde/restauration manuelle
+sudo /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/wgops.py backup --label manuel
+sudo /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/wgops.py list-backups
+
+# Tests backend
+cd dashboard/backend && DASHBOARD_TOKEN=test ALLOW_NO_AUTH=true python3 -m pytest tests/ -v
 ```
 
-<img width="906" height="127" alt="image" src="https://github.com/user-attachments/assets/7036fa90-b3f4-4b06-bb15-4da914d0fa24" />
+## 67. Licence
 
-
-Cette commande supprime l'intégralité des ressources (VM, disques, IP publique, NSG, VNet) gérées par l'état Terraform. Confirmez avec `yes` lorsque demandé.
-
----
-
-## 15. Annexe- Exercices pour les stagiaires
-
-1. Déployer l'infrastructure Azure avec un `vm_size` différent (`Standard_B1s`) via `terraform.tfvars` et mesurer l'impact sur les performances (`iperf3`).
-2. Créer 3 clients WireGuard et documenter, pour chacun, l'IP attribuée et la clé publique.
-3. Simuler une clé compromise : révoquer un client puis vérifier dans le dashboard que le peer a bien disparu.
-4. Modifier `wireguard_client_source_ip` dans `terraform.tfvars` pour restreindre l'accès WireGuard à une seule IP source, exécuter `terraform apply`, et constater l'effet côté client.
-7. Modifier la palette de couleurs du dashboard (`dashboard/frontend/css/style.css`) pour l'adapter à l'identité visuelle d'un client fictif, sans toucher au backend.
-5. Exporter le fichier `tunnels.csv` d'une session de 30 minutes et produire un petit rapport (tableur) du volume de données par client.
-6. (Avancé) Remplacer le split-tunneling par un tunnel complet (`AllowedIPs = 0.0.0.0/0`, déjà en place) puis basculer en split-tunneling (`AllowedIPs = 10.66.66.0/24`) et comparer le comportement.
+Ce projet est distribué sous licence **MIT**. Voir le fichier [`LICENSE`](./LICENSE) pour le texte complet.
 
 ---
 
-## 16. Licence et conditions de diffusion
+<div align="center">
 
-Ce LAB a été conçu par **BLOCKHash** comme support de formation professionnel.
+*Documentation maintenue au fil des évolutions du projet — dernière refonte complète incluant l'authentification multi-utilisateurs, les tokens API scopés, le moteur d'alertes étendu, les notifications Web Push, l'internationalisation et le centre de signalement.*
 
-- Les scripts et templates (`azure/`, `scripts/`) peuvent être adaptés librement pour un usage interne en entreprise.
-- Toute redistribution commerciale de ce support (revente du LAB en tant que produit de formation) doit conserver la mention **« Développé par BLOCKHash »** dans ce README, sauf accord contraire écrit avec BLOCKHash.
-- Ce support est fourni à titre pédagogique. BLOCKHash ne saurait être tenu responsable d'une mauvaise configuration réseau menant à une exposition non désirée d'un système en production- se référer systématiquement à la section 12 (Durcissement) avant tout déploiement réel.
-
----
-
-**BLOCKHash**- Formation & Cybersécurité
+</div>
