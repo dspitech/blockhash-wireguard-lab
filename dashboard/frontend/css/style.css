@@ -6,19 +6,19 @@
    ========================================================== */
 
 :root {
-  /* --- Palette "Sales BI" : sarcelle profonde + magenta, sur canvas clair --- */
-  --n0:  #eef2f4;
-  --n50: #e4e9ec;
+  /* --- Palette neutre, sobre : gris/blanc dominants, teal en accent restreint --- */
+  --n0:  #f6f7f8;
+  --n50: #eef0f2;
   --n100:#ffffff;
-  --n150:#f7f9fa;
-  --n200:#e2e8eb;
-  --n300:#cdd6da;
-  --n400:#a9b6bc;
-  --n500:#7d8e94;
-  --n600:#556269;
-  --n700:#33454c;
-  --n800:#1c333c;
-  --n900:#0e2229;
+  --n150:#fafbfc;
+  --n200:#e5e8eb;
+  --n300:#d0d5db;
+  --n400:#98a2ae;
+  --n500:#717d8a;
+  --n600:#4b5563;
+  --n700:#2f3947;
+  --n800:#1c2530;
+  --n900:#0e141b;
 
   --bg-canvas: var(--n0);
   --bg-surface: var(--n100);
@@ -30,23 +30,24 @@
   --text-secondary: var(--n700);
   --text-tertiary: var(--n600);
 
-  /* --- Identité de marque : sarcelle foncé fixe + magenta --- */
-  --teal-deep: #0e3a46;
-  --teal-deeper: #0a2c36;
-  --teal-mid: #12878a;
-  --teal-soft: #17a3a0;
+  /* --- Identité de marque : teal profond, employé avec parcimonie --- */
+  --teal-deep: #123c47;
+  --teal-deeper: #0d2e37;
+  --teal-mid: #2f8f8a;
+  --teal-soft: #59b3ac;
 
-  /* --- Accents fonctionnels, usage parcimonieux --- */
-  --accent: #ec1e79;
-  --accent-dim: rgba(236, 30, 121, 0.10);
-  --accent-strong: #c81665;
-  --success: #12878a;
-  --success-dim: rgba(18, 135, 138, 0.12);
-  --warning: #d98a12;
-  --warning-dim: rgba(217, 138, 18, 0.12);
-  --danger: #d13d3d;
-  --danger-dim: rgba(209, 61, 61, 0.10);
-  --neutral-dim: rgba(14, 34, 41, 0.06);
+  /* --- Accents fonctionnels, désaturés --- */
+  --accent: #1c5b63;
+  --accent-dim: rgba(28, 91, 99, 0.08);
+  --accent-strong: #123f45;
+  --success: #1a8a5c;
+  --success-dim: rgba(26, 138, 92, 0.10);
+  --warning: #b6740f;
+  --warning-dim: rgba(182, 116, 15, 0.10);
+  --danger: #c23b3b;
+  --danger-dim: rgba(194, 59, 59, 0.08);
+  --neutral-dim: rgba(14, 20, 27, 0.05);
+
 
   /* --- Typo --- */
   --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -65,9 +66,9 @@
 
   --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 999px;
 
-  --shadow-1: 0 1px 2px rgba(14,34,41,0.07);
-  --shadow-2: 0 4px 16px rgba(14,34,41,0.10);
-  --shadow-3: 0 16px 40px rgba(14,34,41,0.16);
+  --shadow-1: 0 1px 2px rgba(16,20,27,0.05);
+  --shadow-2: 0 2px 10px rgba(16,20,27,0.07);
+  --shadow-3: 0 12px 32px rgba(16,20,27,0.12);
 
   --topbar-h: 60px;
   --sidebar-w: 236px;
@@ -82,21 +83,21 @@
    sombre pour qui la préfère - tout le reste du fichier consomme ces
    tokens, rien d'autre à dupliquer. */
 :root[data-theme="dark"] {
-  --n0:  #071b21; --n50: #0a2129; --n100:#0e2a33; --n150:#123540;
-  --n200:#17414d; --n300:#235863; --n400:#3d7581; --n500:#6b939c;
-  --n600:#9db7bd; --n700:#c3d5d8; --n800:#e2edee; --n900:#f4f9fa;
+  --n0:  #0c1a1f; --n50: #0f2027; --n100:#13262d; --n150:#173139;
+  --n200:#1d3d45; --n300:#2c525b; --n400:#4d747d; --n500:#7d9ba1;
+  --n600:#a9c0c4; --n700:#cbdadc; --n800:#e6eeef; --n900:#f6fafa;
 
   --bg-canvas: var(--n0); --bg-surface: var(--n100); --bg-surface-raised: var(--n150);
   --bg-inset: var(--n50); --border-default: var(--n300); --border-subtle: var(--n200);
   --text-primary: var(--n900); --text-secondary: var(--n700); --text-tertiary: var(--n600);
 
-  --accent: #f0499a; --accent-dim: rgba(240,73,154,0.16); --accent-strong: #ec1e79;
-  --success: #2fd0c8; --success-dim: rgba(47,208,200,0.14);
-  --warning: #e6ac3c; --warning-dim: rgba(230,172,60,0.14);
-  --danger: #f0605f; --danger-dim: rgba(240,96,95,0.14);
-  --neutral-dim: rgba(157,183,189,0.14);
+  --accent: #4fb0a8; --accent-dim: rgba(79,176,168,0.16); --accent-strong: #2f8f8a;
+  --success: #3fbf86; --success-dim: rgba(63,191,134,0.14);
+  --warning: #d6a13c; --warning-dim: rgba(214,161,60,0.14);
+  --danger: #e26a69; --danger-dim: rgba(226,106,105,0.14);
+  --neutral-dim: rgba(169,192,196,0.12);
 
-  --shadow-1: 0 1px 2px rgba(0,0,0,0.28); --shadow-2: 0 4px 16px rgba(0,0,0,0.36); --shadow-3: 0 12px 40px rgba(0,0,0,0.46);
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.24); --shadow-2: 0 4px 16px rgba(0,0,0,0.32); --shadow-3: 0 12px 40px rgba(0,0,0,0.42);
 }
 
 * { box-sizing: border-box; }
@@ -139,37 +140,37 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 /* ---- Sidebar ---- */
 .sidebar {
   grid-area: sidebar;
-  /* Sarcelle foncé fixe, indépendant du thème clair/sombre du contenu -
-     c'est la marque de la console, pas une surface qui doit s'adapter. */
-  background: linear-gradient(180deg, var(--teal-deep), var(--teal-deeper));
-  border-right: 1px solid rgba(0,0,0,0.2);
+  /* Chrome clair et sobre, cohérent avec le canvas principal — le seul
+     accent de marque reste le disque du logo et l'état actif du nav. */
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.brand { border-bottom: 1px solid rgba(255,255,255,0.08); } /* box-model → @layer components (index.html) */
-.brand-mark { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(236,30,121,0.45); } /* box-model → @layer components */
-.brand-text strong { color: #fff; }
-.brand-text span { color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: .06em; }
+.brand { border-bottom: 1px solid var(--border-subtle); } /* box-model → @layer components (index.html) */
+.brand-mark { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(28,91,99,0.28); } /* box-model → @layer components */
+.brand-text strong { color: var(--text-primary); }
+.brand-text span { color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .06em; }
 .shell.is-collapsed .brand-text { display: none; }
 
-.nav-group-label { color: rgba(255,255,255,0.4); text-transform: uppercase; } /* box-model → @layer components */
+.nav-group-label { color: var(--n500); text-transform: uppercase; } /* box-model → @layer components */
 .shell.is-collapsed .nav-group-label { display: none; }
 .nav-item {
-  border: none; background: transparent; color: rgba(255,255,255,0.72);
+  border: none; background: transparent; color: var(--text-secondary);
   cursor: pointer; text-align: left;
   transition: background .12s var(--ease), color .12s var(--ease);
 } /* display/gap/padding/radius/taille/poids → @layer components */
-.nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
-.nav-item.is-active { background: rgba(236,30,121,0.18); color: #fff; font-weight: 600; }
+.nav-item:hover { background: var(--bg-inset); color: var(--text-primary); }
+.nav-item.is-active { background: var(--accent-dim); color: var(--accent-strong); font-weight: 600; }
 .nav-item.is-active svg { opacity: 1; color: var(--accent); }
 .nav-badge { background: var(--accent); color: #fff; } /* box-model → @layer components */
 .shell.is-collapsed .nav-item span:not(.nav-badge), .shell.is-collapsed .nav-item .nav-label { display: none; }
 
-.sidebar-footer { border-top: 1px solid rgba(255,255,255,0.08); } /* padding → @layer components */
-.conn-pill { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.75); } /* box-model → @layer components */
-.conn-pill .dot { background: rgba(255,255,255,0.4); } /* dimensions/radius → @layer components */
-.conn-pill.is-live .dot { background: var(--teal-soft); box-shadow: 0 0 0 3px rgba(23,163,160,0.3); animation: pulse-dot 2s infinite; }
+.sidebar-footer { border-top: 1px solid var(--border-subtle); } /* padding → @layer components */
+.conn-pill { background: var(--bg-inset); color: var(--text-secondary); } /* box-model → @layer components */
+.conn-pill .dot { background: var(--n400); } /* dimensions/radius → @layer components */
+.conn-pill.is-live .dot { background: var(--teal-soft); box-shadow: 0 0 0 3px rgba(89,179,172,0.3); animation: pulse-dot 2s infinite; }
 .conn-pill.is-demo .dot { background: var(--warning); }
 .conn-pill.is-down .dot { background: var(--danger); }
 @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
@@ -178,17 +179,17 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 /* ---- Topbar ---- */
 .topbar {
   grid-area: topbar;
-  background: linear-gradient(180deg, var(--teal-deep), var(--teal-deeper));
-  border-bottom: 3px solid var(--accent);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
 } /* display/gap/padding → @layer components */
-.topbar-title { font-weight: 700; letter-spacing: -0.01em; color: #fff; } /* taille → @layer components */
-.topbar-sub { color: rgba(255,255,255,0.6); } /* taille → @layer components */
+.topbar-title { font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); } /* taille → @layer components */
+.topbar-sub { color: var(--text-tertiary); } /* taille → @layer components */
 .icon-btn { /* dimensions/radius/display : voir @layer components (index.html) */
-  border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.85);
+  border: 1px solid var(--border-default); background: var(--bg-surface);
+  color: var(--text-tertiary);
   cursor: pointer; transition: all .12s var(--ease);
 }
-.icon-btn:hover { color: #fff; border-color: var(--accent); background: rgba(236,30,121,0.15); }
+.icon-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 .icon-btn svg { width: 16px; height: 16px; }
 
 .row-actions .icon-btn.sm { border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-tertiary); } /* dimensions → @layer components */
@@ -209,16 +210,17 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .field-grid .field { min-width: 0; }
 @media (max-width: 520px) { .field-grid { grid-template-columns: 1fr; } }
 .topbar-search {
-  background: #fff; border: 1px solid rgba(255,255,255,0.4);
+  background: var(--bg-inset); border: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
 } /* display/gap/padding/radius/largeur/taille → @layer components */
-.topbar-search svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--n600); }
+.topbar-search:focus-within { border-color: var(--accent); background: var(--bg-surface); }
+.topbar-search svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--n500); }
 .topbar-search input { border: none; background: transparent; outline: none; color: var(--n900); width: 100%; font-family: inherit; }
 .topbar-spacer { flex: 1; }
 .env-badge {
   font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
-  background: rgba(255,255,255,0.1); color: #fff;
-  border: 1px solid rgba(255,255,255,0.25);
+  background: var(--bg-inset); color: var(--text-secondary);
+  border: 1px solid var(--border-default);
 } /* taille/padding/radius → @layer components */
 
 /* ---- Main ---- */
@@ -480,8 +482,8 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   background-size: 160% 160%; background-position: 0% 0%;
 }
-.btn.primary:hover { background-position: 100% 100%; box-shadow: 0 6px 18px rgba(236,30,121,0.35); transform: translateY(-1px); }
-.btn.primary:active { transform: translateY(0) scale(0.97); box-shadow: 0 2px 8px rgba(236,30,121,0.3); }
+.btn.primary:hover { background-position: 100% 100%; box-shadow: 0 4px 12px rgba(28,91,99,0.28); transform: translateY(-1px); }
+.btn.primary:active { transform: translateY(0) scale(0.97); box-shadow: 0 2px 6px rgba(28,91,99,0.25); }
 .btn.danger:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(209,61,61,0.18); }
 /* Onde lumineuse au clic (ripple léger, sans JS) */
 .btn::before {

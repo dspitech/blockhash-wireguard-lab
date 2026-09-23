@@ -1038,7 +1038,7 @@ function renderStatusDonut(peers) {
   const buckets = { online: 0, idle: 0, never: 0, disabled: 0 };
   peers.forEach(p => { buckets[peerStatus(p)] = (buckets[peerStatus(p)] || 0) + 1; });
   const labels = { online: "En ligne", idle: "Inactif", never: "Jamais connecté", disabled: "Désactivé" };
-  const colors = { online: "#12878a", idle: "#d98a12", never: "#a9b6bc", disabled: "#ec1e79" };
+  const colors = { online: "#1a8a5c", idle: "#b6740f", never: "#98a2ae", disabled: "#1c5b63" };
   const keys = Object.keys(buckets).filter(k => buckets[k] > 0);
 
   document.getElementById("status-donut-total").textContent = `${peers.length} au total`;
@@ -1103,8 +1103,8 @@ function renderThroughputChart(series) {
   const rx = series.map(p => p.rx_bytes ?? p.rx ?? 0);
   const tx = series.map(p => p.tx_bytes ?? p.tx ?? 0);
   buildLineChart("chart-throughput", labels, [
-    { label: "Rx", data: rx, color: "#0e3a46" },
-    { label: "Tx", data: tx, color: "#ec1e79" },
+    { label: "Rx", data: rx, color: "#123c47" },
+    { label: "Tx", data: tx, color: "#1c5b63" },
   ]);
 }
 
@@ -2020,8 +2020,8 @@ async function renderLongTermChart() {
         : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
     });
     buildLineChart("chart-longterm", labels, [
-      { label: "Rx", data: series.map(p => p.rx_bytes ?? p.rx ?? 0), color: "#0e3a46" },
-      { label: "Tx", data: series.map(p => p.tx_bytes ?? p.tx ?? 0), color: "#ec1e79" },
+      { label: "Rx", data: series.map(p => p.rx_bytes ?? p.rx ?? 0), color: "#123c47" },
+      { label: "Tx", data: series.map(p => p.tx_bytes ?? p.tx ?? 0), color: "#1c5b63" },
     ]);
   } catch (err) { toast("danger", "Débit indisponible", err.message); }
 }
@@ -2094,7 +2094,7 @@ async function renderGeoipMap() {
     points.forEach(pt => {
       if (pt.lat === undefined || pt.lon === undefined) return;
       const marker = L.circleMarker([pt.lat, pt.lon], {
-        radius: 6, color: "#ec1e79", fillColor: "#ec1e79", fillOpacity: 0.6, weight: 1.5,
+        radius: 6, color: "#1c5b63", fillColor: "#1c5b63", fillOpacity: 0.6, weight: 1.5,
       }).bindTooltip(`${pt.name || pt.peer_name || "Client"} — ${pt.city || pt.country || ""}`);
       marker.addTo(STATE.map);
       STATE.mapMarkers.push(marker);
