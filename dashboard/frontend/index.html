@@ -175,6 +175,10 @@
         <span class="nav-label" data-i18n="nav.alerts">Alertes</span>
         <span class="nav-badge" id="nav-alert-badge" hidden>0</span>
       </button>
+      <button class="nav-item" data-view="provisioning" data-role-min="admin">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="6" r="2.4" stroke="currentColor" stroke-width="1.5"/><path d="M3.2 16c0-2.6 1.7-4.3 3.8-4.3s3.8 1.7 3.8 4.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 6h4M15 4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span class="nav-label">Provisioning</span>
+      </button>
 
       <div class="nav-group-label" data-i18n="nav.group.platform">Plateforme</div>
       <button class="nav-item" data-view="compliance">
@@ -450,7 +454,7 @@
           </div>
 
           <div id="bulk-tab-import" hidden>
-            <p class="cell-muted" style="margin-bottom:8px;">Colonnes attendues : <code>nom, prenom, email, telephone, adresse, fonction, expires_days</code>.</p>
+            <p class="cell-muted" style="margin-bottom:8px;">Colonnes attendues (mêmes champs que le formulaire « Ajouter un client ») : <code>nom, prenom, fonction, email, telephone, adresse, tags, notes, rgpd_consent, expires_days</code>. Seule la colonne <code>nom</code> est obligatoire.</p>
             <button class="btn ghost sm" id="btn-download-template" data-i18n="btn.btn-download-template">Télécharger le modèle CSV</button>
             <input type="file" id="bulk-file-input" accept=".csv" style="margin-top:10px;display:block;" />
           </div>
@@ -594,25 +598,42 @@
 
     <!-- ---------- ALERTES ---------- -->
     <section class="view" id="view-alerts">
-      <div class="view-header">
-        <div><h1 data-i18n="view.alerts.title">Alertes</h1><p data-i18n="view.alerts.subtitle">Règles, canaux de notification et historique</p></div>
-        <div class="view-actions">
-          <button class="btn ghost sm" id="btn-alerts-export" data-i18n="btn.btn-alerts-export">Exporter CSV</button>
-          <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/></svg>Configurer les canaux</button>
+      <div class="tw-page-header">
+        <h1 class="tw-h1" data-i18n="view.alerts.title">Alertes</h1>
+        <p class="tw-subtitle" data-i18n="view.alerts.subtitle">Règles, canaux de notification et historique</p>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-end gap-2 mb-4">
+        <button class="btn ghost sm" id="btn-alerts-export" data-i18n="btn.btn-alerts-export">Exporter CSV</button>
+        <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/></svg>Configurer les canaux</button>
+      </div>
+
+      <div class="tw-card mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+          <div>
+            <label class="tw-label">Sévérité</label>
+            <select class="tw-select" id="alerts-filter-severity">
+              <option value="">Toute sévérité</option>
+              <option value="critical">Critique</option>
+              <option value="warning">Avertissement</option>
+              <option value="info">Info</option>
+            </select>
+          </div>
+          <div>
+            <label class="tw-label">Client</label>
+            <input class="tw-input" id="alerts-filter-client" placeholder="Filtrer par client…" />
+          </div>
+          <div>
+            <label class="tw-label">Règle</label>
+            <input class="tw-input" id="alerts-filter-rule" placeholder="ex. inactive, bandwidth…" />
+          </div>
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="alerts-filter-archived" /> Voir aussi les archivées
+          </label>
         </div>
       </div>
-      <div class="filters-bar">
-        <select class="select" id="alerts-filter-severity">
-          <option value="">Toute sévérité</option>
-          <option value="critical">Critique</option>
-          <option value="warning">Avertissement</option>
-          <option value="info">Info</option>
-        </select>
-        <input class="input" id="alerts-filter-client" placeholder="Filtrer par client…" style="width:180px;" />
-        <input class="input" id="alerts-filter-rule" placeholder="Filtrer par règle (ex. inactive, bandwidth…)" style="width:220px;" />
-        <label class="field-inline"><input type="checkbox" id="alerts-filter-archived" /> Voir aussi les archivées</label>
-      </div>
-      <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
+
+      <div class="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div class="card">
           <div class="card-header"><h3 data-i18n="h3.historique">Historique</h3></div>
           <div class="table-wrap overflow-x-auto -mx-1">
@@ -639,6 +660,105 @@
         </div>
       </div>
     </section>
+
+    <!-- ---------- PROVISIONING (annuaire) ---------- -->
+    <section class="view" id="view-provisioning">
+      <div class="tw-page-header">
+        <h1 class="tw-h1">Provisioning</h1>
+        <p class="tw-subtitle">Générer des clients VPN depuis un annuaire d'entreprise (Phase 1 — voir README)</p>
+      </div>
+
+      <div class="flex gap-2 mb-4" role="tablist">
+        <button class="btn ghost sm is-active" data-prov-tab="sources" id="prov-tab-sources">Sources</button>
+        <button class="btn ghost sm" data-prov-tab="explorer" id="prov-tab-explorer">Explorer</button>
+        <button class="btn ghost sm" data-prov-tab="jobs" id="prov-tab-jobs">Jobs &amp; historique</button>
+      </div>
+
+      <!-- Onglet Sources -->
+      <div id="prov-panel-sources">
+        <div class="flex justify-end mb-3">
+          <button class="btn primary sm" id="btn-prov-add-source">+ Ajouter une source</button>
+        </div>
+        <div id="prov-sources-list" class="stack"></div>
+      </div>
+
+      <!-- Onglet Explorer -->
+      <div id="prov-panel-explorer" hidden>
+        <div class="tw-card mb-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div>
+              <label class="tw-label">Source</label>
+              <select class="tw-select" id="prov-explorer-source"></select>
+            </div>
+            <div>
+              <label class="tw-label">Recherche</label>
+              <input class="tw-input" id="prov-explorer-search" placeholder="Nom, login, email…" />
+            </div>
+            <button class="btn" id="btn-prov-explorer-search">Rechercher</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrap overflow-x-auto -mx-1">
+            <table class="data-table" id="table-prov-users">
+              <thead><tr><th><input type="checkbox" id="prov-select-all" /></th><th>Login</th><th>Nom</th><th>Email</th><th>Statut VPN</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="filters-bar" style="justify-content:space-between;">
+            <span class="cell-muted" id="prov-explorer-count">0 utilisateur</span>
+            <button class="btn primary sm" id="btn-prov-preview" disabled>Aperçu (dry-run) →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglet Jobs -->
+      <div id="prov-panel-jobs" hidden>
+        <div class="card">
+          <div class="card-header"><h3>Jobs de provisioning</h3></div>
+          <div id="prov-jobs-list" class="stack" style="padding:0 var(--sp-4) var(--sp-4);"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal : ajouter une source d'annuaire -->
+    <div class="modal-overlay" id="modal-prov-source">
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header"><h3>Ajouter une source d'annuaire</h3><button class="icon-btn" data-close-modal>✕</button></div>
+        <div class="modal-body">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Nom</label>
+              <input class="tw-input" id="prov-src-name" placeholder="AD local" />
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Type</label>
+              <select class="tw-select" id="prov-src-type"></select>
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Hôte LDAP</label>
+              <input class="tw-input" id="prov-src-host" placeholder="ad.entreprise.local" />
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Base DN</label>
+              <input class="tw-input" id="prov-src-basedn" placeholder="DC=entreprise,DC=local" />
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Bind DN</label>
+              <input class="tw-input" id="prov-src-binddn" placeholder="CN=svc-blockhash,CN=Users,DC=entreprise,DC=local" />
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label">Variable d'environnement (mot de passe)</label>
+              <input class="tw-input" id="prov-src-secretenv" placeholder="AD_BIND_PASSWORD_AD_LOCAL" />
+              <p class="tw-hint">Le mot de passe lui-même n'est jamais saisi ici : définissez cette variable dans l'environnement du service (voir README).</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" data-close-modal>Annuler</button>
+          <button class="btn primary" id="btn-prov-src-save">Créer</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ---------- CONFORMITÉ ---------- -->
     <section class="view" id="view-compliance">
@@ -1083,30 +1203,72 @@
 
 <!-- ============ MODALS ============ -->
 <div class="modal-overlay" id="modal-client">
-  <div class="modal" style="max-width:520px;">
+  <div class="modal" style="max-width:760px;">
     <div class="modal-header"><h3 id="modal-client-title" data-i18n="h3.ajouter-un-client">Ajouter un client</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div class="modal-body">
-      <div class="form-section">
-        <div class="form-section-title">Identité</div>
-        <div class="field"><label data-i18n="label.nom-du-client">Nom du client</label><input class="input" id="field-client-name" placeholder="ex. alice-laptop" /></div>
-        <div class="field-grid">
-          <div class="field"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input class="input" id="field-client-prenom" placeholder="ex. Alice Martin" /></div>
-          <div class="field"><label data-i18n="label.fonction">Fonction</label><input class="input" id="field-client-fonction" placeholder="ex. Technicienne" /></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+
+        <!-- Colonne gauche : identité & configuration -->
+        <div>
+          <div class="tw-settings-section-header" style="margin-bottom:10px;">
+            <div><h2 class="tw-h2">Identité</h2><p class="tw-p-muted">Nom technique du pair et informations de la personne</p></div>
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.nom-du-client">Nom du client <span style="color:var(--danger, #dc2626);">*</span></label>
+            <input class="tw-input" id="field-client-name" placeholder="ex. alice-laptop" />
+            <p class="tw-hint">Identifiant technique unique du pair WireGuard (pas d'espaces).</p>
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.prenom-nom-complet">Prénom / nom complet</label>
+            <input class="tw-input" id="field-client-prenom" placeholder="ex. Alice Martin" />
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.fonction">Fonction</label>
+            <input class="tw-input" id="field-client-fonction" placeholder="ex. Technicienne" />
+          </div>
+
+          <div class="tw-settings-section-header" style="margin:18px 0 10px;">
+            <div><h2 class="tw-h2">Configuration</h2><p class="tw-p-muted">Cycle de vie de l'accès</p></div>
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par virgule)</label>
+            <input class="tw-input" id="field-client-tags" placeholder="vip, audit" />
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.date-d-expiration-optionnel">Date d'expiration</label>
+            <input class="tw-input" type="date" id="field-client-expires" />
+            <p class="tw-hint">Laisser vide pour un accès sans expiration.</p>
+          </div>
+          <div class="field">
+            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <input type="checkbox" id="field-client-rgpd-consent" /> Consentement RGPD recueilli
+            </label>
+          </div>
         </div>
-      </div>
-      <div class="form-section">
-        <div class="form-section-title">Contact &amp; configuration</div>
-        <div class="field-grid">
-          <div class="field"><label data-i18n="label.email">Email</label><input class="input" type="email" id="field-client-email" placeholder="alice@example.com" /></div>
-          <div class="field"><label data-i18n="label.telephone">Téléphone</label><input class="input" id="field-client-telephone" placeholder="+33612345678" /></div>
+
+        <!-- Colonne droite : contact -->
+        <div>
+          <div class="tw-settings-section-header" style="margin-bottom:10px;">
+            <div><h2 class="tw-h2">Contact</h2><p class="tw-p-muted">Coordonnées de la personne, facultatives</p></div>
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.email">Email</label>
+            <input class="tw-input" type="email" id="field-client-email" placeholder="alice@example.com" />
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.telephone">Téléphone</label>
+            <input class="tw-input" id="field-client-telephone" placeholder="+33612345678" />
+          </div>
+          <div class="field" style="margin-bottom:12px;">
+            <label class="tw-label" data-i18n="label.adresse">Adresse</label>
+            <input class="tw-input" id="field-client-adresse" placeholder="12 rue de Paris, 75001 Paris" />
+          </div>
+          <div class="field">
+            <label class="tw-label" data-i18n="label.notes">Notes</label>
+            <textarea class="tw-textarea" id="field-client-notes" rows="5" style="width:100%;"></textarea>
+          </div>
         </div>
-        <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input" id="field-client-adresse" placeholder="12 rue de Paris, 75001 Paris" /></div>
-        <div class="field-grid">
-          <div class="field"><label data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par virgule)</label><input class="input" id="field-client-tags" placeholder="vip, audit" /></div>
-          <div class="field"><label data-i18n="label.date-d-expiration-optionnel">Date d'expiration</label><input class="input" type="date" id="field-client-expires" /></div>
-        </div>
-        <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-client-notes" rows="2" style="width:100%;"></textarea></div>
-        <div class="field"><label><input type="checkbox" id="field-client-rgpd-consent" /> Consentement RGPD recueilli</label></div>
+
       </div>
     </div>
     <div class="modal-footer">
@@ -1156,8 +1318,8 @@
 </div>
 
 <div class="modal-overlay" id="modal-alert-config">
-  <div class="modal">
-    <div class="modal-header"><h3 data-i18n="h3.canaux-de-notification">Canaux de notification</h3><button class="icon-btn" data-close-modal>✕</button></div>
+  <div class="modal" style="max-width:820px;width:820px;">
+    <div class="modal-header"><h3 data-i18n="h3.canaux-de-notification">Configuration des alertes</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div class="modal-body" id="alert-config-body"></div>
     <div class="modal-footer">
       <button class="btn" data-close-modal data-i18n="btn.cancel">Annuler</button>

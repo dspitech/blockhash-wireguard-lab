@@ -34,6 +34,12 @@ if ($confirm -eq "o" -or $confirm -eq "O") {
 
   Write-Host "`n=== INFORMATIONS DE CONNEXION ===" -ForegroundColor Green
   terraform output
+
+  Write-Host "`n=== ACCES AU DASHBOARD BLOCKHash ===" -ForegroundColor Green
+  Write-Host ("Lien      : " + (terraform output -raw dashboard_url))
+  Write-Host ("Identifiant : " + (terraform output -raw dashboard_username))
+  Write-Host ("Mot de passe : " + (terraform output -raw dashboard_password))
+  Write-Host "`n(certificat auto-signe : votre navigateur demandera une confirmation la premiere fois)" -ForegroundColor Yellow
 }
 else {
   Write-Host "Deploiement annule." -ForegroundColor Yellow

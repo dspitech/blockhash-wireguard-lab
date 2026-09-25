@@ -20,9 +20,9 @@ variable "subnet_address_prefix" {
   default     = "10.10.0.0/24"
 }
 
-variable "admin_source_ip" {
-  description = "CIDR IP autorisé pour le SSH et le dashboard d'administration"
-  type        = string
+variable "admin_source_ips" {
+  description = "Liste de CIDR IP autorisés pour le SSH et le dashboard d'administration (IP de l'opérateur + IP de la machine qui exécute 'terraform apply', pour que le provisioning SSH automatisé fonctionne quel que soit l'endroit d'où Terraform est lancé)"
+  type        = list(string)
 }
 
 variable "wireguard_client_source_ip" {

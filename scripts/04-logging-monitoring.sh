@@ -8,6 +8,12 @@
 # =========================================================
 set -euo pipefail
 
+# Defense en profondeur (voir terraform/modules/compute/cloud-init.yaml.tpl) :
+# force le mode non-interactif d'apt/needrestart, au cas ou ce script serait
+# execute manuellement en dehors du cloud-init qui les configure deja.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 WG_IF="wg0"
 LOG_DIR="/var/log/wireguard"
 LOG_FILE="$LOG_DIR/tunnels.csv"

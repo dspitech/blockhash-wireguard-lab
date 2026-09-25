@@ -49,6 +49,8 @@ ADMIN_ONLY_PREFIXES = (
     "/api/reports/weekly-config",
     "/api/reports/weekly-send",
     "/api/push/test",
+    "/api/directory",
+    "/api/provision",
 )
 ADMIN_ONLY_EXACT_PATCH = {"/api/alerts/config", "/api/compliance/policies", "/api/settings"}
 

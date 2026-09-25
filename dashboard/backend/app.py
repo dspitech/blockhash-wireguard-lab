@@ -36,22 +36,27 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, g, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, g, jsonify, make_response, request, send_file, send_from_directory
 from werkzeug.security import check_password_hash
 
 import alerts
 import anomalies
 import auth
+import directory_store
 import geoip
+import provisioning
 import reports
 import servers_store
 import settings_store
 import store
 import system_monitor
+from directory.base import DirectoryConnectorError
+from directory.factory import get_connector, roadmap_types, supported_types
 try:
     import webpush
     WEBPUSH_AVAILABLE = True
@@ -1202,6 +1207,8 @@ def api_clients_bulk_add():
             continue
         try:
             contact = {f: (row.get(f) or "").strip() or None for f in CONTACT_FIELDS}
+            if "rgpd_consent" in row and str(row.get("rgpd_consent")).strip() != "":
+                contact["rgpd_consent"] = "true" if str(row["rgpd_consent"]).strip().lower() in ("true", "1", "oui", "yes") else "false"
             result = run_wgctl("add", name=raw_name, expires_days=row.get("expires_days"), **contact)
             created.append({"row": i + 1, "name": raw_name, "allowed_ips": result.get("allowed_ips")})
         except WgctlError as exc:
@@ -1212,9 +1219,13 @@ def api_clients_bulk_add():
 
 @app.get("/api/clients/import-template")
 def api_clients_import_template():
-    header = "nom,prenom,email,telephone,adresse,fonction,expires_days"
-    example = "jdupont,Jean Dupont,jean.dupont@example.com,+33612345678,\"12 rue de Paris, 75001 Paris\",Technicien,365"
-    csv_text = header + "\n" + example + "\n"
+    # Colonnes alignees sur les champs du formulaire "Ajouter un client" du
+    # frontend (identite + contact + configuration), pour que le modele CSV
+    # permette de renseigner exactement les memes informations qu'a la main.
+    header = "nom,prenom,fonction,email,telephone,adresse,tags,notes,rgpd_consent,expires_days"
+    example1 = "jdupont,Jean Dupont,Technicien,jean.dupont@example.com,+33612345678,\"12 rue de Paris, 75001 Paris\",\"vip,audit\",\"Poste fixe - bureau 214\",true,365"
+    example2 = "amartin,Alice Martin,Responsable IT,alice.martin@example.com,+33698765432,,\"externe\",,false,90"
+    csv_text = header + "\n" + example1 + "\n" + example2 + "\n"
     return Response(
         csv_text,
         mimetype="text/csv",
@@ -1694,6 +1705,509 @@ def api_compliance():
 
     results.sort(key=lambda r: (r["days_inactive"] is None, r["days_inactive"] or 0), reverse=True)
     return jsonify({"generated_at": datetime.now(tz=timezone.utc).isoformat(), "clients": results})
+
+
+# ------------------------------------------------------------------
+# Provisioning VPN depuis un annuaire (Phase 1 - voir README, section
+# "Provisioning VPN depuis un annuaire", pour le perimetre livre et la
+# feuille de route). Toutes les routes /api/directory/* et
+# /api/provision/* sont reservees au role admin (voir auth.ADMIN_ONLY_PREFIXES).
+# ------------------------------------------------------------------
+_provisioning_jobs_lock = threading.Lock()
+
+
+def _connector_for_source(source_row):
+    if not source_row:
+        raise WgctlError("Source d'annuaire introuvable.", status=404)
+    if not source_row.get("enabled"):
+        raise WgctlError("Cette source d'annuaire est desactivee.", status=409)
+    try:
+        config = json.loads(source_row["config_json"])
+    except json.JSONDecodeError:
+        raise WgctlError("Configuration de source corrompue.", status=500)
+    password = directory_store.resolve_secret(source_row)
+    try:
+        return get_connector(source_row["type"], config, password)
+    except DirectoryConnectorError as exc:
+        raise WgctlError(str(exc), status=502)
+
+
+def _source_public(row):
+    """Ne renvoie jamais config_json/secret_env_var bruts au client - juste
+    les champs utiles a l'UI, adaptes au type de source (les champs LDAP
+    n'ont pas de sens pour Graph/Google Workspace et inversement)."""
+    try:
+        config = json.loads(row["config_json"])
+    except json.JSONDecodeError:
+        config = {}
+    type_ = row["type"]
+    if type_ == "graph":
+        identity = {"tenant_id": config.get("tenant_id"), "client_id": config.get("client_id")}
+    elif type_ == "google_workspace":
+        identity = {"admin_email": config.get("admin_email"), "customer_id": config.get("customer_id")}
+    else:
+        identity = {"host": config.get("host"), "base_dn": config.get("base_dn")}
+    return {
+        "id": row["id"], "name": row["name"], "type": type_,
+        **identity,
+        "enabled": bool(row["enabled"]), "read_only": bool(row["read_only"]),
+        "quota_max": row["quota_max"], "quota_used": row["quota_used"] if "quota_used" in row.keys() else None,
+        "last_test_at": row["last_test_at"], "last_test_ok": (None if row["last_test_ok"] is None else bool(row["last_test_ok"])),
+        "last_test_error": row["last_test_error"],
+        "created_at": row["created_at"], "updated_at": row["updated_at"],
+    }
+
+
+def _validate_source_config(type_, config):
+    """Champs obligatoires selon le type - voir les docstrings des
+    connecteurs pour le detail de chaque champ."""
+    if type_ == "graph":
+        missing = [f for f in ("tenant_id", "client_id") if not config.get(f)]
+        if missing:
+            raise WgctlError(f"Configuration Microsoft Graph incomplete : {', '.join(missing)} obligatoire(s).", status=422)
+    elif type_ == "google_workspace":
+        missing = [f for f in ("admin_email", "service_account_key_path") if not config.get(f)]
+        if missing:
+            raise WgctlError(f"Configuration Google Workspace incomplete : {', '.join(missing)} obligatoire(s).", status=422)
+    else:
+        missing = [f for f in ("host", "base_dn") if not config.get(f)]
+        if missing:
+            raise WgctlError(f"Configuration LDAP incomplete : {', '.join(missing)} obligatoire(s).", status=422)
+
+
+@app.get("/api/directory/types")
+def api_directory_types():
+    return jsonify({"available": supported_types(), "roadmap": roadmap_types()})
+
+
+@app.get("/api/directory/sources")
+def api_directory_sources_list():
+    return jsonify([_source_public(r) for r in directory_store.list_sources()])
+
+
+@app.post("/api/directory/sources")
+def api_directory_sources_create():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    type_ = (body.get("type") or "").strip()
+    if not name:
+        raise WgctlError("Le nom de la source est obligatoire.", status=422)
+    if type_ not in directory_store.VALID_SOURCE_TYPES:
+        raise WgctlError(f"Type de source invalide (attendus : {', '.join(directory_store.VALID_SOURCE_TYPES)}).", status=422)
+    config = {k: v for k, v in (body.get("config") or {}).items() if k != "bind_password"}
+    _validate_source_config(type_, config)
+
+    # Le mot de passe de bind, s'il est fourni a la creation, est ecrit dans
+    # le fichier d'environnement du service (jamais dans config_json/la base
+    # SQLite) - voir README section configuration. En l'absence d'ecriture
+    # de fichier possible depuis ce process (www-data non privilegie), on
+    # attend une variable deja injectee par l'operateur et on se contente de
+    # memoriser son NOM.
+    secret_env_var = body.get("secret_env_var") or f"AD_BIND_PASSWORD_{re.sub(r'[^A-Za-z0-9]', '_', name).upper()}"
+    try:
+        source_id = directory_store.create_source(name, type_, config, secret_env_var=secret_env_var,
+                                                    read_only=bool(body.get("read_only", False)),
+                                                    quota_max=body.get("quota_max"))
+    except Exception as exc:  # nom deja pris, etc.
+        raise WgctlError(f"Impossible de creer la source : {exc}", status=409)
+    audit("directory_source_created", name=name, type=type_)
+    return jsonify(_source_public(directory_store.get_source(source_id))), 201
+
+
+@app.get("/api/directory/sources/<source_id>")
+def api_directory_source_get(source_id):
+    row = directory_store.get_source(source_id)
+    if not row:
+        raise WgctlError("Source introuvable.", status=404)
+    return jsonify(_source_public(row))
+
+
+@app.patch("/api/directory/sources/<source_id>")
+def api_directory_source_update(source_id):
+    row = directory_store.get_source(source_id)
+    if not row:
+        raise WgctlError("Source introuvable.", status=404)
+    body = request.get_json(silent=True) or {}
+    fields = {}
+    if "name" in body:
+        fields["name"] = (body["name"] or "").strip()
+    if "config" in body:
+        current = json.loads(row["config_json"])
+        current.update({k: v for k, v in body["config"].items() if k != "bind_password"})
+        fields["config_json"] = json.dumps(current)
+    if "enabled" in body:
+        fields["enabled"] = int(bool(body["enabled"]))
+    if "read_only" in body:
+        fields["read_only"] = int(bool(body["read_only"]))
+    if "quota_max" in body:
+        fields["quota_max"] = body["quota_max"]
+    directory_store.update_source(source_id, **fields)
+    audit("directory_source_updated", source_id=source_id)
+    return jsonify(_source_public(directory_store.get_source(source_id)))
+
+
+@app.delete("/api/directory/sources/<source_id>")
+def api_directory_source_delete(source_id):
+    if not directory_store.get_source(source_id):
+        raise WgctlError("Source introuvable.", status=404)
+    directory_store.delete_source(source_id)
+    audit("directory_source_deleted", source_id=source_id)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/directory/sources/<source_id>/test")
+def api_directory_source_test(source_id):
+    row = directory_store.get_source(source_id)
+    connector = _connector_for_source(row)
+    result = connector.test_connection()
+    directory_store.record_test_result(source_id, result["ok"], result["detail"])
+    audit("directory_source_tested", source_id=source_id, ok=result["ok"])
+    return jsonify(result)
+
+
+@app.get("/api/directory/<source_id>/users")
+def api_directory_users(source_id):
+    connector = _connector_for_source(directory_store.get_source(source_id))
+    try:
+        result = connector.list_users(
+            search=request.args.get("search"),
+            page=int(request.args.get("page", 1)),
+            page_size=min(int(request.args.get("page_size", 50)), 200),
+        )
+    except DirectoryConnectorError as exc:
+        raise WgctlError(str(exc), status=502)
+    mapped = directory_store.get_provisioning_map(source_id)
+    return jsonify({
+        "total": result.total, "page": result.page, "page_size": result.page_size,
+        "items": [
+            {**vars(u), "vpn_client_name": mapped.get(u.id)}
+            for u in result.items
+        ],
+    })
+
+
+@app.get("/api/directory/<source_id>/groups")
+def api_directory_groups(source_id):
+    connector = _connector_for_source(directory_store.get_source(source_id))
+    try:
+        groups = connector.list_groups(search=request.args.get("search", ""))
+    except DirectoryConnectorError as exc:
+        raise WgctlError(str(exc), status=502)
+    return jsonify([vars(g) for g in groups])
+
+
+@app.get("/api/directory/<source_id>/ous")
+def api_directory_ous(source_id):
+    connector = _connector_for_source(directory_store.get_source(source_id))
+    try:
+        ous = connector.list_ous()
+    except DirectoryConnectorError as exc:
+        raise WgctlError(str(exc), status=502)
+    return jsonify([vars(o) for o in ous])
+
+
+def _resolve_provision_selection(connector, mode, selection):
+    try:
+        return provisioning.resolve_selection(connector, mode, selection)
+    except ValueError as exc:
+        raise WgctlError(str(exc), status=422)
+    except DirectoryConnectorError as exc:
+        raise WgctlError(str(exc), status=502)
+
+
+@app.post("/api/provision/preview")
+def api_provision_preview():
+    body = request.get_json(silent=True) or {}
+    source_id = body.get("source_id")
+    mode = body.get("mode", "manual")
+    selection = body.get("selection") or {}
+    options = body.get("options") or {}
+
+    connector = _connector_for_source(directory_store.get_source(source_id))
+    users = _resolve_provision_selection(connector, mode, selection)
+    existing_names = {p["name"] for p in load_live_peers()}
+    already_mapped = directory_store.get_provisioning_map(source_id)
+    plan = provisioning.preview(users, existing_names, already_mapped, options)
+    return jsonify(plan)
+
+
+@app.post("/api/provision/execute")
+def api_provision_execute():
+    if not CLIENT_MANAGEMENT_ENABLED:
+        raise ClientManagementDisabled()
+    body = request.get_json(silent=True) or {}
+    source_id = body.get("source_id")
+    mode = body.get("mode", "manual")
+    selection = body.get("selection") or {}
+    options = body.get("options") or {}
+
+    source_row = directory_store.get_source(source_id)
+    if source_row and source_row.get("read_only"):
+        raise WgctlError("Cette source est en mode lecture seule (dry-run permanent) : le provisioning est desactive.", status=409)
+
+    connector = _connector_for_source(source_row)
+    users = _resolve_provision_selection(connector, mode, selection)
+    if not users:
+        raise WgctlError("Selection vide : aucun utilisateur a provisionner.", status=422)
+    try:
+        provisioning.check_quota(source_row, len(users))
+    except ValueError as exc:
+        raise WgctlError(str(exc), status=409)
+
+    actor = g.current_user["username"] if hasattr(g, "current_user") else "unknown"
+    existing_names = {p["name"] for p in load_live_peers()}
+    already_mapped = directory_store.get_provisioning_map(source_id)
+    job_id = directory_store.create_job(source_id, mode, options, total=len(users), actor=actor)
+
+    def _notify(jid, stats):
+        # E4 - reutilise integralement alerts.py (canaux deja configures) -
+        # apparait donc aussi dans l'historique des alertes existant.
+        cfg = alerts.load_config()
+        if not cfg.get("enabled"):
+            return
+        level = "critical" if stats["failed"] and not stats["succeeded"] else ("warning" if stats["failed"] else "info")
+        subject = f"Provisioning {jid} termine"
+        message = (f"Source : {source_row['name']}. {stats['succeeded']} crees, {stats['skipped']} ignores, "
+                   f"{stats['failed']} echoues (sur {stats['total']}).")
+        alerts.dispatch(cfg, subject, message, level=level, rule_key="provisioning_complete", peer_name=None)
+
+    def _worker():
+        with _provisioning_jobs_lock:
+            try:
+                provisioning.run_job(job_id, users, existing_names, already_mapped, options, actor,
+                                      source_id, mode, run_wgctl, directory_store, notify_fn=_notify)
+            except Exception as exc:  # noqa: BLE001 - un job ne doit jamais planter le thread silencieusement
+                directory_store.update_job(job_id, status="failed", error=str(exc)[:500], finished_at=int(time.time()))
+
+    threading.Thread(target=_worker, daemon=True).start()
+    audit("provision_job_started", job_id=job_id, source_id=source_id, mode=mode, total=len(users))
+    return jsonify(directory_store.get_job(job_id)), 202
+
+
+@app.get("/api/provision/jobs")
+def api_provision_jobs_list():
+    return jsonify(directory_store.list_jobs(limit=int(request.args.get("limit", 50))))
+
+
+@app.get("/api/provision/jobs/<job_id>")
+def api_provision_job_get(job_id):
+    job = directory_store.get_job(job_id)
+    if not job:
+        raise WgctlError("Job introuvable.", status=404)
+    return jsonify(job)
+
+
+@app.get("/api/provision/jobs/<job_id>/log")
+def api_provision_job_log(job_id):
+    if not directory_store.get_job(job_id):
+        raise WgctlError("Job introuvable.", status=404)
+    return jsonify(directory_store.list_log_for_job(job_id))
+
+
+@app.post("/api/provision/jobs/<job_id>/rollback")
+def api_provision_job_rollback(job_id):
+    """E3 - revoque tous les clients crees par ce job. Necessite une
+    confirmation textuelle explicite (voir cahier des charges, section E3)."""
+    if not CLIENT_MANAGEMENT_ENABLED:
+        raise ClientManagementDisabled()
+    job = directory_store.get_job(job_id)
+    if not job:
+        raise WgctlError("Job introuvable.", status=404)
+    if job["status"] not in ("done", "failed"):
+        raise WgctlError("Le rollback n'est possible que sur un job termine.", status=409)
+    body = request.get_json(silent=True) or {}
+    if body.get("confirm") != "ROLLBACK":
+        raise WgctlError("Confirmation manquante : envoyez {\"confirm\": \"ROLLBACK\"} pour confirmer.", status=422)
+
+    actor = g.current_user["username"] if hasattr(g, "current_user") else "unknown"
+    result = provisioning.rollback_job(job_id, job["source_id"], actor, run_wgctl, directory_store)
+    audit("provision_job_rolled_back", job_id=job_id, revoked=len(result["revoked"]), failed=len(result["failed"]))
+    return jsonify(result)
+
+
+@app.get("/api/provision/jobs/<job_id>/report.pdf")
+def api_provision_job_report_pdf(job_id):
+    """E15 - rapport PDF du job (en plus du CSV implicite via /log)."""
+    job = directory_store.get_job(job_id)
+    if not job:
+        raise WgctlError("Job introuvable.", status=404)
+    logs = directory_store.list_log_for_job(job_id)
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise WgctlError("Generation PDF indisponible (fpdf2 non installe).", status=500)
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, f"Rapport de provisioning - {job_id}", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 8, f"Source : {job['source_id']} - Mode : {job['mode']} - Lance par : {job['started_by']}", ln=True)
+    pdf.cell(0, 8, f"Succes : {job['succeeded']} - Ignores : {job['skipped']} - Echecs : {job['failed']} (total {job['total']})", ln=True)
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(60, 8, "Utilisateur", border=1)
+    pdf.cell(60, 8, "Client", border=1)
+    pdf.cell(30, 8, "Action", border=1)
+    pdf.cell(0, 8, "Motif", border=1, ln=True)
+    pdf.set_font("Helvetica", "", 9)
+    for entry in logs:
+        pdf.cell(60, 7, str(entry["user_id"])[:35], border=1)
+        pdf.cell(60, 7, str(entry["client_name"])[:35], border=1)
+        pdf.cell(30, 7, entry["action"], border=1)
+        pdf.cell(0, 7, (entry["reason"] or "-")[:60], border=1, ln=True)
+
+    import hashlib
+    pdf_bytes = pdf.output()
+    digest = hashlib.sha256(bytes(pdf_bytes)).hexdigest()[:16]
+    resp = make_response(bytes(pdf_bytes))
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'attachment; filename="provisioning-{job_id}.pdf"'
+    resp.headers["X-Report-SHA256"] = digest
+    return resp
+
+
+# --------------------------------------------------------- politiques (E1/E12)
+@app.get("/api/directory/<source_id>/policies")
+def api_directory_policies_list(source_id):
+    return jsonify(directory_store.list_policies(source_id))
+
+
+@app.post("/api/directory/<source_id>/policies")
+def api_directory_policies_create(source_id):
+    body = request.get_json(silent=True) or {}
+    group_id = body.get("group_id")
+    name = body.get("name")
+    if not group_id or not name:
+        raise WgctlError("'group_id' et 'name' sont obligatoires.", status=422)
+    pid = directory_store.create_policy(
+        source_id, group_id, name, template=body.get("template", "{login}"),
+        expires_days=body.get("expires_days"), tags=body.get("tags"), dynamic_tags=body.get("dynamic_tags"),
+    )
+    audit("directory_policy_created", source_id=source_id, group_id=group_id)
+    return jsonify({"id": pid}), 201
+
+
+@app.delete("/api/directory/<source_id>/policies/<policy_id>")
+def api_directory_policy_delete(source_id, policy_id):
+    directory_store.delete_policy(policy_id)
+    audit("directory_policy_deleted", policy_id=policy_id)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/directory/<source_id>/policies/<policy_id>/simulate")
+def api_directory_policy_simulate(source_id, policy_id):
+    """E12 - montre ce qu'une politique produirait sur les membres actuels
+    du groupe associe, sans rien executer ni enregistrer."""
+    policies = directory_store.list_policies(source_id)
+    policy = next((p for p in policies if p["id"] == policy_id), None)
+    if not policy:
+        raise WgctlError("Politique introuvable.", status=404)
+    connector = _connector_for_source(directory_store.get_source(source_id))
+    users = connector.get_group_members(policy["group_id"])
+    existing_names = {p["name"] for p in load_live_peers()}
+    already_mapped = directory_store.get_provisioning_map(source_id)
+    options = {
+        "template": policy["template"],
+        "expires_days": policy["expires_days"],
+        "extra_tag": ",".join(json.loads(policy["tags_json"] or "[]")),
+        "dynamic_tags": json.loads(policy["dynamic_tags_json"] or "[]"),
+    }
+    return jsonify(provisioning.preview(users, existing_names, already_mapped, options))
+
+
+# --------------------------------------------------- orphelins & réconciliation (E9/E10)
+@app.get("/api/directory/<source_id>/orphans")
+def api_directory_orphans(source_id):
+    return jsonify(directory_store.list_orphans(source_id))
+
+
+@app.post("/api/directory/reconcile")
+def api_directory_reconcile():
+    body = request.get_json(silent=True) or {}
+    source_id, user_id, client_name = body.get("source_id"), body.get("user_id"), body.get("client_name")
+    if not (source_id and user_id and client_name):
+        raise WgctlError("'source_id', 'user_id' et 'client_name' sont obligatoires.", status=422)
+    if client_name not in {p["name"] for p in load_live_peers()}:
+        raise WgctlError(f"Client VPN introuvable : {client_name}", status=404)
+    actor = g.current_user["username"] if hasattr(g, "current_user") else "unknown"
+    directory_store.reconcile(source_id, user_id, client_name, actor)
+    audit("directory_reconciled", source_id=source_id, user_id=user_id, client_name=client_name)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/directory/reconcile/<client_name>")
+def api_directory_dissociate(client_name):
+    directory_store.dissociate_by_client_name(client_name)
+    audit("directory_dissociated", client_name=client_name)
+    return jsonify({"ok": True})
+
+
+# --------------------------------------------------------- synchronisation (E11/F12/F13)
+@app.post("/api/directory/<source_id>/sync")
+def api_directory_sync(source_id):
+    """F12/F13 - synchronisation manuelle immediate (la synchronisation
+    periodique automatique via cron reste sur la feuille de route, voir
+    README ; cette route peut deja etre appelee depuis une tache cron
+    existante en attendant)."""
+    if not CLIENT_MANAGEMENT_ENABLED:
+        raise ClientManagementDisabled()
+    source_row = directory_store.get_source(source_id)
+    if source_row and source_row.get("read_only"):
+        raise WgctlError("Cette source est en mode lecture seule : la synchronisation est desactivee.", status=409)
+    connector = _connector_for_source(source_row)
+    body = request.get_json(silent=True) or {}
+    options = body.get("options") or {}
+    actor = g.current_user["username"] if hasattr(g, "current_user") else "unknown"
+
+    sync_id = directory_store.create_sync_history(source_id)
+    try:
+        mapped = directory_store.get_provisioning_map(source_id)
+        current_users = connector.list_users(page=1, page_size=options.get("max_results", 5000)).items
+        diff = provisioning.run_sync(source_id, connector, mapped, current_users, options, actor, run_wgctl, directory_store)
+        directory_store.finish_sync_history(
+            sync_id, "done", added=len(diff["added"]), disabled=len(diff["disabled"]), errors=len(diff["errors"]), diff=diff,
+        )
+        audit("directory_synced", source_id=source_id, added=len(diff["added"]), disabled=len(diff["disabled"]))
+        return jsonify(diff)
+    except Exception as exc:
+        directory_store.finish_sync_history(sync_id, "failed", diff={"error": str(exc)[:300]})
+        raise
+
+
+@app.get("/api/directory/<source_id>/sync/history")
+def api_directory_sync_history(source_id):
+    return jsonify(directory_store.list_sync_history(source_id, limit=int(request.args.get("limit", 20))))
+
+
+# ------------------------------------------------------- import/export (E5)
+@app.post("/api/directory/sources/<source_id>/export")
+def api_directory_source_export(source_id):
+    row = directory_store.get_source(source_id)
+    if not row:
+        raise WgctlError("Source introuvable.", status=404)
+    # Jamais de secret exporte : ni le mot de passe (pas stocke ici de toute
+    # facon), ni meme le NOM de la variable d'environnement, pour eviter
+    # de reveler le schema de nommage des secrets d'un environnement a l'autre.
+    return jsonify({
+        "name": row["name"], "type": row["type"], "config": json.loads(row["config_json"]),
+        "read_only": bool(row["read_only"]), "quota_max": row["quota_max"],
+    })
+
+
+@app.post("/api/directory/sources/import")
+def api_directory_source_import():
+    body = request.get_json(silent=True) or {}
+    name, type_, config = body.get("name"), body.get("type"), body.get("config") or {}
+    if not name or type_ not in directory_store.VALID_SOURCE_TYPES:
+        raise WgctlError("Fichier d'import invalide (name/type manquants ou type inconnu).", status=422)
+    _validate_source_config(type_, config)
+    source_id = directory_store.create_source(
+        name, type_, config, secret_env_var=body.get("secret_env_var"),
+        read_only=bool(body.get("read_only", False)), quota_max=body.get("quota_max"),
+    )
+    audit("directory_source_imported", name=name, type=type_)
+    return jsonify(_source_public(directory_store.get_source(source_id))), 201
 
 
 # ------------------------------------------------------------------

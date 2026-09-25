@@ -17,9 +17,9 @@ resource "azurerm_network_security_group" "this" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = var.admin_source_ip
+    source_address_prefixes    = var.admin_source_ips
     destination_address_prefix = "*"
-    description                = "Acces SSH restreint a l IP d administration"
+    description                = "Acces SSH restreint aux IP d administration (operateur + machine de deploiement Terraform)"
   }
 
   security_rule {
@@ -51,9 +51,9 @@ resource "azurerm_network_security_group" "this" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = tostring(var.dashboard_tls_port)
-    source_address_prefix      = var.admin_source_ip
+    source_address_prefixes    = var.admin_source_ips
     destination_address_prefix = "*"
-    description                = "Dashboard BLOCKHash (HTTPS/Caddy) - restreint a l IP d administration"
+    description                = "Dashboard BLOCKHash (HTTPS/Caddy) - restreint aux IP d administration"
   }
 
   security_rule {

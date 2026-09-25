@@ -62,6 +62,7 @@ def wg_env(tmp_path, monkeypatch):
     monkeypatch.setenv("CLIENT_MANAGEMENT_ENABLED", "false")
     monkeypatch.setenv("SYSTEM_OPS_ENABLED", "false")
     monkeypatch.setenv("DASHBOARD_TOKEN", "")
+    monkeypatch.setenv("ALLOW_NO_AUTH", "true")
 
     return {
         "tmp_path": tmp_path,
@@ -99,7 +100,8 @@ def fresh_modules():
     monkeypatchent les variables d'environnement APRES le premier import
     fait par un test precedent, il faut recharger ces modules pour que
     les nouveaux chemins soient pris en compte a chaque test."""
-    names = ["wgstate", "store", "settings_store", "alerts", "reports", "servers_store", "system_monitor", "auth", "webpush", "app"]
+    names = ["wgstate", "store", "settings_store", "alerts", "reports", "servers_store", "system_monitor",
+             "auth", "webpush", "directory_store", "provisioning", "app"]
     for name in list(sys.modules):
         if name in names:
             del sys.modules[name]

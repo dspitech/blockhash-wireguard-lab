@@ -238,6 +238,7 @@ const VIEW_TITLES = {
   overview: "Vue d'ensemble", clients: "Clients", journal: "Journal des connexions",
   monitoring: "Monitoring", alerts: "Alertes", compliance: "Conformité",
   system: "Système", settings: "Réglages", users: "Utilisateurs", tokens: "Tokens API", help: "Aide", audit: "Journal d'audit",
+  provisioning: "Provisioning",
   "report-bug": "Signaler un problème", "bug-inbox": "Signalements", "help-detail": "Aide",
 };
 
@@ -257,6 +258,7 @@ function loadView(view) {
     case "journal": renderJournal(); return renderJournalHeatmap();
     case "monitoring": return renderMonitoring();
     case "alerts": return renderAlerts();
+    case "provisioning": return renderProvisioning();
     case "compliance": return renderCompliance();
     case "system": renderSystem(); return renderAuditPreview();
     case "audit": return renderAudit();
@@ -1797,10 +1799,13 @@ function collectBulkRows() {
   return _bulkParsedRows.map(r => ({
     name: r.nom || r.name,
     prenom: r.prenom,
+    fonction: r.fonction,
     email: r.email,
     telephone: r.telephone,
     adresse: r.adresse,
-    fonction: r.fonction,
+    tags: r.tags,
+    notes: r.notes,
+    rgpd_consent: r.rgpd_consent,
     expires_days: r.expires_days ? parseInt(r.expires_days, 10) : undefined,
   }));
 }
@@ -2283,47 +2288,175 @@ document.getElementById("btn-alert-config").addEventListener("click", async () =
 });
 
 function renderAlertConfigForm(cfg) {
-  const c = cfg || { enabled: false, rules: { inactive_days: 7, service_down: true, connect_disconnect: true }, channels: { email: {}, telegram: {} } };
+  const c = cfg || {
+    enabled: false,
+    rules: { inactive_days: 7, service_down: true, connect_disconnect: true },
+    channels: { email: {}, telegram: {} },
+  };
+  const r = c.rules || {};
+  const ch = c.channels || {};
+  const email = ch.email || {};
+  const telegram = ch.telegram || {};
+
   document.getElementById("alert-config-body").innerHTML = `
-    <div class="field"><label><input type="checkbox" id="cfg-enabled" ${c.enabled ? "checked" : ""} /> Activer les alertes automatiques</label></div>
-    <div class="field"><label><input type="checkbox" id="cfg-connect-disconnect" ${c.rules?.connect_disconnect !== false ? "checked" : ""} /> Alerter à chaque connexion / déconnexion d'un client</label></div>
-    <div class="field"><label><input type="checkbox" id="cfg-off-hours" ${c.rules?.off_hours?.enabled ? "checked" : ""} /> Alerter si connexion hors plage horaire</label>
-      <div style="display:flex;gap:8px;margin-top:6px;">
-        <input class="input" type="time" id="cfg-off-hours-start" value="${c.rules?.off_hours?.start || "22:00"}" style="width:120px;" />
-        <span class="cell-muted" style="align-self:center;">à</span>
-        <input class="input" type="time" id="cfg-off-hours-end" value="${c.rules?.off_hours?.end || "06:00"}" style="width:120px;" />
-      </div></div>
-    <div class="field"><label><input type="checkbox" id="cfg-failed-auth" ${c.rules?.failed_auth_attempts !== false ? "checked" : ""} /> Alerter sur tentatives d'authentification échouées répétées</label></div>
-    <div class="field"><label><input type="checkbox" id="cfg-new-ip" ${c.rules?.new_ip !== false ? "checked" : ""} /> Alerter si un client se connecte depuis une IP jamais vue</label></div>
-    <div class="field"><label>Expiration client — alerter N jours avant (0 = désactivé)</label>
-      <input class="input" type="number" min="0" id="cfg-client-expiry-days" value="${c.rules?.client_expiry_days ?? 3}" style="max-width:120px;" /></div>
-    <div class="field"><label>Maximum d'alertes envoyées par heure (0 = illimité)</label>
-      <input class="input" type="number" min="0" id="cfg-max-per-hour" value="${c.max_alerts_per_hour ?? 0}" style="max-width:120px;" /></div>
-    <div class="field"><label>Seuil CPU (%) — vide pour désactiver</label>
-      <input class="input" type="number" min="1" max="100" id="cfg-cpu-threshold" value="${c.rules?.cpu_percent_threshold ?? ""}" style="max-width:120px;" /></div>
-    <div class="field"><label>Seuil disque (%) — vide pour désactiver</label>
-      <input class="input" type="number" min="1" max="100" id="cfg-disk-threshold" value="${c.rules?.disk_percent_threshold ?? ""}" style="max-width:120px;" /></div>
-    <div class="field"><label><input type="checkbox" id="cfg-service-down" ${c.rules?.service_down !== false ? "checked" : ""} /> Alerter si le service WireGuard tombe</label></div>
-    <div class="field"><label>Inactivité (jours) avant alerte — 0 pour désactiver</label>
-      <input class="input" id="cfg-inactive-days" type="number" min="0" value="${c.rules?.inactive_days ?? 7}" /></div>
-    <div class="field"><label>Webhook Slack</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="checkbox" id="cfg-slack-enabled" ${c.channels?.slack_enabled !== false ? "checked" : ""} title="Activer ce canal" />
-        <input class="input" id="cfg-slack" placeholder="https://hooks.slack.com/…" value="${escapeHtml(c.channels?.slack_webhook_url || "")}" />
-        <button class="btn ghost sm" data-test-channel="slack">Tester</button>
-      </div></div>
-    <div class="field"><label>Webhook Discord</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="checkbox" id="cfg-discord-enabled" ${c.channels?.discord_enabled !== false ? "checked" : ""} title="Activer ce canal" />
-        <input class="input" id="cfg-discord" placeholder="https://discord.com/api/webhooks/…" value="${escapeHtml(c.channels?.discord_webhook_url || "")}" />
-        <button class="btn ghost sm" data-test-channel="discord">Tester</button>
-      </div></div>
-    <div class="field"><label>E-mail destinataire</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="checkbox" id="cfg-email-enabled" ${c.channels?.email?.enabled ? "checked" : ""} title="Activer ce canal" />
-        <input class="input" id="cfg-email-to" placeholder="ops@exemple.com" value="${escapeHtml(c.channels?.email?.to_addr || "")}" />
-        <button class="btn ghost sm" data-test-channel="email">Tester</button>
-      </div></div>`;
+    <div class="tw-settings-section" style="margin-bottom:20px;">
+      <div class="tw-settings-section-header">
+        <div><h2 class="tw-h2">Général</h2><p class="tw-p-muted">Activation globale et limite d'envoi</p></div>
+      </div>
+      <div class="tw-card">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-enabled" ${c.enabled ? "checked" : ""} /> Activer les alertes automatiques
+          </label>
+          <div>
+            <label class="tw-label">Maximum d'alertes envoyées par heure</label>
+            <input class="tw-input" type="number" min="0" id="cfg-max-per-hour" value="${c.max_alerts_per_hour ?? 0}" />
+            <p class="tw-hint">0 = illimité.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-settings-section" style="margin-bottom:20px;">
+      <div class="tw-settings-section-header">
+        <div><h2 class="tw-h2">Règles de déclenchement</h2><p class="tw-p-muted">Quels événements génèrent une alerte</p></div>
+      </div>
+      <div class="tw-card">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-connect-disconnect" ${r.connect_disconnect !== false ? "checked" : ""} /> Connexion / déconnexion d'un client
+          </label>
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-service-down" ${r.service_down !== false ? "checked" : ""} /> Service WireGuard interrompu
+          </label>
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-failed-auth" ${r.failed_auth_attempts !== false ? "checked" : ""} /> Tentatives d'authentification échouées répétées
+          </label>
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-new-ip" ${r.new_ip !== false ? "checked" : ""} /> Connexion depuis une IP jamais vue
+          </label>
+          <div>
+            <label class="tw-label">Inactivité (jours) avant alerte</label>
+            <input class="tw-input" id="cfg-inactive-days" type="number" min="0" value="${r.inactive_days ?? 7}" />
+            <p class="tw-hint">0 pour désactiver.</p>
+          </div>
+          <div>
+            <label class="tw-label">Expiration client — alerte N jours avant</label>
+            <input class="tw-input" type="number" min="0" id="cfg-client-expiry-days" value="${r.client_expiry_days ?? 3}" />
+            <p class="tw-hint">0 pour désactiver.</p>
+          </div>
+          <div>
+            <label class="tw-label">Seuil CPU (%)</label>
+            <input class="tw-input" type="number" min="1" max="100" id="cfg-cpu-threshold" value="${r.cpu_percent_threshold ?? ""}" />
+            <p class="tw-hint">Vide pour désactiver.</p>
+          </div>
+          <div>
+            <label class="tw-label">Seuil disque (%)</label>
+            <input class="tw-input" type="number" min="1" max="100" id="cfg-disk-threshold" value="${r.disk_percent_threshold ?? ""}" />
+            <p class="tw-hint">Vide pour désactiver.</p>
+          </div>
+          <div class="md:col-span-2">
+            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;">
+              <input type="checkbox" id="cfg-off-hours" ${r.off_hours?.enabled ? "checked" : ""} /> Alerter si connexion hors plage horaire
+            </label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="tw-input" type="time" id="cfg-off-hours-start" value="${r.off_hours?.start || "22:00"}" style="max-width:140px;" />
+              <span class="tw-p-muted">à</span>
+              <input class="tw-input" type="time" id="cfg-off-hours-end" value="${r.off_hours?.end || "06:00"}" style="max-width:140px;" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-settings-section">
+      <div class="tw-settings-section-header">
+        <div><h2 class="tw-h2">Canaux de notification</h2><p class="tw-p-muted">Où envoyer les alertes déclenchées</p></div>
+      </div>
+
+      <div class="tw-card" style="margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
+            <input type="checkbox" id="cfg-email-enabled" ${email.enabled ? "checked" : ""} /> E-mail (SMTP)
+          </label>
+          <button class="btn ghost sm" data-test-channel="email">Tester</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <div>
+            <label class="tw-label">Serveur SMTP (hôte)</label>
+            <input class="tw-input" id="cfg-smtp-host" placeholder="smtp.example.com" value="${escapeHtml(email.smtp_host || "")}" />
+          </div>
+          <div>
+            <label class="tw-label">Port</label>
+            <input class="tw-input" type="number" id="cfg-smtp-port" placeholder="587" value="${escapeHtml(String(email.smtp_port ?? 587))}" />
+          </div>
+          <div>
+            <label class="tw-label">Utilisateur SMTP</label>
+            <input class="tw-input" id="cfg-smtp-user" placeholder="apikey ou compte SMTP" value="${escapeHtml(email.smtp_user || "")}" />
+          </div>
+          <div>
+            <label class="tw-label">Mot de passe SMTP</label>
+            <input class="tw-input" type="password" id="cfg-smtp-password" placeholder="••••••••" value="${escapeHtml(email.smtp_password || "")}" />
+            <p class="tw-hint">Laisser inchangé (masqué) pour conserver le mot de passe déjà enregistré.</p>
+          </div>
+          <div>
+            <label class="tw-label">Adresse d'expédition (From)</label>
+            <input class="tw-input" type="email" id="cfg-smtp-from" placeholder="alertes@example.com" value="${escapeHtml(email.from_addr || "")}" />
+          </div>
+          <div>
+            <label class="tw-label">Adresse destinataire (To)</label>
+            <input class="tw-input" type="email" id="cfg-email-to" placeholder="ops@exemple.com" value="${escapeHtml(email.to_addr || "")}" />
+          </div>
+          <label class="tw-p-muted md:col-span-2" style="display:flex;align-items:center;gap:8px;font-size:13px;">
+            <input type="checkbox" id="cfg-smtp-tls" ${email.use_tls !== false ? "checked" : ""} /> Utiliser STARTTLS
+          </label>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="tw-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
+              <input type="checkbox" id="cfg-slack-enabled" ${ch.slack_enabled !== false ? "checked" : ""} /> Slack
+            </label>
+            <button class="btn ghost sm" data-test-channel="slack">Tester</button>
+          </div>
+          <label class="tw-label">Webhook</label>
+          <input class="tw-input" id="cfg-slack" placeholder="https://hooks.slack.com/…" value="${escapeHtml(ch.slack_webhook_url || "")}" />
+        </div>
+
+        <div class="tw-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
+              <input type="checkbox" id="cfg-discord-enabled" ${ch.discord_enabled !== false ? "checked" : ""} /> Discord
+            </label>
+            <button class="btn ghost sm" data-test-channel="discord">Tester</button>
+          </div>
+          <label class="tw-label">Webhook</label>
+          <input class="tw-input" id="cfg-discord" placeholder="https://discord.com/api/webhooks/…" value="${escapeHtml(ch.discord_webhook_url || "")}" />
+        </div>
+
+        <div class="tw-card md:col-span-2">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
+              <input type="checkbox" id="cfg-telegram-enabled" ${telegram.enabled !== false ? "checked" : ""} /> Telegram
+            </label>
+            <button class="btn ghost sm" data-test-channel="telegram">Tester</button>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <label class="tw-label">Jeton du bot (bot token)</label>
+              <input class="tw-input" id="cfg-telegram-token" placeholder="123456:ABC-DEF…" value="${escapeHtml(telegram.bot_token || "")}" />
+            </div>
+            <div>
+              <label class="tw-label">Chat ID</label>
+              <input class="tw-input" id="cfg-telegram-chat" placeholder="-100123456789" value="${escapeHtml(telegram.chat_id || "")}" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
   document.querySelectorAll("[data-test-channel]").forEach(btn => btn.addEventListener("click", async () => {
     const channel = btn.dataset.testChannel;
     btn.disabled = true;
@@ -2360,7 +2493,21 @@ document.getElementById("btn-save-alert-config").addEventListener("click", async
       slack_enabled: document.getElementById("cfg-slack-enabled").checked,
       discord_webhook_url: document.getElementById("cfg-discord").value.trim(),
       discord_enabled: document.getElementById("cfg-discord-enabled").checked,
-      email: { to_addr: document.getElementById("cfg-email-to").value.trim(), enabled: document.getElementById("cfg-email-enabled").checked },
+      telegram: {
+        bot_token: document.getElementById("cfg-telegram-token").value.trim(),
+        chat_id: document.getElementById("cfg-telegram-chat").value.trim(),
+        enabled: document.getElementById("cfg-telegram-enabled").checked,
+      },
+      email: {
+        enabled: document.getElementById("cfg-email-enabled").checked,
+        smtp_host: document.getElementById("cfg-smtp-host").value.trim(),
+        smtp_port: parseInt(document.getElementById("cfg-smtp-port").value, 10) || 587,
+        smtp_user: document.getElementById("cfg-smtp-user").value.trim(),
+        smtp_password: document.getElementById("cfg-smtp-password").value,
+        use_tls: document.getElementById("cfg-smtp-tls").checked,
+        from_addr: document.getElementById("cfg-smtp-from").value.trim(),
+        to_addr: document.getElementById("cfg-email-to").value.trim(),
+      },
     },
   };
   try {
@@ -2810,4 +2957,219 @@ async function maybeShowDesktopNotification(title, body) {
     if (!settings.desktop_notifications_enabled) return;
     if (Notification.permission === "granted") new Notification(title, { body });
   } catch { /* best effort, ne doit jamais casser le flux SSE */ }
+}
+// ---------------------------------------------------------------
+// Provisioning VPN depuis un annuaire (Phase 1 - voir README section
+// "Provisioning VPN depuis un annuaire" pour le perimetre livre et la
+// feuille de route). Toutes les routes /api/directory/* et
+// /api/provision/* sont reservees au role admin.
+// ---------------------------------------------------------------
+const PROV_STATE = { sources: [], selectedSource: null, users: [], selectedUserIds: new Set() };
+
+function renderProvisioning() {
+  if (STATE.demoMode) {
+    document.getElementById("prov-sources-list").innerHTML =
+      `<p class="cell-muted">Provisioning indisponible en mode démonstration (nécessite une API connectée).</p>`;
+    return;
+  }
+  setupProvTabs();
+  loadProvSources();
+}
+
+function setupProvTabs() {
+  if (setupProvTabs._done) return;
+  setupProvTabs._done = true;
+  document.querySelectorAll("[data-prov-tab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-prov-tab]").forEach(b => b.classList.toggle("is-active", b === btn));
+      const tab = btn.dataset.provTab;
+      document.getElementById("prov-panel-sources").hidden = tab !== "sources";
+      document.getElementById("prov-panel-explorer").hidden = tab !== "explorer";
+      document.getElementById("prov-panel-jobs").hidden = tab !== "jobs";
+      if (tab === "explorer") loadProvExplorerSources();
+      if (tab === "jobs") loadProvJobs();
+    });
+  });
+
+  document.getElementById("btn-prov-add-source").addEventListener("click", async () => {
+    const sel = document.getElementById("prov-src-type");
+    if (!sel.options.length) {
+      try {
+        const types = await apiGet("/api/directory/types");
+        sel.innerHTML = types.available.map(t => `<option value="${t}">${t}</option>`).join("");
+      } catch { /* liste vide si l'API ne repond pas */ }
+    }
+    openModal("modal-prov-source");
+  });
+
+  document.getElementById("btn-prov-src-save").addEventListener("click", async () => {
+    const name = document.getElementById("prov-src-name").value.trim();
+    const type = document.getElementById("prov-src-type").value;
+    const host = document.getElementById("prov-src-host").value.trim();
+    const base_dn = document.getElementById("prov-src-basedn").value.trim();
+    const bind_dn = document.getElementById("prov-src-binddn").value.trim();
+    const secret_env_var = document.getElementById("prov-src-secretenv").value.trim() || undefined;
+    if (!name || !host || !base_dn) return toast("danger", "Champs manquants", "Nom, hôte et base DN sont obligatoires.");
+    try {
+      await apiSend("POST", "/api/directory/sources", { name, type, config: { host, base_dn, bind_dn }, secret_env_var });
+      toast("success", "Source créée");
+      closeModal("modal-prov-source");
+      ["name", "host", "basedn", "binddn", "secretenv"].forEach(f => document.getElementById(`prov-src-${f}`).value = "");
+      loadProvSources();
+    } catch (err) { toast("danger", "Échec de la création", err.message); }
+  });
+
+  document.getElementById("btn-prov-explorer-search").addEventListener("click", loadProvUsers);
+  document.getElementById("prov-explorer-source").addEventListener("change", loadProvUsers);
+  document.getElementById("prov-select-all").addEventListener("change", (e) => {
+    document.querySelectorAll("#table-prov-users tbody input[type=checkbox]").forEach(cb => {
+      cb.checked = e.target.checked;
+      if (e.target.checked) PROV_STATE.selectedUserIds.add(cb.dataset.userId);
+      else PROV_STATE.selectedUserIds.delete(cb.dataset.userId);
+    });
+    updateProvSelectionCount();
+  });
+  document.getElementById("btn-prov-preview").addEventListener("click", runProvPreviewAndExecute);
+}
+
+async function loadProvSources() {
+  const list = document.getElementById("prov-sources-list");
+  list.innerHTML = `<p class="cell-muted">Chargement…</p>`;
+  try {
+    PROV_STATE.sources = await apiGet("/api/directory/sources");
+    if (!PROV_STATE.sources.length) {
+      list.innerHTML = `<p class="cell-muted">Aucune source configurée. Cliquez sur « + Ajouter une source » pour connecter un annuaire (Active Directory, OpenLDAP, Samba AD, FreeIPA…).</p>`;
+      return;
+    }
+    list.innerHTML = PROV_STATE.sources.map(s => `
+      <div class="card" style="padding:14px 16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div>
+            <strong>${s.last_test_ok === false ? "⚠️" : s.last_test_ok ? "✅" : "•"} ${escapeHtml(s.name)}</strong>
+            <div class="cell-muted" style="font-size:12px;">Type : ${escapeHtml(s.type)} · Hôte : ${escapeHtml(s.host || "—")}${s.read_only ? " · lecture seule" : ""}</div>
+            ${s.last_test_error ? `<div class="cell-muted" style="font-size:12px;color:var(--danger,#dc2626);">${escapeHtml(s.last_test_error)}</div>` : ""}
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn ghost sm" data-prov-test="${s.id}">Tester</button>
+            <button class="btn ghost sm" data-prov-delete="${s.id}">Supprimer</button>
+          </div>
+        </div>
+      </div>`).join("");
+
+    list.querySelectorAll("[data-prov-test]").forEach(btn => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const r = await apiSend("POST", `/api/directory/sources/${btn.dataset.provTest}/test`);
+        toast(r.ok ? "success" : "danger", r.ok ? "Connexion réussie" : "Échec de connexion", r.detail);
+      } catch (err) { toast("danger", "Échec du test", err.message); }
+      finally { btn.disabled = false; loadProvSources(); }
+    }));
+    list.querySelectorAll("[data-prov-delete]").forEach(btn => btn.addEventListener("click", async () => {
+      if (!confirm("Supprimer cette source d'annuaire ?")) return;
+      try { await apiSend("DELETE", `/api/directory/sources/${btn.dataset.provDelete}`); toast("success", "Source supprimée"); loadProvSources(); }
+      catch (err) { toast("danger", "Échec de la suppression", err.message); }
+    }));
+  } catch (err) {
+    list.innerHTML = `<p class="cell-muted">Impossible de charger les sources : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function loadProvExplorerSources() {
+  const sel = document.getElementById("prov-explorer-source");
+  if (!PROV_STATE.sources.length) await loadProvSources();
+  sel.innerHTML = PROV_STATE.sources.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")
+    || `<option value="">Aucune source configurée</option>`;
+  if (PROV_STATE.sources.length) loadProvUsers();
+}
+
+async function loadProvUsers() {
+  const sourceId = document.getElementById("prov-explorer-source").value;
+  if (!sourceId) return;
+  const tbody = document.querySelector("#table-prov-users tbody");
+  tbody.innerHTML = `<tr><td colspan="5" class="cell-muted">Recherche en cours…</td></tr>`;
+  PROV_STATE.selectedUserIds.clear();
+  updateProvSelectionCount();
+  try {
+    const search = document.getElementById("prov-explorer-search").value.trim();
+    const qs = new URLSearchParams({ page: "1", page_size: "100" });
+    if (search) qs.set("search", search);
+    const res = await apiGet(`/api/directory/${sourceId}/users?${qs}`);
+    PROV_STATE.users = res.items;
+    document.getElementById("prov-explorer-count").textContent = `${res.total} utilisateur${res.total > 1 ? "s" : ""}`;
+    tbody.innerHTML = res.items.map(u => `
+      <tr>
+        <td><input type="checkbox" data-user-id="${escapeHtml(u.id)}" ${u.account_disabled ? "disabled" : ""}></td>
+        <td class="mono">${escapeHtml(u.id)}</td>
+        <td>${escapeHtml(u.display_name)}</td>
+        <td class="cell-muted">${escapeHtml(u.email || "—")}</td>
+        <td>${u.account_disabled ? '<span class="badge danger"><span class="dot"></span>AD désactivé</span>'
+             : u.vpn_client_name ? `<span class="badge success"><span class="dot"></span>provisionné (${escapeHtml(u.vpn_client_name)})</span>`
+             : '<span class="badge neutral"><span class="dot"></span>non provisionné</span>'}</td>
+      </tr>`).join("") || `<tr><td colspan="5" class="cell-muted">Aucun utilisateur trouvé.</td></tr>`;
+
+    tbody.querySelectorAll("input[type=checkbox]").forEach(cb => cb.addEventListener("change", () => {
+      if (cb.checked) PROV_STATE.selectedUserIds.add(cb.dataset.userId);
+      else PROV_STATE.selectedUserIds.delete(cb.dataset.userId);
+      updateProvSelectionCount();
+    }));
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="cell-muted">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function updateProvSelectionCount() {
+  const n = PROV_STATE.selectedUserIds.size;
+  const btn = document.getElementById("btn-prov-preview");
+  btn.disabled = n === 0;
+  btn.textContent = n ? `Aperçu (dry-run) — ${n} sélectionné${n > 1 ? "s" : ""} →` : "Aperçu (dry-run) →";
+}
+
+async function runProvPreviewAndExecute() {
+  const sourceId = document.getElementById("prov-explorer-source").value;
+  const userIds = Array.from(PROV_STATE.selectedUserIds);
+  if (!sourceId || !userIds.length) return;
+  try {
+    const plan = await apiSend("POST", "/api/provision/preview", {
+      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template: "{login}" },
+    });
+    const summary = `À créer : ${plan.stats.will_create} · Déjà provisionnés : ${plan.stats.already_exists} · `
+      + `Conflits : ${plan.stats.conflict} · Désactivés ignorés : ${plan.stats.disabled_skipped}`;
+    if (!confirm(`Aperçu du provisioning (${plan.total} utilisateur(s)) :\n\n${summary}\n\nLancer le provisioning maintenant ?`)) return;
+
+    const job = await apiSend("POST", "/api/provision/execute", {
+      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template: "{login}" },
+    });
+    toast("success", "Job de provisioning lancé", `${job.id} — suivez sa progression dans l'onglet « Jobs & historique ».`);
+    document.getElementById("prov-tab-jobs").click();
+  } catch (err) {
+    toast("danger", "Échec du provisioning", err.message);
+  }
+}
+
+async function loadProvJobs() {
+  const list = document.getElementById("prov-jobs-list");
+  list.innerHTML = `<p class="cell-muted">Chargement…</p>`;
+  try {
+    const jobs = await apiGet("/api/provision/jobs?limit=30");
+    if (!jobs.length) { list.innerHTML = `<p class="cell-muted">Aucun job de provisioning pour l'instant.</p>`; return; }
+    const statusIcon = { pending: "🟡", running: "🔵", done: "🟢", failed: "🔴", cancelled: "⚪" };
+    list.innerHTML = jobs.map(j => `
+      <div class="card" style="padding:12px 16px;">
+        <strong>${statusIcon[j.status] || "•"} ${escapeHtml(j.id)}</strong>
+        <div class="cell-muted" style="font-size:12px;">Mode : ${escapeHtml(j.mode)} · Lancé par ${escapeHtml(j.started_by)} · ${fmtDate(new Date(j.started_at * 1000).toISOString())}</div>
+        <div style="font-size:13px;margin-top:4px;">✅ ${j.succeeded} créés · ⚠️ ${j.skipped} ignorés · ❌ ${j.failed} échoués (${j.processed}/${j.total})</div>
+        ${j.error ? `<div class="cell-muted" style="font-size:12px;color:var(--danger,#dc2626);">${escapeHtml(j.error)}</div>` : ""}
+      </div>`).join("");
+
+    // Rafraichit automatiquement tant qu'un job est en cours (F9 : suivi de
+    // progression en temps reel - implemente ici par polling simple ; voir
+    // README feuille de route pour un futur passage a du SSE comme pour les
+    // autres flux temps reel du dashboard).
+    if (jobs.some(j => j.status === "pending" || j.status === "running")) {
+      clearTimeout(loadProvJobs._t);
+      loadProvJobs._t = setTimeout(() => { if (STATE.currentView === "provisioning") loadProvJobs(); }, 3000);
+    }
+  } catch (err) {
+    list.innerHTML = `<p class="cell-muted">${escapeHtml(err.message)}</p>`;
+  }
 }

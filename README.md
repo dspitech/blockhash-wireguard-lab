@@ -18,14 +18,12 @@ Infrastructure-as-Code · Console d'administration web · Sécurité par concept
 
 ## À propos de ce document
 
-Ce README est la documentation de référence complète du projet **BLOCKHash**. Il s'adresse aussi bien à un·e ingénieur·e réseau qui découvre WireGuard qu'à une équipe plateforme qui évalue l'intégration du projet dans son système d'information. Il couvre, sans rien omettre :
+Ce README est la documentation de référence du projet **BLOCKHash** : une plateforme de supervision et d'administration WireGuard, avec sa console web, son infrastructure Terraform et ses scripts de déploiement. Il couvre :
 
-- Les fondamentaux de WireGuard (le protocole VPN sur lequel tout repose) ;
-- L'architecture complète du système, composant par composant ;
-- Le détail de chaque dossier et fichier du dépôt ;
-- La stack technique utilisée, et pourquoi ;
+- L'architecture du système, composant par composant ;
+- La structure du dépôt et la stack technique ;
+- Le déploiement, du provisionnement Azure à la validation ;
 - L'intégralité des fonctionnalités de la plateforme ;
-- Le déploiement pas à pas, de zéro à un environnement opérationnel ;
 - Le modèle de sécurité et le guide de durcissement ;
 - L'exploitation courante (sauvegardes, mises à jour, supervision) ;
 - Le dépannage des incidents les plus courants.
@@ -34,230 +32,112 @@ Ce README est la documentation de référence complète du projet **BLOCKHash**.
 
 ## Sommaire
 
-**Partie I : Comprendre WireGuard**
-1. [Qu'est-ce que WireGuard](#1-quest-ce-que-wireguard)
-2. [Pourquoi WireGuard : comparaison avec IPsec et OpenVPN](#2-pourquoi-wireguard--comparaison-avec-ipsec-et-openvpn)
-3. [Fondations cryptographiques](#3-fondations-cryptographiques)
-4. [Fonctionnement technique : Cryptokey Routing](#4-fonctionnement-technique--cryptokey-routing)
-5. [Avantages et limites](#5-avantages-et-limites)
-6. [Cas d'usage type en entreprise](#6-cas-dusage-type-en-entreprise)
+**Partie I : Qu'est-ce que BLOCKHash**
 
-**Partie II : Qu'est-ce que BLOCKHash**
-7. [Présentation générale](#7-présentation-générale)
-8. [Proposition de valeur](#8-proposition-de-valeur)
-9. [Ce que BLOCKHash n'est pas](#9-ce-que-blockhash-nest-pas)
+1. [Présentation générale](#1-présentation-générale)
+2. [Proposition de valeur](#2-proposition-de-valeur)
+3. [Ce que BLOCKHash n'est pas](#3-ce-que-blockhash-nest-pas)
 
-**Partie III : Architecture**
-10. [Vue d'ensemble de l'architecture](#10-vue-densemble-de-larchitecture)
-11. [Composants du système](#11-composants-du-système)
-12. [Flux réseau et ports](#12-flux-réseau-et-ports)
-13. [Cycle de vie d'une connexion client](#13-cycle-de-vie-dune-connexion-client)
-14. [Modèle de séparation des privilèges](#14-modèle-de-séparation-des-privilèges)
+**Partie II : Architecture**
 
-**Partie IV : Stack technique**
-15. [Infrastructure](#15-infrastructure)
-16. [Système et réseau](#16-système-et-réseau)
-17. [Backend](#17-backend)
-18. [Frontend](#18-frontend)
-19. [Dépendances complètes](#19-dépendances-complètes)
+4. [Vue d'ensemble de l'architecture](#4-vue-densemble-de-larchitecture)
+5. [Composants du système](#5-composants-du-système)
+6. [Flux réseau et ports](#6-flux-réseau-et-ports)
+7. [Cycle de vie d'une connexion client](#7-cycle-de-vie-dune-connexion-client)
+8. [Modèle de séparation des privilèges](#8-modèle-de-séparation-des-privilèges)
 
-**Partie V : Structure du projet**
-20. [Vue d'ensemble de l'arborescence](#20-vue-densemble-de-larborescence)
-21. [`terraform/`](#21-terraform)
-22. [`scripts/`](#22-scripts)
-23. [`dashboard/backend/`](#23-dashboardbackend)
-24. [`dashboard/frontend/`](#24-dashboardfrontend)
-25. [`dashboard/backend/tests/`](#25-dashboardbackendtests)
+**Partie III : Stack technique**
 
-**Partie VI : Déploiement**
-26. [Prérequis](#26-prérequis)
-27. [Étape 1 : Provisionner l'infrastructure Azure](#27-étape-1--provisionner-linfrastructure-azure)
-28. [Étape 2 : Installer le serveur WireGuard](#28-étape-2--installer-le-serveur-wireguard)
-29. [Étape 3 : Créer et distribuer des clients](#29-étape-3--créer-et-distribuer-des-clients)
-30. [Étape 4 : Installer le dashboard BLOCKHash](#30-étape-4--installer-le-dashboard-blockhash)
-31. [Étape 5 : Journalisation, monitoring et tâches planifiées](#31-étape-5--journalisation-monitoring-et-tâches-planifiées)
-32. [Étape 6 : Valider le déploiement](#32-étape-6--valider-le-déploiement)
+9. [Infrastructure](#9-infrastructure)
+10. [Système et réseau](#10-système-et-réseau)
+11. [Backend](#11-backend)
+12. [Frontend](#12-frontend)
+13. [Dépendances complètes](#13-dépendances-complètes)
 
-**Partie VII : Configuration de référence**
-33. [Variables d'environnement](#33-variables-denvironnement)
-34. [Fichiers de configuration persistés](#34-fichiers-de-configuration-persistés)
-35. [Service systemd](#35-service-systemd)
-36. [Reverse proxy Caddy](#36-reverse-proxy-caddy)
-37. [Tâches planifiées (cron)](#37-tâches-planifiées-cron)
+**Partie IV : Structure du projet**
 
-**Partie VIII : Fonctionnalités**
-38. [Vue d'ensemble (dashboard)](#38-vue-densemble-dashboard)
-39. [Gestion des clients](#39-gestion-des-clients)
-40. [Journal des connexions](#40-journal-des-connexions)
-41. [Monitoring](#41-monitoring)
-42. [Alertes](#42-alertes)
-43. [Conformité](#43-conformité)
-44. [Système](#44-système)
-45. [Réglages](#45-réglages)
-46. [Utilisateurs et rôles](#46-utilisateurs-et-rôles)
-47. [Tokens API](#47-tokens-api)
-48. [Aide intégrée](#48-aide-intégrée)
-49. [Fonctionnalités transverses](#49-fonctionnalités-transverses)
+14. [Vue d'ensemble de l'arborescence](#14-vue-densemble-de-larborescence)
+15. [`terraform/`](#15-terraform)
+16. [`scripts/`](#16-scripts)
+17. [`dashboard/backend/`](#17-dashboardbackend)
+18. [`dashboard/frontend/`](#18-dashboardfrontend)
+19. [`dashboard/backend/tests/`](#19-dashboardbackendtests)
 
-**Partie IX : Sécurité**
-50. [Modèle d'authentification](#50-modèle-dauthentification)
-51. [Contrôle d'accès par rôle (RBAC)](#51-contrôle-daccès-par-rôle-rbac)
-52. [Protection des données et RGPD](#52-protection-des-données-et-rgpd)
-53. [Traçabilité et audit](#53-traçabilité-et-audit)
-54. [Checklist de durcissement](#54-checklist-de-durcissement)
+**Partie V : Déploiement**
 
-**Partie X : Référence API**
-55. [Authentification des appels API](#55-authentification-des-appels-api)
-56. [Catalogue des endpoints](#56-catalogue-des-endpoints)
+20. [Prérequis](#20-prérequis)
+21. [Étape 1 : Provisionner l'infrastructure Azure](#21-étape-1-provisionner-linfrastructure-azure)
+22. [Étape 2 : Installer le serveur WireGuard](#22-étape-2-installer-le-serveur-wireguard)
+23. [Étape 3 : Créer et distribuer des clients](#23-étape-3-créer-et-distribuer-des-clients)
+24. [Étape 4 : Installer le dashboard BLOCKHash](#24-étape-4-installer-le-dashboard-blockhash)
+25. [Étape 5 : Journalisation, monitoring et tâches planifiées](#25-étape-5-journalisation-monitoring-et-tâches-planifiées)
+26. [Étape 6 : Valider le déploiement](#26-étape-6-valider-le-déploiement)
 
-**Partie XI : Exploitation**
-57. [Sauvegardes et rétention](#57-sauvegardes-et-rétention)
-58. [Mise à jour de la plateforme](#58-mise-à-jour-de-la-plateforme)
-59. [Supervision de la plateforme elle-même](#59-supervision-de-la-plateforme-elle-même)
-60. [Capacité et dimensionnement](#60-capacité-et-dimensionnement)
+**Partie VI : Configuration de référence**
 
-**Partie XII : Dépannage**
-61. [Méthodologie générale](#61-méthodologie-générale)
-62. [Incidents courants](#62-incidents-courants)
+27. [Variables d'environnement](#27-variables-denvironnement)
+28. [Fichiers de configuration persistés](#28-fichiers-de-configuration-persistés)
+29. [Service systemd](#29-service-systemd)
+30. [Reverse proxy Caddy](#30-reverse-proxy-caddy)
+31. [Tâches planifiées (cron)](#31-tâches-planifiées-cron)
 
-**Partie XIII : Limites connues et feuille de route**
-63. [Hors périmètre assumé](#63-hors-périmètre-assumé)
-64. [Feuille de route](#64-feuille-de-route)
+**Partie VII : Fonctionnalités**
+
+32. [Vue d'ensemble (dashboard)](#32-vue-densemble-dashboard)
+33. [Gestion des clients](#33-gestion-des-clients)
+34. [Journal des connexions](#34-journal-des-connexions)
+35. [Monitoring](#35-monitoring)
+36. [Alertes](#36-alertes)
+37. [Conformité](#37-conformité)
+38. [Système](#38-système)
+39. [Réglages](#39-réglages)
+40. [Utilisateurs et rôles](#40-utilisateurs-et-rôles)
+41. [Tokens API](#41-tokens-api)
+42. [Aide intégrée](#42-aide-intégrée)
+43. [Fonctionnalités transverses](#43-fonctionnalités-transverses)
+44. [Provisioning VPN depuis un annuaire](#44-provisioning-vpn-depuis-un-annuaire)
+
+**Partie VIII : Sécurité**
+
+45. [Modèle d'authentification](#45-modèle-dauthentification)
+46. [Contrôle d'accès par rôle (RBAC)](#46-contrôle-daccès-par-rôle-rbac)
+47. [Protection des données et RGPD](#47-protection-des-données-et-rgpd)
+48. [Traçabilité et audit](#48-traçabilité-et-audit)
+49. [Checklist de durcissement](#49-checklist-de-durcissement)
+
+**Partie IX : Référence API**
+
+50. [Authentification des appels API](#50-authentification-des-appels-api)
+51. [Catalogue des endpoints](#51-catalogue-des-endpoints)
+
+**Partie X : Exploitation**
+
+52. [Sauvegardes et rétention](#52-sauvegardes-et-rétention)
+53. [Mise à jour de la plateforme](#53-mise-à-jour-de-la-plateforme)
+54. [Supervision de la plateforme elle-même](#54-supervision-de-la-plateforme-elle-même)
+55. [Capacité et dimensionnement](#55-capacité-et-dimensionnement)
+
+**Partie XI : Dépannage**
+
+56. [Méthodologie générale](#56-méthodologie-générale)
+57. [Incidents courants](#57-incidents-courants)
+
+**Partie XII : Limites connues et feuille de route**
+
+58. [Hors périmètre assumé](#58-hors-périmètre-assumé)
+59. [Feuille de route](#59-feuille-de-route)
 
 **Annexes**
-65. [Glossaire](#65-glossaire)
-66. [Aide-mémoire des commandes](#66-aide-mémoire-des-commandes)
-67. [Licence](#67-licence)
+
+60. [Glossaire](#60-glossaire)
+61. [Aide-mémoire des commandes](#61-aide-mémoire-des-commandes)
+62. [Licence](#62-licence)
 
 ---
 
-# Partie I : Comprendre WireGuard
+# Partie I : Qu'est-ce que BLOCKHash
 
-## 1. Qu'est-ce que WireGuard
-
-**WireGuard** est un protocole et une implémentation logicielle de réseau privé virtuel (VPN) conçus pour être **simples, rapides et modernes en matière de cryptographie**. Créé par **Jason A. Donenfeld** et publié pour la première fois en 2016, WireGuard a été intégré au noyau Linux officiel à partir de la version **5.6** (mars 2020) : une reconnaissance rare pour un projet aussi jeune, saluée publiquement par Linus Torvalds pour la qualité de son code.
-
-Contrairement aux VPN traditionnels (IPsec, OpenVPN) qui ont accumulé des décennies d'extensions, d'options de configuration et de modes de compatibilité, WireGuard part d'une feuille blanche avec un objectif unique : **faire une seule chose, et la faire extrêmement bien**. Le résultat tient dans environ **4 000 lignes de code** : contre plus de **400 000 lignes** pour OpenSSL/OpenVPN ou StrongSwan/IPsec. Cette compacité n'est pas un détail esthétique : un code plus petit est un code plus facile à auditer, avec une surface d'attaque considérablement réduite.
-
-> **Repère :** un utilisateur avec de solides connaissances en systèmes peut lire et comprendre l'intégralité du code source de WireGuard en une journée. C'est structurellement impossible avec OpenVPN ou IPsec.
-
-### Positionnement technique
-
-WireGuard opère à la **couche 3** (réseau) du modèle OSI. Il crée une interface réseau virtuelle (`wg0` par exemple) qui se comporte comme n'importe quelle autre interface réseau du système : on peut lui assigner une adresse IP, des routes, des règles de pare-feu. Le trafic qui entre dans cette interface est chiffré et encapsulé dans des paquets **UDP** avant d'être envoyé sur le réseau physique ; à l'arrivée, le paquet est déchiffré et présenté à l'interface comme un paquet IP normal.
-
----
-
-## 2. Pourquoi WireGuard : comparaison avec IPsec et OpenVPN
-
-| Critère | WireGuard | OpenVPN | IPsec/IKEv2 |
-|---|---|---|---|
-| Taille du code source | ~4 000 lignes | ~400 000+ lignes (avec OpenSSL) | ~600 000+ lignes |
-| Emplacement d'exécution | Noyau Linux (module natif depuis 5.6) | Espace utilisateur | Noyau (démon userspace pour IKE) |
-| Suite cryptographique | Fixe, moderne, non négociable | Configurable (risque de mauvaise configuration) | Configurable (risque de mauvaise configuration) |
-| Négociation de protocole | Aucune (pas de "cipher suite negotiation") | Oui (source de vulnérabilités historiques) | Oui (source de vulnérabilités historiques) |
-| Performance | Très élevée (latence/débit proches du natif) | Modérée (overhead espace utilisateur + TLS) | Élevée, mais configuration complexe |
-| Vitesse d'établissement du tunnel | Millisecondes | Plusieurs centaines de ms (poignée de main TLS) | Variable, plusieurs échanges |
-| Roaming (Wi-Fi → 4G) | Natif et transparent | Reconnexion nécessaire | Reconnexion nécessaire (MOBIKE limite le problème) |
-| Configuration | Fichier `.conf` minimal (clé + endpoint) | Fichiers complexes (certificats, TLS, options) | Complexe (policies, proposals, PSK/certificats) |
-| Surface exposée sans authentification | Aucune (paquets non authentifiés ignorés) | Port ouvert, poignée de main TLS visible | Port ouvert, échanges IKE visibles |
-| Audit de sécurité | Formellement vérifié (preuves du protocole Noise) | Dépend de la configuration OpenSSL | Dépend de l'implémentation |
-
-### Le principe du « silence radio »
-
-L'une des propriétés de sécurité les plus notables de WireGuard est que le serveur **ne répond jamais** à un paquet non authentifié avec une clé autorisée. Un scan `nmap` sur un serveur WireGuard ne révèle **rien** : le port UDP paraît filtré, indiscernable d'un port fermé. C'est une sécurité par **minimisation de la surface d'attaque**, intégrée au protocole lui-même plutôt que reposant uniquement sur un pare-feu.
-
----
-
-## 3. Fondations cryptographiques
-
-WireGuard repose sur le **Noise Protocol Framework**, un cadre de conception de protocoles cryptographiques créé par Trevor Perrin (également à l'origine du protocole utilisé par Signal). Plutôt qu'un catalogue d'algorithmes interchangeables, WireGuard fait des choix fermes, tous considérés comme état de l'art :
-
-| Fonction | Algorithme | Rôle |
-|---|---|---|
-| Échange de clés | **Curve25519** (ECDH) | Établit un secret partagé sans jamais transmettre la clé privée |
-| Chiffrement symétrique | **ChaCha20** | Chiffre le trafic du tunnel : rapide même sans accélération matérielle AES |
-| Authentification des messages | **Poly1305** | Garantit qu'un paquet n'a pas été altéré en transit |
-| Fonction de hachage | **BLAKE2s** | Utilisée dans la dérivation de clés et la poignée de main |
-| Dérivation de clé | **HKDF** | Dérive les clés de session à partir du secret partagé |
-| Résistance au rejeu | **Compteurs + fenêtre glissante** | Empêche la réinjection d'un paquet capturé |
-
-Ce choix figé élimine toute une classe de vulnérabilités liées à la négociation de protocole (*downgrade attacks*), qui a historiquement touché TLS/SSL et donc OpenVPN (POODLE, BEAST...). Avec WireGuard, il n'y a rien à négocier, donc rien à dégrader.
-
-### La poignée de main (handshake)
-
-WireGuard utilise une poignée de main en une seule paire de messages (**1-RTT**), basée sur le motif Noise `IKpsk2`, qui fournit :
-- **Confidentialité persistante** (*forward secrecy*) : une nouvelle paire de clés éphémères est générée à chaque poignée de main (renouvelée automatiquement toutes les 2 minutes), donc la compromission d'une clé à long terme ne permet pas de déchiffrer les communications passées ;
-- **Authentification mutuelle** : chaque partie prouve la possession de sa clé privée sans la révéler ;
-- **Résistance aux attaques par rejeu et par déni de service**, grâce à un mécanisme de "cookies" comparable à celui de TCP SYN.
-
----
-
-## 4. Fonctionnement technique : Cryptokey Routing
-
-Le concept central de WireGuard est le **Cryptokey Routing** (routage par clé cryptographique). Chaque interface WireGuard maintient une table simple qui associe :
-
-```
-Clé publique d'un pair  ⟷  Liste d'adresses IP autorisées (AllowedIPs)
-```
-
-Quand un paquet sortant doit être envoyé vers une IP donnée, WireGuard consulte cette table pour déterminer **avec quelle clé publique le chiffrer**. Quand un paquet arrive et se déchiffre avec succès via la clé d'un pair, WireGuard vérifie que l'IP source du paquet déchiffré correspond aux `AllowedIPs` déclarés pour ce pair : sinon il est silencieusement rejeté.
-
-Ce mécanisme unifie en une seule table ce qui nécessite, en IPsec, plusieurs concepts distincts (Security Associations, Security Policy Database, routage). C'est ce qui permet à une configuration WireGuard de tenir en une dizaine de lignes :
-
-```ini
-[Interface]
-PrivateKey = <clé privée du client>
-Address = 10.66.66.2/32
-
-[Peer]
-PublicKey = <clé publique du serveur>
-AllowedIPs = 0.0.0.0/0
-Endpoint = vpn.exemple.com:51820
-PersistentKeepalive = 25
-```
-
-### Le rôle du serveur : un pair parmi d'autres
-
-Conceptuellement, WireGuard ne distingue pas "serveur" et "client" : ce sont tous des **pairs** (*peers*), chacun avec sa propre paire de clés. Ce qu'on appelle usuellement "serveur" est simplement le pair qui écoute sur un port connu et dont l'`Endpoint` est fixe ; les "clients" ont une IP publique qui peut changer (roaming). Cette symétrie rend WireGuard pertinent aussi bien en **site-à-site** qu'en **accès distant** ou en **maillage** entre serveurs.
-
----
-
-## 5. Avantages et limites
-
-### Avantages
-
-- **Performance** : overhead minimal, exécution en espace noyau, chiffrement optimisé pour le matériel moderne.
-- **Simplicité** : configuration réduite au strict nécessaire, aucun arbre de décision cryptographique.
-- **Sécurité par conception**, pas de négociation de protocole, forward secrecy native, code auditable.
-- **Roaming transparent** : un client change de réseau (Wi-Fi → 4G → Ethernet) sans jamais rompre sa session applicative.
-- **Empreinte réduite** : adapté aux environnements contraints (routeurs, IoT, mobile) sans sacrifier la sécurité.
-- **Cryptokey Routing** : un modèle mental unique et cohérent pour le routage et la sécurité.
-
-### Limites et points de vigilance
-
-- **Pas d'authentification utilisateur native** : WireGuard authentifie des **clés**, pas des personnes. L'association « quelle clé appartient à quelle personne » doit être gérée en dehors du protocole : c'est précisément le rôle qu'assure BLOCKHash (Partie II).
-- **Pas d'attribution d'adresse IP dynamique** (pas de DHCP) : les adresses sont statiques par pair, ce qui impose une gestion d'allocation (également prise en charge par BLOCKHash).
-- **Confidentialité des métadonnées limitée** : comme tout VPN UDP, le volume et le rythme du trafic restent observables par un intermédiaire réseau, même si le contenu est chiffré.
-- **Pas de révocation en temps réel dans le protocole** : révoquer un pair signifie le retirer de la configuration ; il n'existe pas de liste de révocation façon PKI X.509. Là encore, c'est à l'outillage (BLOCKHash) de combler ce manque par une gestion opérationnelle rigoureuse.
-
----
-
-## 6. Cas d'usage type en entreprise
-
-| Cas d'usage | Description |
-|---|---|
-| **Accès distant sécurisé** | Remplacement d'un VPN d'entreprise classique pour permettre aux collaborateurs de rejoindre le réseau interne depuis n'importe où. |
-| **Interconnexion site-à-site** | Relier deux datacenters, deux bureaux, ou un datacenter et un environnement cloud, avec chiffrement de bout en bout. |
-| **Bastion réseau administrateur** | Restreindre l'accès SSH/RDP aux serveurs de production à des IP uniquement joignables via le tunnel : le modèle déployé par ce projet. |
-| **Maillage multi-cloud** | Connecter des ressources hébergées chez plusieurs fournisseurs (Azure, AWS, GCP, on-premise) dans un réseau privé unique. |
-| **Sécurisation IoT / Edge** | Faible empreinte CPU/mémoire, adapté aux appareils contraints (Raspberry Pi, routeurs embarqués). |
-| **Environnements réglementés** | Auditabilité du code et cryptographie non négociable, appréciées en finance, santé, secteur public. |
-
----
-
-# Partie II : Qu'est-ce que BLOCKHash
-
-## 7. Présentation générale
+## 1. Présentation générale
 
 **BLOCKHash** est une plateforme complète qui transforme un serveur WireGuard « nu » en une **console d'administration VPN de niveau entreprise**. Le projet comprend deux couches indissociables :
 
@@ -266,7 +146,7 @@ Conceptuellement, WireGuard ne distingue pas "serveur" et "client" : ce sont tou
 
 Le nom du projet reflète sa fonction : **BLOCK**ing/monitoring pour WireGuard, avec une architecture qui s'appuie fortement sur le **Hash**ing (jetons, mots de passe, intégrité des sauvegardes).
 
-## 8. Proposition de valeur
+## 2. Proposition de valeur
 
 WireGuard, pris isolément, est un protocole, pas une plateforme. Il ne fournit ni interface de gestion, ni notion d'utilisateur, ni journalisation exploitable, ni alerting, ni contrôle d'accès. BLOCKHash comble précisément ce vide :
 
@@ -280,19 +160,19 @@ WireGuard, pris isolément, est un protocole, pas une plateforme. Il ne fournit 
 | Gouvernance des accès | Un seul secret partagé pour tout le monde | Comptes nominatifs, rôles (lecteur/opérateur/admin), tokens API scopés et révocables |
 | Conformité | Rien | Politiques d'inactivité par tag, export RGPD par client, rapports PDF |
 
-## 9. Ce que BLOCKHash n'est pas
+## 3. Ce que BLOCKHash n'est pas
 
-Par souci de transparence (voir aussi la Partie XIII) :
+Par souci de transparence (voir aussi la Partie XII) :
 
 - **Ce n'est pas un fournisseur d'identité d'entreprise.** BLOCKHash gère ses propres comptes utilisateurs ; il ne s'intègre pas (encore) à un SSO/LDAP/Active Directory/OIDC externe.
 - **Ce n'est pas une solution multi-tenant SaaS.** Le projet est conçu pour être déployé et exploité par une seule organisation, sur sa propre infrastructure.
-- **Ce n'est pas un WAF ni un IDS/IPS.** La sécurité réseau périmétrique (NSG, pare-feu OS) reste de la responsabilité de l'infrastructure sous-jacente, documentée en Partie VI.
+- **Ce n'est pas un WAF ni un IDS/IPS.** La sécurité réseau périmétrique (NSG, pare-feu OS) reste de la responsabilité de l'infrastructure sous-jacente, documentée en Partie V.
 
 ---
 
-# Partie III : Architecture
+# Partie II : Architecture
 
-## 10. Vue d'ensemble de l'architecture
+## 4. Vue d'ensemble de l'architecture
 
 ```
                                     Internet
@@ -337,7 +217,7 @@ Par souci de transparence (voir aussi la Partie XIII) :
         └──────────────────────────────────────────────────────────────┘
 ```
 
-## 11. Composants du système
+## 5. Composants du système
 
 | Composant | Rôle | Exécuté en tant que |
 |---|---|---|
@@ -347,10 +227,10 @@ Par souci de transparence (voir aussi la Partie XIII) :
 | **`app.py` (Flask)** | API HTTP (73 routes), authentification, autorisation par rôle, orchestration | www-data, sans privilège root |
 | **Gunicorn** | Serveur d'application WSGI, 2 workers en mode **gevent** (coroutines) | www-data |
 | **Caddy** | Reverse proxy HTTPS, terminaison TLS, sert le frontend statique | root (bind sur le port 443), ou www-data selon le durcissement |
-| **SQLite (`blockhash.db`)** | Persistance des métriques, logs de connexion, alertes, utilisateurs, sessions, tokens API, abonnements Web Push | Écrit par **www-data ET root** (voir §14) |
+| **SQLite (`blockhash.db`)** | Persistance des métriques, logs de connexion, alertes, utilisateurs, sessions, tokens API, abonnements Web Push | Écrit par **www-data ET root** (voir §8) |
 | **Cron (root)** | Capture périodique de l'état WireGuard, purge, évaluation des alertes, vérification des expirations, sauvegardes planifiées | root |
 
-## 12. Flux réseau et ports
+## 6. Flux réseau et ports
 
 | Port | Protocole | Usage | Exposition |
 |---|---|---|---|
@@ -359,7 +239,7 @@ Par souci de transparence (voir aussi la Partie XIII) :
 | 22 | TCP | SSH d'administration de la VM | Publique, restreinte par NSG à l'IP admin |
 | 8080 | TCP | Gunicorn (backend Flask) | **Local uniquement** (`127.0.0.1`), jamais exposé directement |
 
-## 13. Cycle de vie d'une connexion client
+## 7. Cycle de vie d'une connexion client
 
 1. Le client WireGuard initie une poignée de main UDP vers l'`Endpoint` du serveur.
 2. Le noyau Linux (module `wireguard`) authentifie et déchiffre les paquets suivants sans intervention applicative.
@@ -368,7 +248,7 @@ Par souci de transparence (voir aussi la Partie XIII) :
 5. Si une règle d'alerte correspond à la transition (ex. connexion hors horaires), une notification est déclenchée sur les canaux configurés (email, Slack, Discord, Telegram, Web Push).
 6. L'historique de connexion reste consultable dans la page **Journal**, avec filtres, pagination et heatmap.
 
-## 14. Modèle de séparation des privilèges
+## 8. Modèle de séparation des privilèges
 
 BLOCKHash applique le principe du **moindre privilège** de bout en bout :
 
@@ -376,13 +256,13 @@ BLOCKHash applique le principe du **moindre privilège** de bout en bout :
 - Toute opération nécessitant un accès root (lecture de l'état WireGuard, écriture dans `/etc/wireguard/`, redémarrage du tunnel, rotation de clés) passe **exclusivement** par deux scripts dédiés, `wgctl.py` et `wgops.py`, invoqués via une règle `sudo -n` strictement scoped (pas de mot de passe interactif, pas d'accès shell).
 - Un attaquant qui compromettrait le processus Flask n'obtient **pas** automatiquement un accès root : il est limité aux actions explicitement exposées par ces deux scripts, elles-mêmes validées côté Flask (nom de client, chemin de sauvegarde, etc.) avant l'appel privilégié.
 
-> **Point d'attention opérationnel documenté :** certaines données (sessions utilisateur, comptes, tokens API, alertes) sont désormais écrites par **le processus www-data lui-même**, alors que la base SQLite historique n'était pensée que pour un écrivain root (le cron de capture). Le fichier est donc configuré en mode `0660` avec le bit **setgid** posé sur son répertoire parent, pour que les deux écrivains (root et www-data) y aient un accès garanti dans la durée. Voir Partie XII, [§62](#62-incidents-courants), pour le détail de cet arbitrage.
+> **Point d'attention opérationnel documenté :** certaines données (sessions utilisateur, comptes, tokens API, alertes) sont désormais écrites par **le processus www-data lui-même**, alors que la base SQLite historique n'était pensée que pour un écrivain root (le cron de capture). Le fichier est donc configuré en mode `0660` avec le bit **setgid** posé sur son répertoire parent, pour que les deux écrivains (root et www-data) y aient un accès garanti dans la durée. Voir Partie XI, [§57](#57-incidents-courants), pour le détail de cet arbitrage.
 
 ---
 
-# Partie IV : Stack technique
+# Partie III : Stack technique
 
-## 15. Infrastructure
+## 9. Infrastructure
 
 | Technologie | Usage dans le projet |
 |---|---|
@@ -390,19 +270,19 @@ BLOCKHash applique le principe du **moindre privilège** de bout en bout :
 | **Microsoft Azure** | Fournisseur cloud cible (groupe de ressources, réseau virtuel, VM, IP publique) |
 | **cloud-init** | Bootstrap de la VM à la création (fichier `cloud-init.yaml.tpl`), pour une configuration reproductible dès le premier démarrage |
 
-## 16. Système et réseau
+## 10. Système et réseau
 
 | Technologie | Usage |
 |---|---|
 | **Ubuntu 22.04 LTS** | Système d'exploitation de la VM |
-| **WireGuard** (module noyau + `wireguard-tools`) | Cœur du VPN (voir Partie I) |
+| **WireGuard** (module noyau + `wireguard-tools`) | Cœur du VPN ([wireguard.com](https://www.wireguard.com/)) |
 | **systemd** | Gestion du service `wg-quick@wg0` et du service `blockhash-dashboard` |
 | **Caddy** | Reverse proxy HTTPS, terminaison TLS (certificat interne auto-signé), HTTP/2, gestion dédiée du flux SSE |
 | **cron** | Orchestration des tâches périodiques (capture d'état, purge, alertes, expirations, sauvegardes planifiées) |
 | **logrotate** | Rotation des journaux CSV/texte |
 | **ufw / iptables** | Durcissement du pare-feu local, en complément du NSG Azure |
 
-## 17. Backend
+## 11. Backend
 
 | Technologie | Version | Usage |
 |---|---|---|
@@ -416,7 +296,7 @@ BLOCKHash applique le principe du **moindre privilège** de bout en bout :
 | **psutil** | 6.0.0 | Métriques système (CPU, mémoire, disque, connexions TCP) |
 | **fpdf2** | 2.7.9 | Génération de rapports PDF (conformité, audit) |
 
-## 18. Frontend
+## 12. Frontend
 
 | Technologie | Usage |
 |---|---|
@@ -429,7 +309,7 @@ BLOCKHash applique le principe du **moindre privilège** de bout en bout :
 | **Server-Sent Events (`EventSource`)** | Mise à jour temps réel du dashboard sans polling |
 | **i18n maison** (`i18n/fr.json`, `i18n/en.json`) | Internationalisation FR/EN de l'interface statique |
 
-## 19. Dépendances complètes
+## 13. Dépendances complètes
 
 Fichier `dashboard/backend/requirements.txt` :
 
@@ -446,9 +326,9 @@ Aucune dépendance frontend n'est installée via un gestionnaire de paquets : le
 
 ---
 
-# Partie V : Structure du projet
+# Partie IV : Structure du projet
 
-## 20. Vue d'ensemble de l'arborescence
+## 14. Vue d'ensemble de l'arborescence
 
 ```
 blockhash-wireguard-lab/
@@ -488,7 +368,7 @@ blockhash-wireguard-lab/
     │   ├── servers_store.py         ← registre multi-serveurs (116 lignes)
     │   ├── requirements.txt / requirements-dev.txt
     │   ├── pytest.ini
-    │   └── tests/                   ← suite de tests (606 lignes, voir §25)
+    │   └── tests/                   ← suite de tests (606 lignes, voir §19)
     └── frontend/                    ← interface web (HTML/CSS/JS vanilla)
         ├── index.html               ← squelette applicatif (SPA à sections)
         ├── sw.js                    ← service worker (Web Push)
@@ -506,7 +386,7 @@ blockhash-wireguard-lab/
             └── sample-data.json      ← jeu de données pour le mode démonstration
 ```
 
-## 21. `terraform/`
+## 15. `terraform/`
 
 Provisionne l'intégralité de l'infrastructure Azure nécessaire, en **deux modules indépendants** :
 
@@ -515,7 +395,7 @@ Provisionne l'intégralité de l'infrastructure Azure nécessaire, en **deux mod
 
 Le fichier `terraform.tfvars.example` documente toutes les variables surchargeables (région, taille de VM, ports, IP autorisées, nom d'utilisateur admin...). Le script `deploy.ps1` encapsule le cycle `terraform init/plan/apply` pour les utilisateurs Windows/PowerShell.
 
-## 22. `scripts/`
+## 16. `scripts/`
 
 Scripts bash idempotents, numérotés dans l'ordre d'exécution recommandé, à lancer **sur la VM** (en root ou via `sudo`) :
 
@@ -530,7 +410,7 @@ Scripts bash idempotents, numérotés dans l'ordre d'exécution recommandé, à 
 | `07-check-expirations.sh` | Désactive automatiquement les clients expirés (conçu pour cron nocturne) |
 | `09-check-alerts.sh` | Évalue les règles d'alerte (conçu pour cron toutes les 5 minutes) |
 
-## 23. `dashboard/backend/`
+## 17. `dashboard/backend/`
 
 | Fichier | Responsabilité |
 |---|---|
@@ -548,7 +428,7 @@ Scripts bash idempotents, numérotés dans l'ordre d'exécution recommandé, à 
 | **`anomalies.py`** | Détection simple d'anomalies de débit. |
 | **`settings_store.py` / `servers_store.py`** | Persistance des réglages du dashboard et du registre multi-serveurs. |
 
-## 24. `dashboard/frontend/`
+## 18. `dashboard/frontend/`
 
 Application web monopage (SPA) **sans framework**, organisée en sections `<section class="view">` togglées par une fonction `switchView()` unique :
 
@@ -563,7 +443,7 @@ Application web monopage (SPA) **sans framework**, organisée en sections `<sect
 | `i18n/fr.json`, `i18n/en.json` | Dictionnaires de traduction |
 | `data/sample-data.json` | Jeu de données utilisé en **mode démonstration** (sans connexion API réelle) |
 
-## 25. `dashboard/backend/tests/`
+## 19. `dashboard/backend/tests/`
 
 Suite de tests **pytest** (606 lignes, exécutée via le client de test Flask, sans dépendance à une VM réelle : VM WireGuard simulée par fixtures) :
 
@@ -586,9 +466,9 @@ DASHBOARD_TOKEN=test ALLOW_NO_AUTH=true python3 -m pytest tests/ -v
 
 ---
 
-# Partie VI : Déploiement
+# Partie V : Déploiement
 
-## 26. Prérequis
+## 20. Prérequis
 
 | Élément | Détail |
 |---|---|
@@ -604,7 +484,9 @@ az login
 az account show
 ```
 
-## 27. Étape 1 : Provisionner l'infrastructure Azure
+> **Déploiement automatisé :** depuis l'ajout de `null_resource.deploy` dans `terraform/main.tf`, `terraform apply` provisionne l'infrastructure **et** exécute automatiquement les étapes 2, 4 et 5 ci-dessous (clonage du dépôt, installation WireGuard, installation du dashboard, journalisation/monitoring) via une connexion SSH à la VM fraîchement créée. Le mot de passe administrateur du dashboard est généré par Terraform (`random_password`) et exposé en sortie (`terraform output -raw dashboard_password`). Pour revenir à un déploiement manuel, entièrement détaillé étape par étape ci-dessous, positionnez `auto_deploy = false` dans `terraform.tfvars`.
+
+## 21. Étape 1 : Provisionner l'infrastructure Azure
 
 ```bash
 cd terraform
@@ -615,46 +497,50 @@ terraform plan
 terraform apply
 ```
 
-Sous Windows/PowerShell, le script `deploy.ps1` encapsule ce cycle. À l'issue, Terraform affiche en sortie (`outputs.tf`) l'adresse IP publique de la VM et les informations de connexion SSH.
+Sous Windows/PowerShell, `deploy.ps1` encapsule ce cycle (`terraform init` → `plan` → confirmation → `apply`) ; `deploy.sh` fait de même sous Linux/macOS. À l'issue, si `auto_deploy = true` (valeur par défaut), le dashboard est déjà installé et opérationnel : le script affiche directement le lien d'accès (`dashboard_url`), l'identifiant (`dashboard_username`) et le mot de passe (`dashboard_password`) générés. Les étapes 2 à 5 ci-dessous décrivent ce que Terraform vient d'exécuter à distance ; elles ne sont nécessaires manuellement que si `auto_deploy = false`.
 
-## 28. Étape 2 : Installer le serveur WireGuard
+## 22. Étape 2 : Installer le serveur WireGuard
 
 ```bash
 ssh wgadmin@<IP_PUBLIQUE>
-sudo ./scripts/01-install-wireguard-server.sh
+git clone https://github.com/dspitech/blockhash-wireguard-lab.git
+cd blockhash-wireguard-lab/scripts && chmod +x *.sh
+sudo ./01-install-wireguard-server.sh
 ```
 
 Ce script installe le paquet `wireguard`, génère la paire de clés du serveur, crée `/etc/wireguard/wg0.conf`, configure le forwarding IP et active `wg-quick@wg0` au démarrage.
 
-## 29. Étape 3 : Créer et distribuer des clients
+## 23. Étape 3 : Créer et distribuer des clients
 
 ```bash
-sudo ./scripts/02-add-client.sh alice-laptop
+sudo ./02-add-client.sh alice-laptop
 ```
 
-Le script génère la paire de clés du client, alloue une adresse IP dans le sous-réseau du tunnel, et affiche/enregistre le fichier `.conf` prêt à être importé dans l'application WireGuard officielle (ou scanné via QR code une fois le dashboard installé : voir Partie VIII).
+Le script génère la paire de clés du client, alloue une adresse IP dans le sous-réseau du tunnel, et affiche/enregistre le fichier `.conf` prêt à être importé dans l'application WireGuard officielle (ou scanné via QR code une fois le dashboard installé : voir Partie VII).
 
-## 30. Étape 4 : Installer le dashboard BLOCKHash
+## 24. Étape 4 : Installer le dashboard BLOCKHash
 
 ```bash
-# Copier le dossier dashboard/ sur la VM, puis :
-sudo ./scripts/03-install-dashboard.sh
+# Depuis la racine du dépôt cloné à l'étape 2 (le script attend un dossier
+# ./dashboard voisin — ne pas l'exécuter depuis scripts/) :
+cd ~/blockhash-wireguard-lab
+sudo ./scripts/03-install-dashboard.sh 8080
 ```
 
 Ce script réalise, dans l'ordre :
 1. Création du répertoire applicatif (`/opt/blockhash-dashboard`), de l'environnement virtuel Python et installation des dépendances (`requirements.txt`).
-2. Génération d'un jeton d'authentification (`DASHBOARD_TOKEN`), d'un nom d'utilisateur et d'un mot de passe administrateur, écrits dans `/etc/blockhash/dashboard.env`.
+2. Génération d'un jeton d'authentification (`DASHBOARD_TOKEN`), d'un nom d'utilisateur et d'un mot de passe administrateur, écrits dans `/etc/blockhash/dashboard.env` (personnalisables via les variables d'environnement `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`).
 3. Création du service systemd `blockhash-dashboard` (Gunicorn, 2 workers `gevent`).
 4. Mise en place d'une règle `sudo -n` étroitement scoped pour que `www-data` puisse invoquer `wgctl.py`/`wgops.py` sans mot de passe interactif ni accès shell.
 5. Configuration de Caddy comme reverse proxy HTTPS (TLS interne auto-signé), avec un bloc dédié au flux SSE (`flush_interval -1`, pas de compression).
-6. Application des permissions sur `/var/log/wireguard` : propriétaire/groupe `www-data`, **bit setgid** (voir §14 et §62).
+6. Application des permissions sur `/var/log/wireguard` : propriétaire/groupe `www-data`, **bit setgid** (voir §8 et §57).
 
 À l'issue, l'identifiant et le mot de passe administrateur générés sont affichés **une seule fois** dans le terminal : à noter immédiatement dans un gestionnaire de secrets.
 
-## 31. Étape 5 : Journalisation, monitoring et tâches planifiées
+## 25. Étape 5 : Journalisation, monitoring et tâches planifiées
 
 ```bash
-sudo ./scripts/04-logging-monitoring.sh
+sudo ./04-logging-monitoring.sh
 ```
 
 Met en place :
@@ -673,7 +559,7 @@ sudo crontab -e
 # */5 * * * * root /opt/blockhash-dashboard/../scripts/09-check-alerts.sh >> /var/log/wireguard/alerts.log 2>&1
 ```
 
-## 32. Étape 6 : Valider le déploiement
+## 26. Étape 6 : Valider le déploiement
 
 ```bash
 # État du service
@@ -691,15 +577,15 @@ Puis ouvrir `https://<IP_PUBLIQUE>/` dans un navigateur, se connecter avec les i
 
 ---
 
-# Partie VII : Configuration de référence
+# Partie VI : Configuration de référence
 
-## 33. Variables d'environnement
+## 27. Variables d'environnement
 
 Fichier `/etc/blockhash/dashboard.env`, chargé par le service systemd :
 
 | Variable | Rôle | Valeur par défaut |
 |---|---|---|
-| `DASHBOARD_TOKEN` | Jeton d'authentification historique (rétro-compatibilité, voir Partie IX) | généré à l'installation |
+| `DASHBOARD_TOKEN` | Jeton d'authentification historique (rétro-compatibilité, voir Partie VIII) | généré à l'installation |
 | `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD_HASH` | Compte administrateur initial, migré automatiquement vers le nouveau modèle multi-utilisateurs au premier démarrage | générés à l'installation |
 | `DASHBOARD_SESSION_TTL_SECONDS` | Durée de validité d'une session utilisateur | 2 592 000 (30 jours) |
 | `ALLOW_NO_AUTH` | Désactive l'authentification (usage labo/démo isolé **uniquement**) | `false` |
@@ -714,13 +600,13 @@ Fichier `/etc/blockhash/dashboard.env`, chargé par le service systemd :
 | `METRICS_DB_PATH` / `METRICS_DB_GROUP` | Emplacement et groupe de la base SQLite | `/var/log/wireguard/blockhash.db` / `www-data` |
 | `METRICS_RETENTION_DAYS` | Rétention par défaut avant purge (surchargeable depuis Réglages) | `35` |
 | `AUDIT_LOG_PATH` | Journal d'audit append-only | `/var/log/wireguard/audit.log` |
-| `SETTINGS_PATH`, `ALERTS_CONFIG_PATH`, `REPORTS_CONFIG_PATH`, `SERVERS_CONFIG_PATH` | Fichiers JSON de configuration persistée | voir §34 |
+| `SETTINGS_PATH`, `ALERTS_CONFIG_PATH`, `REPORTS_CONFIG_PATH`, `SERVERS_CONFIG_PATH` | Fichiers JSON de configuration persistée | voir §28 |
 | `BLOCKHASH_CONFIG_DIR` | Répertoire des clés VAPID (Web Push) | `/etc/blockhash` |
 | `VAPID_CONTACT_EMAIL` | Adresse de contact incluse dans les revendications VAPID | `mailto:admin@example.com` |
 | `GEOIP_TTL_SEC` | Durée de mise en cache des résolutions GeoIP | selon `geoip.py` |
 | `FRONTEND_DIR`, `PORT` | Chemin du frontend statique et port d'écoute de Gunicorn | `$APP_DIR/frontend`, `8080` |
 
-## 34. Fichiers de configuration persistés
+## 28. Fichiers de configuration persistés
 
 | Fichier | Contenu |
 |---|---|
@@ -730,7 +616,7 @@ Fichier `/etc/blockhash/dashboard.env`, chargé par le service systemd :
 | `/etc/blockhash/servers.json` | Registre multi-serveurs (le cas échéant) |
 | `/etc/blockhash/vapid_private_key.pem` | Clé privée VAPID (Web Push), générée automatiquement au premier envoi, permissions `0600` |
 
-## 35. Service systemd
+## 29. Service systemd
 
 `/etc/systemd/system/blockhash-dashboard.service` (généré par le script d'installation) :
 
@@ -745,9 +631,9 @@ ExecStart=/opt/blockhash-dashboard/venv/bin/gunicorn \
 Restart=on-failure
 ```
 
-Le worker `gevent` (plutôt que le worker synchrone par défaut ou `gthread`) est **indispensable** : le flux SSE maintient une connexion HTTP ouverte en continu par onglet client ; un worker à base de threads OS saturerait rapidement son pool dès quelques onglets ouverts simultanément (voir Partie XII pour le détail de cet incident et de sa correction).
+Le worker `gevent` (plutôt que le worker synchrone par défaut ou `gthread`) est **indispensable** : le flux SSE maintient une connexion HTTP ouverte en continu par onglet client ; un worker à base de threads OS saturerait rapidement son pool dès quelques onglets ouverts simultanément (voir Partie XI pour le détail de cet incident et de sa correction).
 
-## 36. Reverse proxy Caddy
+## 30. Reverse proxy Caddy
 
 Extrait représentatif de `/etc/caddy/Caddyfile` :
 
@@ -771,7 +657,7 @@ https://<IP_ou_domaine> {
 
 Le flux SSE est **explicitement exclu** de la compression `gzip` (qui nécessite de bufferiser le contenu : incompatible avec un flux qui ne se termine jamais) et bénéficie d'un `flush_interval -1` pour un envoi immédiat de chaque évènement, sans latence de bufferisation côté proxy.
 
-## 37. Tâches planifiées (cron)
+## 31. Tâches planifiées (cron)
 
 | Fréquence | Commande | Rôle |
 |---|---|---|
@@ -783,11 +669,11 @@ Le flux SSE est **explicitement exclu** de la compression `gzip` (qui nécessite
 
 ---
 
-# Partie VIII : Fonctionnalités
+# Partie VII : Fonctionnalités
 
 BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navigation latérale. Cette partie documente chaque fonctionnalité de façon exhaustive.
 
-## 38. Vue d'ensemble (dashboard)
+## 32. Vue d'ensemble (dashboard)
 
 - Compteurs en temps réel : clients configurés, en ligne, inactifs, désactivés.
 - Répartition des statuts (graphique).
@@ -797,7 +683,7 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - Activité récente (flux d'événements).
 - Actions rapides (accès direct aux tâches courantes).
 
-## 39. Gestion des clients
+## 33. Gestion des clients
 
 **Cycle de vie complet**
 - Création unitaire, avec champs de contact (prénom, e-mail, téléphone, adresse, fonction, tags, notes) et consentement RGPD horodaté.
@@ -829,7 +715,7 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 **Export**
 - Export CSV de la liste filtrée.
 
-## 40. Journal des connexions
+## 34. Journal des connexions
 
 - Historique paginé au niveau base de données (aucune limite de volume affichable).
 - Recherche texte (client, IP, endpoint), filtre par statut.
@@ -839,7 +725,7 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - **Heatmap des connexions** (créneaux horaires × jours de la semaine, 30 derniers jours).
 - Export CSV de la page courante.
 
-## 41. Monitoring
+## 35. Monitoring
 
 - Graphique de débit long terme, avec **zoom molette et pan par glisser**.
 - Métriques hôte : CPU, mémoire, disque, connexions TCP actives, latence réseau (à la demande), température CPU (si le matériel l'expose).
@@ -847,7 +733,7 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - Détection d'anomalies de débit.
 - État des services surveillés (`wg-quick@wg0`, `blockhash-dashboard`).
 
-## 42. Alertes
+## 36. Alertes
 
 **Catalogue de règles**
 - Connexion / déconnexion d'un client (temps réel).
@@ -871,13 +757,13 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - Tableau de bord : volume par jour, top clients alertés, délai moyen avant lecture (MTTA).
 - Vue des règles actuellement en cooldown (« déduplication active »).
 
-## 43. Conformité
+## 37. Conformité
 
 - Détection des clients inactifs au-delà d'un seuil, avec **politiques par tag** (ex. `#vip` : 180 jours, `#externe` : 30 jours) et liste d'exceptions documentées.
 - Export d'un rapport PDF de conformité.
 - Rapport hebdomadaire automatique par e-mail (activable, configurable).
 
-## 44. Système
+## 38. Système
 
 - **Sauvegardes** : création manuelle avec description libre, planification (désactivé/quotidien/hebdomadaire/mensuel, auto-limitée sans droit d'écriture sur la crontab pour `www-data`), intégrité vérifiée par empreinte **SHA-256**, téléchargement protégé par re-saisie du mot de passe (avec anti force-brute dédié), **restauration à double confirmation** (mot de passe + saisie du mot « RESTORE »), sauvegarde de sécurité automatique de l'état courant avant toute restauration.
 - **Diagnostic** : état du service `wg-quick`, interface WireGuard active, connectivité réseau sortante, espace disque, permissions des fichiers critiques : rapport consultable depuis l'interface.
@@ -885,33 +771,33 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - **Opérations** : redémarrage du tunnel et rotation des clés serveur, avec aperçu du nombre de clients impactés avant confirmation, et entrée systématique au journal d'audit.
 - **Export global** : archive ZIP de l'ensemble des configurations clients.
 
-## 45. Réglages
+## 39. Réglages
 
 - Seuil de détection « en ligne », rétention des données (avec purge manuelle immédiate en plus de la purge automatique nocturne).
 - Notifications desktop (Notification API) et **Web Push** (abonnement/désabonnement, test).
 - Format de date, fuseau horaire, langue (FR/EN).
-- Politiques de conformité par tag (voir §43).
+- Politiques de conformité par tag (voir §37).
 - Thème clair / sombre / automatique (suit les préférences système, mise à jour en direct).
 
-## 46. Utilisateurs et rôles
+## 40. Utilisateurs et rôles
 
 - Comptes nominatifs avec trois rôles : **lecteur** (consultation), **opérateur** (+ gestion des clients), **admin** (accès complet, y compris opérations système et gouvernance des comptes).
 - CRUD complet : création, modification (rôle, statut actif/inactif, réinitialisation de mot de passe), suppression.
 - Garde-fou intégré : impossible de supprimer ou de rétrograder le **dernier compte admin actif**.
 - Page dédiée, réservée aux comptes admin.
 
-## 47. Tokens API
+## 41. Tokens API
 
 - Génération de tokens nommés, avec **scope** (lecture / écriture / admin) et expiration optionnelle.
 - Le token en clair n'est affiché **qu'une seule fois** à la création (seule son empreinte est stockée en base).
 - Liste des tokens actifs (créateur, dernière utilisation, expiration), révocation immédiate.
 - Page dédiée, réservée aux comptes admin.
 
-## 48. Aide intégrée
+## 42. Aide intégrée
 
 - Page dédiée avec sept fiches procédurales pas-à-pas : créer un client, importer en masse, télécharger une configuration, consulter les logs, créer une alerte, restaurer une sauvegarde, gérer les utilisateurs.
 
-## 49. Fonctionnalités transverses
+## 43. Fonctionnalités transverses
 
 - **Temps réel** : mise à jour de l'ensemble du dashboard via Server-Sent Events, sans rafraîchissement de page.
 - **Internationalisation** : interface statique disponible en français et anglais.
@@ -922,11 +808,32 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 - **Assistant de premier lancement** : vérifications de bon fonctionnement à la première connexion.
 - **Signalement** : bouton d'envoi de retour/bug pré-rempli avec le contexte technique.
 
+## 44. Provisioning VPN depuis un annuaire
+
+Génère des clients VPN à partir d'un annuaire d'entreprise existant, pour éviter la double saisie manuelle. Nouvel onglet **Provisioning**, réservé au rôle `admin`.
+
+**Livré (Phase 1)** :
+- Connecteur **LDAP générique** (`dashboard/backend/directory/ldap_connector.py`), couvrant Active Directory local, Azure AD Domain Services, OpenLDAP, Samba AD, FreeIPA, JumpCloud LDAP et Google Secure LDAP — LDAPS/StartTLS obligatoire, échappement systématique des valeurs dans les filtres LDAP (protection anti-injection), détection du bit `ACCOUNTDISABLE` pour les comptes désactivés côté AD.
+- Interface abstraite `DirectoryConnector` (`directory/base.py`) : tout le reste du module ignore le type de source réel, ce qui permettra d'ajouter Microsoft Graph ou Google Workspace sans réécrire l'explorateur ni le moteur de provisioning.
+- Gestion des sources (créer / tester / activer-désactiver / supprimer), avec le mot de passe de bind LDAP **toujours** résolu depuis une variable d'environnement (jamais stocké dans `directory_sources.config_json` ni dans la base SQLite).
+- Explorateur : recherche paginée, sélection multiple, statut VPN affiché par utilisateur.
+- **Dry-run obligatoire** avant toute exécution : détecte les comptes déjà provisionnés, les conflits de nom, les comptes désactivés.
+- **Job asynchrone** (thread dédié) avec suivi de progression par polling, journalisé dans `provisioning_log` et dans `audit.log`. Réutilise `wgctl.py` via `run_wgctl` — aucune réimplémentation de la création de client.
+
+**Feuille de route (non livré)** :
+- Connecteurs API REST **Microsoft Graph** (M365/Entra ID) et **Google Admin SDK** (Google Workspace) — l'architecture (`DirectoryConnector`) est prête à les recevoir.
+- Politiques de provisioning par groupe, quotas par source, tags dynamiques calculés depuis les attributs annuaire.
+- Synchronisation périodique (cron) avec désactivation automatique des comptes annuaire désactivés, historique des synchronisations avec diff.
+- Rollback d'un job, notifications post-provisioning (réutilisation d'`alerts.py`), export PDF signé du rapport.
+- Détection des comptes orphelins et réconciliation manuelle (association rétroactive client VPN ↔ utilisateur annuaire).
+- Passage du suivi de job du polling au flux SSE déjà utilisé par le reste du dashboard (voir §43, temps réel).
+- Tests d'intégration contre un Samba AD / OpenLDAP de laboratoire (les tests actuels couvrent la logique en unitaire, avec un serveur LDAP simulé en mémoire).
+
 ---
 
-# Partie IX : Sécurité
+# Partie VIII : Sécurité
 
-## 50. Modèle d'authentification
+## 45. Modèle d'authentification
 
 BLOCKHash distingue trois mécanismes d'authentification, tous vérifiés par une fonction centrale (`check_auth()` dans `app.py`) :
 
@@ -936,7 +843,7 @@ BLOCKHash distingue trois mécanismes d'authentification, tous vérifiés par un
 
 Le mot de passe est haché via `werkzeug.security` (scrypt/pbkdf2 selon version), jamais stocké en clair. Un mécanisme anti force-brute limite les tentatives de connexion par adresse IP (verrouillage temporaire configurable).
 
-## 51. Contrôle d'accès par rôle (RBAC)
+## 46. Contrôle d'accès par rôle (RBAC)
 
 Trois rôles, avec une hiérarchie stricte :
 
@@ -950,20 +857,20 @@ La vérification est appliquée à **deux niveaux**, volontairement redondants :
 - **Backend** (`auth.required_role_for(method, path)`) : la seule source de vérité réelle pour la sécurité ; chaque requête API est évaluée avant exécution.
 - **Frontend** : les boutons et sections réservés à un rôle supérieur sont masqués dynamiquement (attribut `data-role-min`), pour une expérience cohérente plutôt qu'un message d'erreur après un clic. Le masquage frontend est un confort d'usage, **jamais** un mécanisme de sécurité à lui seul.
 
-## 52. Protection des données et RGPD
+## 47. Protection des données et RGPD
 
 - Champs de contact client (nom, e-mail, téléphone, adresse, fonction) et **consentement horodaté**.
 - Export complet des données d'un client (profil + historique de connexion) au format JSON, en réponse à une demande d'accès.
 - Politiques de rétention et de purge automatique configurables.
 - Aucune donnée transmise à un service tiers sans configuration explicite (les canaux d'alerte : e-mail, Slack, Discord, Telegram, Web Push : sont tous opt-in et configurés par l'organisation elle-même).
 
-## 53. Traçabilité et audit
+## 48. Traçabilité et audit
 
 - **Journal d'audit** append-only (`/var/log/wireguard/audit.log`) : toute action de modification (création/révocation de client, connexion, échec d'authentification, rotation de clés, restauration, gestion des comptes...) y est consignée avec horodatage, IP source et détail structuré.
 - Consultable depuis l'interface (aperçu + page dédiée avec filtres), exportable.
 - **Signalements de bugs** eux-mêmes tracés (auteur, catégorie, sévérité, statut de traitement).
 
-## 54. Checklist de durcissement
+## 49. Checklist de durcissement
 
 - [ ] Restreindre les règles NSG `AllowSSH-Admin` et `AllowDashboard-Admin` à des plages d'IP connues plutôt qu'à `Internet`.
 - [ ] Désactiver `DASHBOARD_TOKEN` une fois tous les comptes/tokens nominatifs en place.
@@ -972,13 +879,13 @@ La vérification est appliquée à **deux niveaux**, volontairement redondants :
 - [ ] Configurer un canal de notification (e-mail a minima) pour être alerté en cas d'événement critique.
 - [ ] Vérifier régulièrement le journal d'audit et la boîte de réception des signalements.
 - [ ] Maintenir à jour le système d'exploitation, le noyau (module WireGuard), et les dépendances Python (`requirements.txt`).
-- [ ] Sauvegarder `wg0.conf` et la base SQLite en dehors de la VM (voir Partie XI).
+- [ ] Sauvegarder `wg0.conf` et la base SQLite en dehors de la VM (voir Partie X).
 
 ---
 
-# Partie X : Référence API
+# Partie IX : Référence API
 
-## 55. Authentification des appels API
+## 50. Authentification des appels API
 
 Toutes les routes sous `/api/*` (à l'exception de `/api/login`) exigent un en-tête :
 
@@ -997,7 +904,7 @@ curl -sk -X POST https://<host>/api/login \
 curl -sk https://<host>/api/clients -H "X-API-Token: sess_..."
 ```
 
-## 56. Catalogue des endpoints
+## 51. Catalogue des endpoints
 
 73 routes, regroupées par domaine fonctionnel :
 
@@ -1020,16 +927,16 @@ curl -sk https://<host>/api/clients -H "X-API-Token: sess_..."
 
 ---
 
-# Partie XI : Exploitation
+# Partie X : Exploitation
 
-## 57. Sauvegardes et rétention
+## 52. Sauvegardes et rétention
 
 - **Sauvegardes de configuration** (`wg0.conf`) : création manuelle avec description, planification automatique (désactivée par défaut), intégrité vérifiée par SHA-256, conservation des `WG_MAX_BACKUPS` (50 par défaut) plus récentes.
 - **Restauration** : double confirmation (mot de passe + saisie de « RESTORE »), avec sauvegarde de sécurité automatique de l'état courant avant toute écrasement.
 - **Rétention des données applicatives** (logs, métriques, alertes) : purge automatique nocturne selon `METRICS_RETENTION_DAYS`, purge manuelle immédiate disponible depuis Réglages.
 - **Recommandation** : répliquer périodiquement `/etc/wireguard/backups/` et `/var/log/wireguard/blockhash.db` vers un stockage hors VM (snapshot de disque Azure, ou synchronisation externe).
 
-## 58. Mise à jour de la plateforme
+## 53. Mise à jour de la plateforme
 
 ```bash
 # Sauvegarder avant toute mise à jour
@@ -1046,14 +953,14 @@ sudo systemctl restart blockhash-dashboard
 sudo systemctl status blockhash-dashboard
 ```
 
-## 59. Supervision de la plateforme elle-même
+## 54. Supervision de la plateforme elle-même
 
 - Page **Système > Diagnostic** : état du service `wg-quick`, connectivité sortante, espace disque, permissions.
 - Page **Système > Journal d'audit** : détection d'activité anormale (échecs d'authentification répétés, actions hors horaires).
 - `journalctl -u blockhash-dashboard -f` pour les logs applicatifs en direct.
-- Alerte `service_down` (voir Partie VIII, §42) pour être notifié si `wg-quick@wg0` ou `blockhash-dashboard` s'arrête.
+- Alerte `service_down` (voir Partie VII, §36) pour être notifié si `wg-quick@wg0` ou `blockhash-dashboard` s'arrête.
 
-## 60. Capacité et dimensionnement
+## 55. Capacité et dimensionnement
 
 | Facteur | Recommandation |
 |---|---|
@@ -1064,9 +971,9 @@ sudo systemctl status blockhash-dashboard
 
 ---
 
-# Partie XII : Dépannage
+# Partie XI : Dépannage
 
-## 61. Méthodologie générale
+## 56. Méthodologie générale
 
 1. Vérifier l'état des services : `systemctl status blockhash-dashboard wg-quick@wg0 caddy`.
 2. Consulter les logs applicatifs : `journalctl -u blockhash-dashboard -n 100 --no-pager`.
@@ -1074,7 +981,20 @@ sudo systemctl status blockhash-dashboard
 4. Vérifier les permissions des fichiers partagés entre root et www-data (voir incident ci-dessous).
 5. Utiliser la page **Système > Diagnostic** du dashboard lui-même.
 
-## 62. Incidents courants
+## 57. Incidents courants
+
+### `terraform apply` reste bloqué sur « null_resource.deploy: Still creating... » indéfiniment
+
+**Symptôme.** Le déploiement automatisé (`auto_deploy = true`, voir Partie V) semble tourner indéfiniment sans jamais se terminer — alors qu'une vérification manuelle sur la VM montre que WireGuard **et** le dashboard sont bel et bien installés et fonctionnels. À l'interruption manuelle (Ctrl+C), Terraform affiche `remote command exited without exit status or exit signal`.
+
+**Cause.** `needrestart`, un mécanisme Ubuntu qui affiche une invite interactive (`whiptail`) dès qu'une mise à jour de paquet nécessite de redémarrer un service — quasi systématique avec `package_upgrade: true` (mise à jour de `libc`/`openssl` au premier boot) et les `apt install` des scripts. Sur une session SSH non interactive (le `remote-exec` de Terraform), cette invite ne reçoit jamais de réponse : la commande sous-jacente a beau être terminée depuis longtemps, le canal SSH ne se referme jamais, et Terraform attend indéfiniment un signal de fin qui ne viendra jamais.
+
+**Correctif appliqué dans ce dépôt.**
+- `terraform/modules/compute/cloud-init.yaml.tpl` désactive le mode interactif de `needrestart` (`$nrconf{restart} = 'a';`) via `write_files`, **avant** que `package_upgrade` ne s'exécute — c'est le point critique : une désactivation plus tardive (`runcmd`) arriverait après le blocage potentiel.
+- Les trois scripts (`01`, `03`, `04`) exportent en plus `DEBIAN_FRONTEND=noninteractive` et `NEEDRESTART_MODE=a` en tout début d'exécution, en défense en profondeur pour un lancement manuel hors Terraform.
+- `terraform/main.tf` enveloppe chaque étape du `remote-exec` dans `timeout Nm ... </dev/null` : `</dev/null` coupe l'entrée standard (toute invite imprévue reçoit un EOF immédiat plutôt que d'attendre), et `timeout` fait échouer proprement l'étape au bout de quelques minutes si un cas imprévu bloque quand même la commande, plutôt que de bloquer `terraform apply` indéfiniment.
+
+**Si le problème persiste malgré ce correctif** (VM déjà provisionnée avant sa mise en place, ou autre cause de blocage) : `ssh` manuellement sur la VM pendant que `terraform apply` est bloqué, et inspecter les processus en cours (`ps auxf`) pour identifier ce qui retient la session ouverte ; `sudo needrestart -r a` purge une invite `needrestart` déjà en attente.
 
 ### « attempt to write a readonly database » au login ou à toute action utilisateur/token
 
@@ -1108,7 +1028,7 @@ Toutes les routes attendues (`/api/alerts/config`, `/api/alerts/history`, `/api/
 
 ### Le worker Gunicorn "avale" les connexions et le dashboard devient inaccessible
 
-**Cause.** Utilisation du worker par défaut (synchrone) ou `gthread` avec un flux SSE ouvert en continu par onglet : le pool de threads s'épuise dès que quelques onglets restent ouverts. **Solution** : `--worker-class gevent`, seule option adaptée à un flux SSE de longue durée (voir Partie VII, §35).
+**Cause.** Utilisation du worker par défaut (synchrone) ou `gthread` avec un flux SSE ouvert en continu par onglet : le pool de threads s'épuise dès que quelques onglets restent ouverts. **Solution** : `--worker-class gevent`, seule option adaptée à un flux SSE de longue durée (voir Partie VI, §29).
 
 ### Le rapport hebdomadaire ou l'export PDF échoue sans message clair
 
@@ -1118,9 +1038,9 @@ Toutes les routes attendues (`/api/alerts/config`, `/api/alerts/history`, `/api/
 
 ---
 
-# Partie XIII : Limites connues et feuille de route
+# Partie XII : Limites connues et feuille de route
 
-## 63. Hors périmètre assumé
+## 58. Hors périmètre assumé
 
 Ces choix sont **documentés et délibérés**, pas des oublis :
 
@@ -1132,7 +1052,7 @@ Ces choix sont **documentés et délibérés**, pas des oublis :
 | Vraie notification Web Push à grande échelle | Implémenté en best-effort | Repose sur le protocole standard (VAPID) sans infrastructure de file d'attente dédiée ; convient à un usage d'équipe, pas à des milliers d'abonnés |
 | Multi-tenant | Non implémenté | Le projet est conçu pour une organisation unique |
 
-## 64. Feuille de route
+## 59. Feuille de route
 
 - Authentification à deux facteurs (TOTP) pour les comptes admin.
 - Intégration SSO (OIDC a minima).
@@ -1143,7 +1063,7 @@ Ces choix sont **documentés et délibérés**, pas des oublis :
 
 # Annexes
 
-## 65. Glossaire
+## 60. Glossaire
 
 | Terme | Définition |
 |---|---|
@@ -1156,7 +1076,7 @@ Ces choix sont **documentés et délibérés**, pas des oublis :
 | **SSE** | *Server-Sent Events* : flux HTTP permettant au serveur de pousser des évènements en continu vers le navigateur |
 | **NSG** | *Network Security Group* : groupe de règles de pare-feu au niveau réseau Azure |
 
-## 66. Aide-mémoire des commandes
+## 61. Aide-mémoire des commandes
 
 ```bash
 # État général
@@ -1179,7 +1099,7 @@ sudo /opt/blockhash-dashboard/venv/bin/python3 /opt/blockhash-dashboard/backend/
 cd dashboard/backend && DASHBOARD_TOKEN=test ALLOW_NO_AUTH=true python3 -m pytest tests/ -v
 ```
 
-## 67. Licence
+## 62. Licence
 
 Ce projet est distribué sous licence **MIT**. Voir le fichier [`LICENSE`](./LICENSE) pour le texte complet.
 
