@@ -1292,6 +1292,7 @@ async function renderClients() {
     renderClientsStatusChart(STATE.peers);
     renderClientsGrowthChart(STATE.peers);
     drawClientsTable();
+    updateAdvFiltersBadge();
   } catch (err) {
     toast("danger", "Impossible de charger les clients", err.message);
   }
@@ -1777,7 +1778,10 @@ document.getElementById("clients-page-size").addEventListener("change", e => {
 });
 document.getElementById("btn-toggle-advanced-filters").addEventListener("click", () => {
   const panel = document.getElementById("clients-advanced-filters");
+  const toggle = document.getElementById("btn-toggle-advanced-filters");
   panel.hidden = !panel.hidden;
+  toggle.classList.toggle("is-open", !panel.hidden);
+  toggle.setAttribute("aria-expanded", String(!panel.hidden));
   if (!panel.hidden) {
     panel.classList.remove("is-opening");
     void panel.offsetWidth; // force reflow pour rejouer l'animation
@@ -1788,8 +1792,10 @@ function updateAdvFiltersBadge() {
   const f = STATE.clientsFilter;
   const n = ["created", "expiry", "contact"].filter(k => f[k]).length;
   const badge = document.getElementById("adv-filters-active-count");
+  const toggle = document.getElementById("btn-toggle-advanced-filters");
   badge.hidden = n === 0;
-  badge.textContent = `${n} actif(s)`;
+  badge.textContent = String(n);
+  toggle?.classList.toggle("has-active", n > 0);
 }
 ["filter-created", "filter-expiry", "filter-contact"].forEach(id => {
   document.getElementById(id).addEventListener("change", e => {
@@ -2022,6 +2028,8 @@ function setClientStep(step) {
   document.getElementById("btn-client-prev").hidden = step === 1;
   document.getElementById("btn-client-next").hidden = step === 3;
   document.getElementById("btn-confirm-client").hidden = step !== 3;
+  const stepHint = document.getElementById("client-wizard-step-hint");
+  if (stepHint) stepHint.textContent = `Étape ${step} sur 3`;
   if (step === 3) renderClientRecap();
   document.querySelector("#modal-client .modal-body").scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -2051,14 +2059,31 @@ function recapField(label, value, opts = {}) {
     </div>`;
 }
 
-function recapSection(icon, tone, title, fieldsHtml) {
+function recapSection(icon, tone, title, fieldsHtml, subtitle = "") {
   return `
-    <div class="recap-section">
+    <div class="recap-section tone-${tone}">
       <div class="recap-section-head">
         <div class="tw-settings-icon tone-${tone}">${icon}</div>
-        <div class="recap-section-title">${escapeHtml(title)}</div>
+        <div>
+          <div class="recap-section-title">${escapeHtml(title)}</div>
+          ${subtitle ? `<div class="recap-section-sub">${escapeHtml(subtitle)}</div>` : ""}
+        </div>
       </div>
       <div class="recap-fields">${fieldsHtml}</div>
+    </div>`;
+}
+
+function recapHero(avatarText, name, subtitle, badgesHtml = "", opts = {}) {
+  const avatarCls = opts.avatarClass ? ` ${opts.avatarClass}` : "";
+  const nameCls = opts.monoName ? " recap-hero-name mono" : " recap-hero-name";
+  return `
+    <div class="recap-hero">
+      <div class="recap-hero-avatar${avatarCls}">${escapeHtml(avatarText)}</div>
+      <div class="recap-hero-text">
+        <strong class="${nameCls.trim()}">${escapeHtml(name)}</strong>
+        <span class="recap-hero-sub">${escapeHtml(subtitle)}</span>
+      </div>
+      ${badgesHtml ? `<div class="recap-hero-meta">${badgesHtml}</div>` : ""}
     </div>`;
 }
 
@@ -2099,10 +2124,20 @@ function renderClientRecap() {
     recapField("Adresse", adresse, { span2: true, emptyText: "Aucune adresse" }) +
     recapField("Notes", notes, { span2: true, emptyText: "Aucune note" });
 
+  const expiresLabel = expires
+    ? new Date(expires + "T12:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })
+    : "Sans expiration";
+  const heroBadges = `
+    <span class="badge ${rgpd ? "success" : "neutral"}"><span class="dot"></span>${rgpd ? "RGPD OK" : "RGPD"}</span>
+    <span class="badge neutral">${escapeHtml(expiresLabel)}</span>`;
+
   document.getElementById("client-recap-body").innerHTML =
-    recapSection(ICON_USER, "accent", "Identité", identite) +
-    recapSection(ICON_CLOCK, "warning", "Configuration", config) +
-    recapSection(ICON_MAIL, "success", "Contact", contact);
+    recapHero(name ? initials(name) : "?", name || "Nouveau client", prenom || fonction || "Profil WireGuard à provisionner", heroBadges, { monoName: true }) +
+    `<div class="recap-sections">` +
+    recapSection(ICON_USER, "accent", "Identité", identite, "Pair et personne associée") +
+    recapSection(ICON_CLOCK, "warning", "Configuration", config, "Tags, expiration et conformité") +
+    recapSection(ICON_MAIL, "success", "Contact", contact, "Coordonnées et notes internes") +
+    `</div>`;
 }
 
 document.getElementById("btn-client-next").addEventListener("click", () => {
@@ -2292,21 +2327,42 @@ function renderBulkPreview(result) {
 function renderBulkRecap(clients, result) {
   const okCount = result.created.length, errCount = result.errors.length;
   const names = clients.map(c => c.name).filter(Boolean);
-  document.getElementById("bulk-recap-body").innerHTML = `
-    <div class="recap-stat-row">
-      <div class="recap-stat-pill"><span class="n">${clients.length}</span><span class="l">Lignes soumises</span></div>
-      <div class="recap-stat-pill tone-success"><span class="n">${okCount}</span><span class="l">Valides</span></div>
-      <div class="recap-stat-pill ${errCount ? "tone-danger" : ""}"><span class="n">${errCount}</span><span class="l">En erreur</span></div>
+  const total = clients.length;
+  const pct = total ? Math.round((okCount / total) * 100) : 0;
+  const errBlock = errCount ? `
+    <div class="recap-alert">
+      <div>
+        <strong>${errCount} ligne(s) en erreur</strong>
+        Corrigez la source ou retirez les lignes invalides avant de créer. Consultez l'étape « Aperçu » pour le détail.
+      </div>
+    </div>` : "";
+
+  document.getElementById("bulk-recap-body").innerHTML =
+    recapHero(String(total), `Import groupé — ${total} ligne(s)`, "Vérifiez le résumé avant de lancer la création en une opération", "", { avatarClass: "tone-bulk" }) +
+    `<div class="recap-progress">
+      <div class="recap-progress-head"><strong>${pct}% prêtes à créer</strong><span>${okCount} valide(s) · ${errCount} erreur(s)</span></div>
+      <div class="recap-progress-track"><div class="recap-progress-fill" style="width:${pct}%;"></div></div>
     </div>
-    <div class="recap-section">
+    <div class="recap-kpi-row">
+      <div class="recap-kpi"><span class="n">${total}</span><span class="l">Soumises</span></div>
+      <div class="recap-kpi tone-success"><span class="n">${okCount}</span><span class="l">Valides</span></div>
+      <div class="recap-kpi ${errCount ? "tone-danger" : ""}"><span class="n">${errCount}</span><span class="l">Erreurs</span></div>
+    </div>
+    ${errBlock}
+    <div class="recap-section tone-accent">
       <div class="recap-section-head">
         <div class="tw-settings-icon tone-accent">${ICON_USER}</div>
-        <div class="recap-section-title">Clients concernés</div>
+        <div>
+          <div class="recap-section-title">Clients concernés</div>
+          <div class="recap-section-sub">${names.length ? `${names.length} identifiant(s) technique(s)` : "Aucun nom détecté dans la source"}</div>
+        </div>
       </div>
-      <div class="recap-names-list">
-        ${names.slice(0, 24).map(n => `<span class="recap-name-chip">${escapeHtml(n)}</span>`).join("")}
-        ${names.length > 24 ? `<span class="recap-name-chip">+ ${names.length - 24} autre(s)</span>` : ""}
-        ${!names.length ? `<span class="recap-field-value is-empty">Aucun nom détecté</span>` : ""}
+      <div class="recap-names-panel">
+        <div class="recap-names-list">
+          ${names.slice(0, 48).map(n => `<span class="recap-name-chip">${escapeHtml(n)}</span>`).join("")}
+          ${names.length > 48 ? `<span class="recap-name-chip">+ ${names.length - 48} autre(s)</span>` : ""}
+          ${!names.length ? `<span class="recap-field-value is-empty">Aucun nom détecté</span>` : ""}
+        </div>
       </div>
     </div>`;
 }
