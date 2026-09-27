@@ -2034,23 +2034,75 @@ function validateClientStep(step) {
   return true;
 }
 
+function recapField(label, value, opts = {}) {
+  const empty = value === undefined || value === null || value === "";
+  const cls = ["recap-field-value"];
+  if (empty) cls.push("is-empty");
+  if (opts.mono) cls.push("mono");
+  if (opts.span2) return `
+    <div class="recap-field span-2">
+      <span class="recap-field-label">${escapeHtml(label)}</span>
+      ${opts.html ? opts.html : `<span class="${cls.join(" ")}">${escapeHtml(empty ? (opts.emptyText || "Non renseigné") : value)}</span>`}
+    </div>`;
+  return `
+    <div class="recap-field">
+      <span class="recap-field-label">${escapeHtml(label)}</span>
+      ${opts.html ? opts.html : `<span class="${cls.join(" ")}">${escapeHtml(empty ? (opts.emptyText || "Non renseigné") : value)}</span>`}
+    </div>`;
+}
+
+function recapSection(icon, tone, title, fieldsHtml) {
+  return `
+    <div class="recap-section">
+      <div class="recap-section-head">
+        <div class="tw-settings-icon tone-${tone}">${icon}</div>
+        <div class="recap-section-title">${escapeHtml(title)}</div>
+      </div>
+      <div class="recap-fields">${fieldsHtml}</div>
+    </div>`;
+}
+
+const ICON_USER = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const ICON_CLOCK = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const ICON_MAIL = '<svg viewBox="0 0 20 20" fill="none"><path d="M3 5.5h14v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3 6l7 5 7-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+
 function renderClientRecap() {
   const name = document.getElementById("field-client-name").value.trim();
-  const rows = [
-    ["Nom du client", name || "—"],
-    ["Prénom / nom complet", document.getElementById("field-client-prenom").value.trim() || "—"],
-    ["Fonction", document.getElementById("field-client-fonction").value.trim() || "—"],
-    ["Tags", document.getElementById("field-client-tags").value.trim() || "—"],
-    ["Expiration", document.getElementById("field-client-expires").value || "Aucune"],
-    ["Consentement RGPD", document.getElementById("field-client-rgpd-consent").checked ? "Recueilli" : "Non recueilli"],
-    ["Email", document.getElementById("field-client-email").value.trim() || "—"],
-    ["Téléphone", document.getElementById("field-client-telephone").value.trim() || "—"],
-    ["Adresse", document.getElementById("field-client-adresse").value.trim() || "—"],
-    ["Notes", document.getElementById("field-client-notes").value.trim() || "—"],
-  ];
-  document.getElementById("client-recap-body").innerHTML = rows.map(([label, value]) => `
-    <div class="recap-row"><span class="recap-label">${escapeHtml(label)}</span><span class="recap-value">${escapeHtml(value)}</span></div>
-  `).join("");
+  const prenom = document.getElementById("field-client-prenom").value.trim();
+  const fonction = document.getElementById("field-client-fonction").value.trim();
+  const tags = document.getElementById("field-client-tags").value.trim();
+  const expires = document.getElementById("field-client-expires").value;
+  const rgpd = document.getElementById("field-client-rgpd-consent").checked;
+  const email = document.getElementById("field-client-email").value.trim();
+  const telephone = document.getElementById("field-client-telephone").value.trim();
+  const adresse = document.getElementById("field-client-adresse").value.trim();
+  const notes = document.getElementById("field-client-notes").value.trim();
+
+  document.getElementById("client-modal-avatar").textContent = name ? initials(name) : "+";
+
+  const tagsHtml = tags
+    ? `<div class="recap-tags-row">${tags.split(",").map(t => t.trim()).filter(Boolean).map(t => `<span class="client-card-tag">${escapeHtml(t)}</span>`).join("")}</div>`
+    : "";
+
+  const identite = recapField("Nom du client", name, { mono: true }) +
+    recapField("Prénom / nom complet", prenom) +
+    recapField("Fonction", fonction);
+
+  const config = recapField("Tags", tags, tagsHtml ? { html: tagsHtml } : { emptyText: "Aucun tag" }) +
+    recapField("Expiration", expires ? new Date(expires + "T12:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }) : "", { emptyText: "Sans expiration" }) +
+    recapField("Consentement RGPD", "", {
+      html: `<span class="badge ${rgpd ? "success" : "neutral"}"><span class="dot"></span>${rgpd ? "Recueilli" : "Non recueilli"}</span>`,
+    });
+
+  const contact = recapField("Email", email, { emptyText: "Aucun email" }) +
+    recapField("Téléphone", telephone, { mono: true, emptyText: "Aucun téléphone" }) +
+    recapField("Adresse", adresse, { span2: true, emptyText: "Aucune adresse" }) +
+    recapField("Notes", notes, { span2: true, emptyText: "Aucune note" });
+
+  document.getElementById("client-recap-body").innerHTML =
+    recapSection(ICON_USER, "accent", "Identité", identite) +
+    recapSection(ICON_CLOCK, "warning", "Configuration", config) +
+    recapSection(ICON_MAIL, "success", "Contact", contact);
 }
 
 document.getElementById("btn-client-next").addEventListener("click", () => {
@@ -2238,15 +2290,25 @@ function renderBulkPreview(result) {
 }
 
 function renderBulkRecap(clients, result) {
-  const rows = [
-    ["Lignes soumises", String(clients.length)],
-    ["Lignes valides", String(result.created.length)],
-    ["Lignes en erreur", String(result.errors.length)],
-    ["Aperçu des noms", clients.slice(0, 6).map(c => c.name).filter(Boolean).join(", ") + (clients.length > 6 ? "…" : "")],
-  ];
-  document.getElementById("bulk-recap-body").innerHTML = rows.map(([label, value]) => `
-    <div class="recap-row"><span class="recap-label">${escapeHtml(label)}</span><span class="recap-value">${escapeHtml(value || "—")}</span></div>
-  `).join("");
+  const okCount = result.created.length, errCount = result.errors.length;
+  const names = clients.map(c => c.name).filter(Boolean);
+  document.getElementById("bulk-recap-body").innerHTML = `
+    <div class="recap-stat-row">
+      <div class="recap-stat-pill"><span class="n">${clients.length}</span><span class="l">Lignes soumises</span></div>
+      <div class="recap-stat-pill tone-success"><span class="n">${okCount}</span><span class="l">Valides</span></div>
+      <div class="recap-stat-pill ${errCount ? "tone-danger" : ""}"><span class="n">${errCount}</span><span class="l">En erreur</span></div>
+    </div>
+    <div class="recap-section">
+      <div class="recap-section-head">
+        <div class="tw-settings-icon tone-accent">${ICON_USER}</div>
+        <div class="recap-section-title">Clients concernés</div>
+      </div>
+      <div class="recap-names-list">
+        ${names.slice(0, 24).map(n => `<span class="recap-name-chip">${escapeHtml(n)}</span>`).join("")}
+        ${names.length > 24 ? `<span class="recap-name-chip">+ ${names.length - 24} autre(s)</span>` : ""}
+        ${!names.length ? `<span class="recap-field-value is-empty">Aucun nom détecté</span>` : ""}
+      </div>
+    </div>`;
 }
 
 document.getElementById("btn-bulk-preview").addEventListener("click", async () => {

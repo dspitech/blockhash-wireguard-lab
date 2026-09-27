@@ -613,15 +613,16 @@
 
           <!-- ÉTAPE 3 : Récapitulatif -->
           <div class="bulk-step" data-step="3" hidden>
-            <div class="form-block tone-success">
-              <div class="tw-settings-section-header" style="margin-bottom:10px;">
-                <div class="tw-settings-icon tone-success">
-                  <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <div><h2 class="tw-h2">Récapitulatif</h2><p class="tw-p-muted">Vérifiez avant de créer les clients en une seule opération</p></div>
+            <div class="recap-summary-banner">
+              <div class="tw-settings-icon tone-success">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </div>
-              <div class="recap-grid" id="bulk-recap-body"></div>
+              <div class="recap-summary-banner-text">
+                <strong>Prêt à créer les clients</strong>
+                <span>Vérifiez le résumé ci-dessous avant de lancer la création en une seule opération</span>
+              </div>
             </div>
+            <div id="bulk-recap-body"></div>
           </div>
 
         </div>
@@ -1487,15 +1488,16 @@
 
       <!-- ÉTAPE 3 : Récapitulatif -->
       <div class="client-step" data-step="3" hidden>
-        <div class="form-block tone-accent">
-          <div class="tw-settings-section-header" style="margin-bottom:10px;">
-            <div class="tw-settings-icon tone-accent">
-              <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-            <div><h2 class="tw-h2">Récapitulatif</h2><p class="tw-p-muted">Vérifiez les informations avant de créer le client</p></div>
+        <div class="recap-summary-banner">
+          <div class="tw-settings-icon tone-accent">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
-          <div class="recap-grid" id="client-recap-body"></div>
+          <div class="recap-summary-banner-text">
+            <strong>Vérifiez les informations</strong>
+            <span>Relisez le profil avant de créer le client et provisionner son accès WireGuard</span>
+          </div>
         </div>
+        <div class="recap-sections" id="client-recap-body"></div>
       </div>
 
     </div>
