@@ -577,6 +577,151 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
 
+/* ==========================================================
+   VUE CLIENTS — refonte "console entreprise"
+   Stat cards, sélecteur de vues, cartes clients, tableau Kanban
+   par statut, modals de formulaire redessinées.
+   ========================================================== */
+
+/* ---- Sélecteur de vues (Tableau / Cartes / Statuts) ---- */
+.view-switch {
+  display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-md);
+  background: var(--bg-inset); border: 1px solid var(--border-subtle);
+}
+.view-switch-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-tertiary); font-size: var(--fs-xs); font-weight: 700; cursor: pointer;
+  transition: background .16s var(--ease), color .16s var(--ease), box-shadow .16s var(--ease), transform .12s var(--ease);
+  white-space: nowrap;
+}
+.view-switch-btn svg { width: 15px; height: 15px; }
+.view-switch-btn:hover { color: var(--text-primary); }
+.view-switch-btn.is-active { background: var(--bg-surface); color: var(--accent); box-shadow: var(--shadow-1); }
+.view-switch-btn:active { transform: scale(0.96); }
+@media (max-width: 720px) { .view-switch-btn span { display: none; } }
+
+/* ---- KPI clients : mêmes tokens que l'aperçu, teinte par carte ---- */
+.clients-kpi-grid .kpi-card { position: relative; }
+.clients-kpi-grid .kpi-card .kpi-trend {
+  display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: 700; margin-top: 2px;
+}
+
+/* ---- Cartes client (vue "Cartes") ---- */
+.clients-cards-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.client-card {
+  position: relative; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); overflow: hidden;
+  animation: reveal-up .4s var(--ease) both; transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+.client-card:nth-child(n) { animation-delay: calc(var(--card-i, 0) * 30ms); }
+.client-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-2); border-color: var(--n400); }
+.client-card::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--teal-soft));
+}
+.client-card.status-disabled::before { background: linear-gradient(90deg, var(--danger), #e08b8b); }
+.client-card.status-idle::before { background: linear-gradient(90deg, var(--warning), #e0b25c); }
+.client-card.status-never::before { background: linear-gradient(90deg, var(--n400), var(--n300)); }
+.client-card-head { display: flex; align-items: flex-start; gap: 12px; }
+.client-card-avatar {
+  width: 42px; height: 42px; border-radius: var(--radius-md); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: var(--fs-sm);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff;
+  box-shadow: 0 2px 8px rgba(28,91,99,0.28);
+}
+.client-card.status-disabled .client-card-avatar { background: linear-gradient(135deg, var(--danger), #8f2c2c); box-shadow: none; }
+.client-card.status-idle .client-card-avatar { background: linear-gradient(135deg, var(--warning), #8a5a0b); box-shadow: none; }
+.client-card.status-never .client-card-avatar { background: linear-gradient(135deg, var(--n500), var(--n600)); box-shadow: none; }
+.client-card-title { font-weight: 700; font-size: var(--fs-md); color: var(--text-primary); line-height: 1.25; }
+.client-card-sub { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 1px; }
+.client-card-checkbox { position: absolute; top: 12px; right: 12px; }
+.client-card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: var(--fs-xs); }
+.client-card-body .ccb-label { color: var(--text-tertiary); display: block; font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+.client-card-body .ccb-value { color: var(--text-secondary); font-family: var(--font-mono); }
+.client-card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.client-card-tag {
+  font-size: var(--fs-2xs); font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: var(--accent-dim); color: var(--accent);
+}
+.client-card-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 4px; border-top: 1px solid var(--border-subtle); }
+.client-card-actions .icon-btn { width: 30px; height: 30px; }
+.client-card-actions .icon-btn.grow { flex: 1; width: auto; gap: 6px; font-size: var(--fs-2xs); font-weight: 700; }
+
+/* ---- Kanban clients (vue "Statuts") ---- */
+.clients-kanban-board {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: start;
+}
+@media (max-width: 980px) { .clients-kanban-board { grid-template-columns: 1fr; } }
+.kanban-col { background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--sp-3); }
+.kanban-col-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px var(--sp-3); font-weight: 700; font-size: var(--fs-sm); }
+.kanban-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.kanban-col-count { margin-left: auto; font-size: var(--fs-2xs); font-weight: 700; color: var(--text-tertiary); background: var(--bg-surface); border-radius: var(--radius-pill); padding: 2px 8px; }
+.kanban-cards { display: flex; flex-direction: column; gap: 8px; max-height: 560px; overflow-y: auto; padding-right: 2px; }
+.kanban-card {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  padding: 10px 12px; display: flex; align-items: center; gap: 10px; cursor: pointer;
+  transition: transform .14s var(--ease), box-shadow .14s var(--ease), border-color .14s var(--ease);
+  animation: reveal-up .35s var(--ease) both;
+}
+.kanban-card:hover { transform: translateX(3px); box-shadow: var(--shadow-1); border-color: var(--n400); }
+.kanban-card-avatar {
+  width: 28px; height: 28px; border-radius: var(--radius-sm); flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+}
+.kanban-card-body { min-width: 0; flex: 1; }
+.kanban-card-name { font-size: var(--fs-xs); font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kanban-card-meta { font-size: 10.5px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kanban-empty { text-align: center; padding: 24px 8px; color: var(--text-tertiary); font-size: var(--fs-xs); }
+.kanban-more { text-align: center; font-size: var(--fs-2xs); color: var(--text-tertiary); font-weight: 700; padding-top: 4px; }
+
+/* ---- Modals "pro" (Ajouter un client / Ajout multiple) ---- */
+.modal-header-pro { display: flex; align-items: flex-start; gap: 14px; }
+.modal-header-pro > div:nth-child(2) { flex: 1; min-width: 0; }
+.modal-header-pro h3 { margin: 0 0 2px; }
+.modal-subtitle { margin: 0; font-size: var(--fs-xs); color: var(--text-tertiary); }
+.modal-header-icon {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
+  background: var(--accent-dim); color: var(--accent);
+}
+.modal-header-icon svg { width: 19px; height: 19px; }
+.client-avatar-preview {
+  flex-shrink: 0; width: 46px; height: 46px; border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: var(--fs-md); color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 3px 10px rgba(28,91,99,0.3); transition: transform .2s var(--ease), background .2s var(--ease);
+}
+.modal-pro .modal-body { animation: chart-fade-in .3s var(--ease) both; }
+
+.form-block {
+  background: var(--bg-inset); border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md); padding: var(--sp-4); transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+.form-block:hover { box-shadow: var(--shadow-1); }
+.form-block.tone-warning { border-left-color: var(--warning); }
+.form-block.tone-success { border-left-color: var(--success); }
+.form-block .tw-settings-icon.tone-accent { background: var(--accent-dim); color: var(--accent); }
+.form-block .tw-settings-icon.tone-warning { background: var(--warning-dim); color: var(--warning); }
+.form-block .tw-settings-icon.tone-success { background: var(--success-dim); color: var(--success); }
+.form-block .tw-input:focus, .form-block .tw-textarea:focus, .form-block .tw-select:focus { transform: translateY(-1px); }
+.form-block .tw-input, .form-block .tw-textarea, .form-block .tw-select { transition: border-color .12s, box-shadow .12s, transform .12s; }
+.modal-header-icon.tone-accent { background: var(--accent-dim); color: var(--accent); }
+
+/* ---- Zone de dépôt CSV ---- */
+.file-drop {
+  margin-top: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  border: 1.5px dashed var(--border-default); border-radius: var(--radius-md); padding: 22px 14px; cursor: pointer;
+  color: var(--text-tertiary); background: var(--bg-surface); transition: border-color .16s var(--ease), background .16s var(--ease), color .16s var(--ease);
+}
+.file-drop svg { width: 22px; height: 22px; }
+.file-drop:hover, .file-drop.is-dragover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.file-drop-title { font-size: var(--fs-sm); font-weight: 700; color: var(--text-primary); }
+.file-drop-hint { font-size: var(--fs-2xs); }
+
+/* ---- Bascule d'affichage clients : fondu doux entre vues ---- */
+#clients-view-table, #clients-cards-grid, #clients-kanban-board { animation: chart-fade-in .3s var(--ease) both; }
+
 /* ---- Responsive ---- */
 @media (max-width: 1180px) {
   /* .kpi-grid, .grid-2, .grid-3 : responsive géré par les classes Tailwind (sm:/lg:) sur l'élément */

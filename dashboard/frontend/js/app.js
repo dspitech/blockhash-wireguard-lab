@@ -18,6 +18,7 @@ const STATE = {
   peers: [],
   clientsFilter: loadClientsFilter(),
   clientsSelected: new Set(),
+  clientsView: localStorage.getItem("blockhash_clients_view") || "table",
   journal: { offset: 0, limit: 50, search: "", status: "all", total: 0 },
   alertsPage: { offset: 0, limit: 25 },
   throughputRange: "24h",
@@ -971,6 +972,10 @@ function kpiIcon(name) {
     data: '<path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
     alerts: '<path d="M10 3c-3.5 4-4.5 6-4.5 9a4.5 4.5 0 0 0 9 0c0-3-1-5-4.5-9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
     clock: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    online: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    idle: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+    disabled: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    growth: '<path d="M3.5 14l4-5 3 3 5.5-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 5h3.5v3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   };
   return icons[name] || "";
 }
@@ -1246,10 +1251,128 @@ async function renderClients() {
     if (!STATE.overview) await fetchOverview();
     else await fetchOverview(); // toujours rafraîchi pour rester à jour
     document.getElementById("clients-count").textContent = STATE.peers.length;
+    renderClientsStats();
+    renderClientsStatusChart(STATE.peers);
+    renderClientsGrowthChart(STATE.peers);
     drawClientsTable();
   } catch (err) {
     toast("danger", "Impossible de charger les clients", err.message);
   }
+}
+
+// ---------------------------------------------------------------
+// Clients : cartes statistiques + graphiques
+// ---------------------------------------------------------------
+function computeClientStats(peers) {
+  const now = Date.now();
+  const stats = { total: peers.length, online: 0, idle: 0, disabled: 0, never: 0, expiringSoon: 0, newThisWeek: 0 };
+  peers.forEach(p => {
+    const s = peerStatus(p);
+    if (s in stats) stats[s]++;
+    if (p.expires) {
+      const days = (new Date(p.expires).getTime() - now) / 86400000;
+      if (days >= 0 && days <= 14) stats.expiringSoon++;
+    }
+    if (p.created) {
+      const days = (now - new Date(p.created).getTime()) / 86400000;
+      if (days <= 7) stats.newThisWeek++;
+    }
+  });
+  return stats;
+}
+
+function renderClientsStats() {
+  const grid = document.getElementById("clients-kpi-grid");
+  if (!grid) return;
+  const s = computeClientStats(STATE.peers);
+  const cards = [
+    { label: "Total clients", value: s.total, icon: "peers", tone: "accent",
+      trend: s.newThisWeek > 0 ? `+${s.newThisWeek} cette semaine` : "Stable cette semaine" },
+    { label: "En ligne", value: s.online, icon: "online", tone: "success",
+      trend: s.total ? `${Math.round((s.online / s.total) * 100)}% du parc` : "—" },
+    { label: "Inactifs", value: s.idle + s.never, icon: "idle", tone: "warning",
+      trend: "Sans trafic récent" },
+    { label: "Expirent bientôt", value: s.expiringSoon, icon: "clock", tone: s.expiringSoon > 0 ? "danger" : "success",
+      trend: "Sous 14 jours" },
+    { label: "Désactivés", value: s.disabled, icon: "disabled", tone: "neutral",
+      trend: "Accès révocables" },
+  ];
+  grid.innerHTML = cards.map((c, i) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" id="clients-kpi-value-${i}" data-target="${c.value}">0</div>
+      <div class="kpi-trend" style="color:var(--text-tertiary);">${c.trend}</div>
+    </div>
+  `).join("");
+  cards.forEach((c, i) => animateValue(document.getElementById(`clients-kpi-value-${i}`), c.value, false));
+}
+
+function renderClientsStatusChart(peers) {
+  const canvas = document.getElementById("chart-clients-status");
+  if (!canvas || typeof Chart === "undefined") return;
+  const buckets = { online: 0, idle: 0, never: 0, disabled: 0 };
+  peers.forEach(p => { buckets[peerStatus(p)] = (buckets[peerStatus(p)] || 0) + 1; });
+  const labels = { online: "En ligne", idle: "Inactif", never: "Jamais connecté", disabled: "Désactivé" };
+  const colors = { online: "#1a8a5c", idle: "#b6740f", never: "#98a2ae", disabled: "#c23b3b" };
+  const keys = Object.keys(buckets).filter(k => buckets[k] > 0);
+
+  document.getElementById("clients-donut-total").textContent = `${peers.length} au total`;
+  if (STATE.charts["chart-clients-status"]) STATE.charts["chart-clients-status"].destroy();
+  if (!keys.length) {
+    document.getElementById("clients-donut-legend").innerHTML = `<div class="empty-state"><strong>Aucun client</strong></div>`;
+    return;
+  }
+  STATE.charts["chart-clients-status"] = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: keys.map(k => labels[k]),
+      datasets: [{ data: keys.map(k => buckets[k]), backgroundColor: keys.map(k => colors[k]), borderWidth: 2, borderColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#fff" }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "68%",
+      animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}` } } },
+    },
+  });
+  document.getElementById("clients-donut-legend").innerHTML = keys.map(k => `
+    <div class="row-flex" style="justify-content:space-between;font-size:var(--fs-sm);">
+      <span class="row-flex" style="gap:8px;"><i style="width:9px;height:9px;border-radius:2px;background:${colors[k]};display:inline-block;"></i>${labels[k]}</span>
+      <span class="cell-primary mono">${buckets[k]}</span>
+    </div>`).join("");
+}
+
+function renderClientsGrowthChart(peers) {
+  const canvas = document.getElementById("chart-clients-growth");
+  if (!canvas || typeof Chart === "undefined") return;
+  const weeks = 12;
+  const now = new Date();
+  const buckets = new Array(weeks).fill(0);
+  const labels = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 7 * 86400000);
+    labels.push(d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }));
+  }
+  peers.forEach(p => {
+    if (!p.created) return;
+    const days = Math.floor((now.getTime() - new Date(p.created).getTime()) / 86400000);
+    const weekIdx = weeks - 1 - Math.floor(days / 7);
+    if (weekIdx >= 0 && weekIdx < weeks) buckets[weekIdx]++;
+  });
+  if (STATE.charts["chart-clients-growth"]) STATE.charts["chart-clients-growth"].destroy();
+  STATE.charts["chart-clients-growth"] = new Chart(canvas, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Nouveaux clients", data: buckets, backgroundColor: "#2f8f8a", borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} client(s)` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxTicksLimit: 6 } },
+        y: { beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+      },
+    },
+  });
 }
 
 function clientMatchesAdvanced(p, f) {
@@ -1308,32 +1431,70 @@ function updateClientsChipCounts() {
   });
 }
 
-function drawClientsTable() {
-  const f = STATE.clientsFilter;
-  const rows = filteredClients();
-  updateClientsChipCounts();
-  document.getElementById("clients-filtered-count").textContent = rows.length;
+function clientActionsKebabHtml(p, canOperate) {
+  return `
+    <div class="kebab-wrap">
+      <button class="icon-btn sm" data-action="kebab-toggle" title="Plus d'actions">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="4.5" r="1.3" fill="currentColor"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor"/></svg>
+      </button>
+      <div class="kebab-menu" hidden>
+        <button data-action="edit" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M13.5 3.5 16.5 6.5 7 16H4V13L13.5 3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          Modifier
+        </button>
+        <button data-action="detail" data-name="${escapeHtml(p.name)}">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M4 10c1.5-3.5 4-5 6-5s4.5 1.5 6 5c-1.5 3.5-4 5-6 5s-4.5-1.5-6-5Z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="1.8" stroke="currentColor" stroke-width="1.4"/></svg>
+          Détails
+        </button>
+        <button data-action="qr" data-name="${escapeHtml(p.name)}">
+          <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="12" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="12.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/></svg>
+          QR code
+        </button>
+        <button data-action="config" data-name="${escapeHtml(p.name)}">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          Config (.conf)
+        </button>
+        <button data-action="regenerate" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Régénérer les clés
+        </button>
+        <button data-action="revoke" data-name="${escapeHtml(p.name)}" class="danger" ${canOperate ? "" : "hidden"}>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4.5h4V6M6 6v9.5h8V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Révoquer
+        </button>
+      </div>
+    </div>`;
+}
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / f.pageSize));
-  f.page = Math.min(f.page, pageCount);
-  const start = (f.page - 1) * f.pageSize;
-  const pageRows = rows.slice(start, start + f.pageSize);
+function bindClientActionHandlers(root, { withSelect = false } = {}) {
+  root.querySelectorAll('[data-action="kebab-toggle"]').forEach(btn => btn.addEventListener("click", (e) => openKebabMenu(e, btn)));
+  document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true);
+  root.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
+  root.querySelectorAll('[data-action="edit"]').forEach(btn => btn.addEventListener("click", () => openEditClientModal(btn.dataset.name)));
+  root.querySelectorAll('[data-action="detail"]').forEach(btn => btn.addEventListener("click", () => showClientDetail(btn.dataset.name)));
+  root.querySelectorAll('[data-action="qr"]').forEach(btn => btn.addEventListener("click", () => showClientQr(btn.dataset.name)));
+  root.querySelectorAll('[data-action="config"]').forEach(btn => btn.addEventListener("click", () => downloadClientConfig(btn.dataset.name)));
+  root.querySelectorAll('[data-action="regenerate"]').forEach(btn => btn.addEventListener("click", () => regenerateClient(btn.dataset.name)));
+  root.querySelectorAll('[data-action="revoke"]').forEach(btn => btn.addEventListener("click", () => revokeClient(btn.dataset.name)));
+  if (withSelect) {
+    root.querySelectorAll(".client-select").forEach(cb => cb.addEventListener("change", () => {
+      if (cb.checked) STATE.clientsSelected.add(cb.dataset.name); else STATE.clientsSelected.delete(cb.dataset.name);
+      updateBulkBar();
+    }));
+  }
+}
 
-  document.getElementById("clients-page-indicator").textContent =
-    rows.length ? `${start + 1}–${Math.min(start + f.pageSize, rows.length)} sur ${rows.length}` : "0–0 sur 0";
-  document.getElementById("clients-prev").disabled = f.page <= 1;
-  document.getElementById("clients-next").disabled = f.page >= pageCount;
+const CLIENTS_EMPTY_STATE_HTML = `<div class="empty-state">
+  <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.4"/></svg>
+  <strong>Aucun client ne correspond</strong><span>Ajustez les filtres ou ajoutez un nouveau client.</span>
+</div>`;
 
+function renderClientsTableRows(pageRows, canOperate) {
   const tbody = document.querySelector("#table-clients tbody");
   if (!pageRows.length) {
-    tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">
-      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.4"/></svg>
-      <strong>Aucun client ne correspond</strong><span>Ajustez les filtres ou ajoutez un nouveau client.</span>
-    </div></td></tr>`;
-    updateBulkBar();
+    tbody.innerHTML = `<tr><td colspan="10">${CLIENTS_EMPTY_STATE_HTML}</td></tr>`;
     return;
   }
-  const canOperate = ROLE_RANK[STATE.currentUser.role] >= ROLE_RANK.operator;
   tbody.innerHTML = pageRows.map(p => `
     <tr>
       <td ${canOperate ? "" : "hidden"}><input type="checkbox" class="client-select" data-name="${escapeHtml(p.name)}" ${STATE.clientsSelected.has(p.name) ? "checked" : ""} /></td>
@@ -1352,57 +1513,141 @@ function drawClientsTable() {
               ? '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
               : '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}
           </button>
-          <div class="kebab-wrap">
-            <button class="icon-btn sm" data-action="kebab-toggle" title="Plus d'actions">
-              <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="4.5" r="1.3" fill="currentColor"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor"/></svg>
-            </button>
-            <div class="kebab-menu" hidden>
-              <button data-action="edit" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
-                <svg viewBox="0 0 20 20" fill="none"><path d="M13.5 3.5 16.5 6.5 7 16H4V13L13.5 3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-                Modifier
-              </button>
-              <button data-action="detail" data-name="${escapeHtml(p.name)}">
-                <svg viewBox="0 0 20 20" fill="none"><path d="M4 10c1.5-3.5 4-5 6-5s4.5 1.5 6 5c-1.5 3.5-4 5-6 5s-4.5-1.5-6-5Z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="1.8" stroke="currentColor" stroke-width="1.4"/></svg>
-                Détails
-              </button>
-              <button data-action="qr" data-name="${escapeHtml(p.name)}">
-                <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="12" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="12.5" width="1.8" height="1.8" fill="currentColor"/><rect x="12.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/><rect x="15.5" y="15.5" width="1.8" height="1.8" fill="currentColor"/></svg>
-                QR code
-              </button>
-              <button data-action="config" data-name="${escapeHtml(p.name)}">
-                <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                Config (.conf)
-              </button>
-              <button data-action="regenerate" data-name="${escapeHtml(p.name)}" ${canOperate ? "" : "hidden"}>
-                <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Régénérer les clés
-              </button>
-              <button data-action="revoke" data-name="${escapeHtml(p.name)}" class="danger" ${canOperate ? "" : "hidden"}>
-                <svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4.5h4V6M6 6v9.5h8V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Révoquer
-              </button>
-            </div>
-          </div>
+          ${clientActionsKebabHtml(p, canOperate)}
         </div>
       </td>
     </tr>
   `).join("");
+  bindClientActionHandlers(tbody, { withSelect: true });
+}
 
-  tbody.querySelectorAll('[data-action="kebab-toggle"]').forEach(btn => btn.addEventListener("click", (e) => openKebabMenu(e, btn)));
-  document.querySelectorAll(".kebab-menu").forEach(m => m.hidden = true);
-  tbody.querySelectorAll('[data-action="toggle"]').forEach(btn => btn.addEventListener("click", () => toggleClient(btn.dataset.name, btn.dataset.enabled === "true")));
-  tbody.querySelectorAll('[data-action="edit"]').forEach(btn => btn.addEventListener("click", () => openEditClientModal(btn.dataset.name)));
-  tbody.querySelectorAll('[data-action="detail"]').forEach(btn => btn.addEventListener("click", () => showClientDetail(btn.dataset.name)));
-  tbody.querySelectorAll('[data-action="qr"]').forEach(btn => btn.addEventListener("click", () => showClientQr(btn.dataset.name)));
-  tbody.querySelectorAll('[data-action="config"]').forEach(btn => btn.addEventListener("click", () => downloadClientConfig(btn.dataset.name)));
-  tbody.querySelectorAll('[data-action="regenerate"]').forEach(btn => btn.addEventListener("click", () => regenerateClient(btn.dataset.name)));
-  tbody.querySelectorAll('[data-action="revoke"]').forEach(btn => btn.addEventListener("click", () => revokeClient(btn.dataset.name)));
-  tbody.querySelectorAll(".client-select").forEach(cb => cb.addEventListener("change", () => {
-    if (cb.checked) STATE.clientsSelected.add(cb.dataset.name); else STATE.clientsSelected.delete(cb.dataset.name);
+function renderClientsCardsGrid(pageRows, canOperate) {
+  const grid = document.getElementById("clients-cards-grid");
+  if (!pageRows.length) { grid.innerHTML = CLIENTS_EMPTY_STATE_HTML; return; }
+  grid.innerHTML = pageRows.map((p, i) => {
+    const status = peerStatus(p);
+    const tags = (p.tags ? String(p.tags).split(",") : []).map(t => t.trim()).filter(Boolean);
+    return `
+    <div class="client-card status-${status}" style="--card-i:${i};">
+      <div class="client-card-head">
+        <div class="client-card-avatar">${initials(p.name)}</div>
+        <div style="min-width:0;flex:1;">
+          <div class="client-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.name)}</div>
+          <div class="client-card-sub">${escapeHtml(p.email || p.telephone || "Aucun contact")}</div>
+        </div>
+        ${statusBadge(status)}
+      </div>
+      <div class="client-card-body">
+        <div><span class="ccb-label">IP tunnel</span><span class="ccb-value">${escapeHtml(p.allowed_ips || "—")}</span></div>
+        <div><span class="ccb-label">Volume</span><span class="ccb-value">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</span></div>
+        <div><span class="ccb-label">Créé le</span><span class="ccb-value">${fmtDate(p.created)}</span></div>
+        <div><span class="ccb-label">Expire</span><span class="ccb-value">${p.expires ? fmtDate(p.expires) : "—"}</span></div>
+      </div>
+      ${tags.length ? `<div class="client-card-tags">${tags.map(t => `<span class="client-card-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+      <div class="client-card-actions">
+        <button class="icon-btn sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}" title="${p.enabled ? "Désactiver" : "Activer"}" ${canOperate ? "" : "hidden"}>
+          ${p.enabled
+            ? '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+            : '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}
+        </button>
+        <button class="icon-btn sm grow" data-action="detail" data-name="${escapeHtml(p.name)}">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M4 10c1.5-3.5 4-5 6-5s4.5 1.5 6 5c-1.5 3.5-4 5-6 5s-4.5-1.5-6-5Z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="1.8" stroke="currentColor" stroke-width="1.4"/></svg>
+          Détails
+        </button>
+        <button class="icon-btn sm" data-action="qr" data-name="${escapeHtml(p.name)}" title="QR code">
+          <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="12" width="5" height="5" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+        ${clientActionsKebabHtml(p, canOperate)}
+      </div>
+    </div>`;
+  }).join("");
+  bindClientActionHandlers(grid, { withSelect: false });
+}
+
+function renderClientsKanban(rows, canOperate) {
+  const board = document.getElementById("clients-kanban-board");
+  const columns = [
+    { key: "online", title: "En ligne", color: "var(--success)" },
+    { key: "idle", title: "Inactifs", color: "var(--warning)" },
+    { key: "disabled", title: "Désactivés", color: "var(--danger)" },
+  ];
+  const PER_COL_LIMIT = 40;
+  board.innerHTML = columns.map(col => {
+    let items = rows.filter(p => (col.key === "idle" ? (peerStatus(p) === "idle" || peerStatus(p) === "never") : peerStatus(p) === col.key));
+    const total = items.length;
+    items = items.slice(0, PER_COL_LIMIT);
+    return `
+    <div class="kanban-col">
+      <div class="kanban-col-head">
+        <span class="kanban-col-dot" style="background:${col.color};"></span>
+        <span>${col.title}</span>
+        <span class="kanban-col-count">${total}</span>
+      </div>
+      <div class="kanban-cards">
+        ${items.length ? items.map(p => `
+          <div class="kanban-card" data-action="detail" data-name="${escapeHtml(p.name)}">
+            <div class="kanban-card-avatar">${initials(p.name)}</div>
+            <div class="kanban-card-body">
+              <div class="kanban-card-name">${escapeHtml(p.name)}</div>
+              <div class="kanban-card-meta">${escapeHtml(p.email || p.allowed_ips || "—")}</div>
+            </div>
+          </div>`).join("") : `<div class="kanban-empty">Aucun client</div>`}
+        ${total > PER_COL_LIMIT ? `<div class="kanban-more">+ ${total - PER_COL_LIMIT} autre(s)</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  bindClientActionHandlers(board, { withSelect: false });
+}
+
+function applyClientsViewVisibility() {
+  const view = STATE.clientsView;
+  document.getElementById("clients-view-table").hidden = view !== "table";
+  document.getElementById("clients-cards-grid").hidden = view !== "cards";
+  document.getElementById("clients-kanban-board").hidden = view !== "kanban";
+  document.getElementById("clients-pagination-bar").hidden = view === "kanban";
+  document.querySelectorAll("#clients-view-switch .view-switch-btn").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.clientsView === view);
+  });
+}
+
+function drawClientsTable() {
+  const f = STATE.clientsFilter;
+  const rows = filteredClients();
+  updateClientsChipCounts();
+  document.getElementById("clients-filtered-count").textContent = rows.length;
+  applyClientsViewVisibility();
+
+  const canOperate = ROLE_RANK[STATE.currentUser.role] >= ROLE_RANK.operator;
+
+  if (STATE.clientsView === "kanban") {
+    renderClientsKanban(rows, canOperate);
     updateBulkBar();
-  }));
+    return;
+  }
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / f.pageSize));
+  f.page = Math.min(f.page, pageCount);
+  const start = (f.page - 1) * f.pageSize;
+  const pageRows = rows.slice(start, start + f.pageSize);
+
+  document.getElementById("clients-page-indicator").textContent =
+    rows.length ? `${start + 1}–${Math.min(start + f.pageSize, rows.length)} sur ${rows.length}` : "0–0 sur 0";
+  document.getElementById("clients-prev").disabled = f.page <= 1;
+  document.getElementById("clients-next").disabled = f.page >= pageCount;
+
+  if (STATE.clientsView === "cards") renderClientsCardsGrid(pageRows, canOperate);
+  else renderClientsTableRows(pageRows, canOperate);
+
   updateBulkBar();
 }
+
+document.querySelectorAll("#clients-view-switch .view-switch-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    STATE.clientsView = btn.dataset.clientsView;
+    localStorage.setItem("blockhash_clients_view", STATE.clientsView);
+    drawClientsTable();
+  });
+});
 
 function updateBulkBar() {
   const n = STATE.clientsSelected.size;
@@ -1691,6 +1936,14 @@ document.getElementById("clients-search").addEventListener("input", e => {
   saveClientsFilter();
   drawClientsTable();
 });
+function updateClientModalAvatar() {
+  const el = document.getElementById("client-modal-avatar");
+  if (!el) return;
+  const name = document.getElementById("field-client-name").value.trim();
+  el.textContent = name ? initials(name) : "+";
+}
+document.getElementById("field-client-name")?.addEventListener("input", updateClientModalAvatar);
+
 document.getElementById("btn-add-client").addEventListener("click", () => {
   document.getElementById("modal-client-title").textContent = "Ajouter un client";
   document.getElementById("field-client-name").value = "";
@@ -1700,6 +1953,7 @@ document.getElementById("btn-add-client").addEventListener("click", () => {
     const el = document.getElementById(`field-client-${f}`);
     if (el) el.value = "";
   });
+  updateClientModalAvatar();
   openModal("modal-client");
 });
 document.getElementById("btn-confirm-client").addEventListener("click", async () => {
@@ -1770,6 +2024,8 @@ document.querySelectorAll("[data-bulk-tab]").forEach(tab => {
 document.getElementById("btn-bulk-clients").addEventListener("click", () => {
   document.getElementById("bulk-textarea").value = "";
   document.getElementById("bulk-file-input").value = "";
+  const hint = document.getElementById("bulk-file-drop-hint");
+  if (hint) hint.textContent = "ou cliquez pour parcourir vos fichiers";
   document.getElementById("bulk-preview").innerHTML = "";
   _bulkParsedRows = [];
   openModal("modal-bulk-clients");
@@ -1780,6 +2036,8 @@ document.getElementById("btn-download-template").addEventListener("click", () =>
 document.getElementById("bulk-file-input").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
+  const hint = document.getElementById("bulk-file-drop-hint");
+  if (hint) hint.textContent = file.name;
   const reader = new FileReader();
   reader.onload = () => {
     _bulkParsedRows = parseCsv(String(reader.result));
@@ -1787,6 +2045,23 @@ document.getElementById("bulk-file-input").addEventListener("change", e => {
   };
   reader.readAsText(file, "utf-8");
 });
+(() => {
+  const dropZone = document.getElementById("bulk-file-drop");
+  const fileInput = document.getElementById("bulk-file-input");
+  if (!dropZone || !fileInput) return;
+  ["dragenter", "dragover"].forEach(evt => dropZone.addEventListener(evt, e => {
+    e.preventDefault(); dropZone.classList.add("is-dragover");
+  }));
+  ["dragleave", "drop"].forEach(evt => dropZone.addEventListener(evt, e => {
+    e.preventDefault(); dropZone.classList.remove("is-dragover");
+  }));
+  dropZone.addEventListener("drop", e => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    fileInput.files = e.dataTransfer.files;
+    fileInput.dispatchEvent(new Event("change"));
+  });
+})();
 
 function collectBulkRows() {
   const pasteVisible = !document.getElementById("bulk-tab-paste").hidden;
