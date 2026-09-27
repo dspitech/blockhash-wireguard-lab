@@ -722,6 +722,122 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 /* ---- Bascule d'affichage clients : fondu doux entre vues ---- */
 #clients-view-table, #clients-cards-grid, #clients-kanban-board { animation: chart-fade-in .3s var(--ease) both; }
 
+/* ==========================================================
+   Assistant en étapes (wizard) — Ajouter un client / import multiple
+   ========================================================== */
+.modal-wizard .modal-body { max-height: min(58vh, 560px); overflow-y: auto; }
+.stepper {
+  display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+.stepper-step { display: flex; align-items: center; gap: 8px; opacity: .55; transition: opacity .2s var(--ease); }
+.stepper-step.is-active, .stepper-step.is-done { opacity: 1; }
+.stepper-dot {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; background: var(--bg-surface); border: 1.5px solid var(--border-default); color: var(--text-tertiary);
+  transition: all .2s var(--ease);
+}
+.stepper-step.is-active .stepper-dot { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 0 4px var(--accent-dim); }
+.stepper-step.is-done .stepper-dot { background: var(--success); border-color: var(--success); color: #fff; }
+.stepper-step.is-done .stepper-dot::before { content: "✓"; }
+.stepper-step.is-done .stepper-dot { font-size: 0; }
+.stepper-step.is-done .stepper-dot::before { font-size: 12px; }
+.stepper-label { font-size: var(--fs-xs); font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
+.stepper-step.is-active .stepper-label { color: var(--text-primary); }
+.stepper-line { flex: 1; height: 1.5px; background: var(--border-default); min-width: 16px; }
+@media (max-width: 640px) { .stepper-label { display: none; } }
+
+.client-step, .bulk-step { animation: chart-fade-in .25s var(--ease) both; }
+.modal-footer-wizard { display: flex; align-items: center; justify-content: space-between; }
+
+.recap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+@media (max-width: 640px) { .recap-grid { grid-template-columns: 1fr; } }
+.recap-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+.recap-label { color: var(--text-tertiary); font-weight: 600; }
+.recap-value { color: var(--text-primary); font-weight: 700; text-align: right; max-width: 60%; overflow-wrap: break-word; }
+
+/* ---- Boutons en état de chargement ---- */
+.btn.is-loading { pointer-events: none; opacity: .85; }
+.btn-spinner {
+  width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+  display: inline-block; animation: btn-spin .7s linear infinite; margin-right: 2px;
+}
+.btn.ghost .btn-spinner { border-color: var(--border-default); border-top-color: var(--accent); }
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* ---- Popup de succès centré ---- */
+.success-popup-overlay {
+  position: fixed; inset: 0; z-index: 999; display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 16, 20, 0.38); backdrop-filter: blur(3px);
+  opacity: 0; pointer-events: none; transition: opacity .25s var(--ease);
+}
+.success-popup-overlay.is-open { opacity: 1; pointer-events: auto; }
+.success-popup {
+  background: var(--bg-surface); border-radius: var(--radius-lg); padding: 32px 36px; text-align: center;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.28); max-width: 340px; width: 90%;
+  transform: scale(0.85) translateY(10px); transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+}
+.success-popup-overlay.is-open .success-popup { transform: scale(1) translateY(0); }
+.success-popup-icon { width: 64px; height: 64px; margin: 0 auto 14px; color: var(--success); }
+.success-popup-icon svg { width: 100%; height: 100%; }
+.success-popup-ring { opacity: .25; }
+.success-popup-check {
+  stroke-dasharray: 34; stroke-dashoffset: 34; animation: success-check-draw .5s .15s var(--ease) forwards;
+}
+.success-popup-overlay.is-open .success-popup-check { animation: success-check-draw .5s .15s var(--ease) forwards; }
+.success-popup h3 { margin: 0 0 6px; font-size: var(--fs-lg); color: var(--text-primary); }
+.success-popup p { margin: 0; font-size: var(--fs-sm); color: var(--text-tertiary); }
+.success-popup-bar { margin-top: 18px; height: 3px; border-radius: 2px; background: var(--border-subtle); overflow: hidden; }
+.success-popup-bar-fill { height: 100%; background: var(--success); width: 100%; transform-origin: left; }
+.success-popup-overlay.is-open .success-popup-bar-fill { animation: success-bar-shrink 5s linear forwards; }
+@keyframes success-check-draw { to { stroke-dashoffset: 0; } }
+@keyframes success-bar-shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* ---- Filtres avancés : panneau "pro" ---- */
+.adv-filters-panel {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  padding: var(--sp-4); margin-bottom: var(--sp-4);
+}
+.adv-filters-panel.is-opening { animation: reveal-up .28s var(--ease) both; }
+.adv-filters-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.adv-filters-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: var(--fs-sm); color: var(--text-primary); }
+.adv-filters-title svg { width: 16px; height: 16px; color: var(--accent); }
+.adv-filters-badge { font-size: var(--fs-2xs); font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--accent-dim); color: var(--accent); }
+.adv-filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.adv-filter-field { display: flex; flex-direction: column; gap: 5px; }
+.adv-filter-label { font-size: var(--fs-2xs); font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .03em; }
+.adv-filters-foot { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end; }
+
+/* ---- QR code : cadre "scanner" ---- */
+.qr-frame {
+  position: relative; width: 240px; height: 240px; margin: 4px auto 14px; border-radius: var(--radius-lg);
+  background: #fff; padding: 14px; box-shadow: var(--shadow-2);
+}
+.qr-corner { position: absolute; width: 22px; height: 22px; border: 2.5px solid var(--accent); }
+.qr-corner.tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 6px 0 0 0; }
+.qr-corner.tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 6px 0 0; }
+.qr-corner.bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 6px; }
+.qr-corner.br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 6px 0; }
+.qr-scan-line {
+  position: absolute; left: 10px; right: 10px; height: 2px; top: 10px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: qr-scan 2.6s ease-in-out infinite; opacity: .8;
+}
+@keyframes qr-scan { 0%, 100% { top: 10px; } 50% { top: calc(100% - 12px); } }
+.qr-image-wrap { position: relative; width: 100%; height: 100%; }
+#qr-image { width: 100%; height: 100%; object-fit: contain; animation: reveal-up .3s var(--ease) both; }
+.qr-skeleton {
+  width: 100%; height: 100%; border-radius: var(--radius-sm);
+  background: linear-gradient(100deg, #eee 30%, #f6f6f6 50%, #eee 70%); background-size: 200% 100%;
+  animation: qr-shimmer 1.3s linear infinite;
+}
+@keyframes qr-shimmer { to { background-position: -200% 0; } }
+.qr-hint { font-size: var(--fs-xs); color: var(--text-tertiary); margin: 0 0 14px; }
+.qr-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
 /* ---- Responsive ---- */
 @media (max-width: 1180px) {
   /* .kpi-grid, .grid-2, .grid-3 : responsive géré par les classes Tailwind (sm:/lg:) sur l'élément */

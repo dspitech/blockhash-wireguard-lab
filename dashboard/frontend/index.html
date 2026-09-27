@@ -401,19 +401,43 @@
           <option value="100">100 / page</option>
         </select>
       </div>
-      <div class="filters-bar" id="clients-advanced-filters" hidden style="flex-wrap:wrap;gap:12px;">
-        <label class="field-inline">Créé <select class="select" id="filter-created"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="7d">7 derniers jours</option><option value="30d">30 derniers jours</option></select></label>
-        <label class="field-inline">Expiration <select class="select" id="filter-expiry"><option value="">Toute période</option><option value="expired">Déjà expirés</option><option value="7d">Expirent sous 7 j</option><option value="30d">Expirent sous 30 j</option></select></label>
-        <label class="field-inline">Contact <select class="select" id="filter-contact"><option value="">Indifférent</option><option value="email">A un email</option><option value="telephone">A un téléphone</option></select></label>
-        <label class="field-inline">Trier par
-          <select class="select" id="filter-sort">
-            <option value="name">Nom</option>
-            <option value="created">Date de création</option>
-            <option value="expires">Date d'expiration</option>
-            <option value="rx_bytes">Volume reçu</option>
-          </select>
-        </label>
-        <button class="btn ghost sm" id="btn-reset-filters" data-i18n="btn.btn-reset-filters">Réinitialiser</button>
+      <div class="adv-filters-panel" id="clients-advanced-filters" hidden>
+        <div class="adv-filters-head">
+          <div class="adv-filters-title">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M3 5h14M6 10h8M8.5 15h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            Filtres avancés
+          </div>
+          <span class="adv-filters-badge" id="adv-filters-active-count" hidden>0 actif(s)</span>
+        </div>
+        <div class="adv-filters-grid">
+          <label class="adv-filter-field">
+            <span class="adv-filter-label">Date de création</span>
+            <select class="tw-select" id="filter-created"><option value="">Toute période</option><option value="today">Aujourd'hui</option><option value="7d">7 derniers jours</option><option value="30d">30 derniers jours</option></select>
+          </label>
+          <label class="adv-filter-field">
+            <span class="adv-filter-label">Expiration</span>
+            <select class="tw-select" id="filter-expiry"><option value="">Toute période</option><option value="expired">Déjà expirés</option><option value="7d">Expirent sous 7 j</option><option value="30d">Expirent sous 30 j</option></select>
+          </label>
+          <label class="adv-filter-field">
+            <span class="adv-filter-label">Contact</span>
+            <select class="tw-select" id="filter-contact"><option value="">Indifférent</option><option value="email">A un email</option><option value="telephone">A un téléphone</option></select>
+          </label>
+          <label class="adv-filter-field">
+            <span class="adv-filter-label">Trier par</span>
+            <select class="tw-select" id="filter-sort">
+              <option value="name">Nom</option>
+              <option value="created">Date de création</option>
+              <option value="expires">Date d'expiration</option>
+              <option value="rx_bytes">Volume reçu</option>
+            </select>
+          </label>
+        </div>
+        <div class="adv-filters-foot">
+          <button class="btn ghost sm" id="btn-reset-filters" data-i18n="btn.btn-reset-filters">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Réinitialiser
+          </button>
+        </div>
       </div>
       <div class="filters-bar" id="clients-bulk-bar" hidden data-role-min="operator" style="background:var(--bg-inset);border-radius:var(--radius-md);padding:8px 12px;">
         <span class="cell-muted"><span id="clients-selected-count">0</span> sélectionné(s)</span>
@@ -474,14 +498,41 @@
 
     <!-- ---------- MODALE : QR code client ---------- -->
     <div class="modal-overlay" id="modal-client-qr">
-      <div class="modal">
-        <div class="modal-header"><h3 id="modal-qr-title" data-i18n="h3.qr-code-client">QR code client</h3><button class="modal-close" data-close-modal="modal-client-qr">✕</button></div>
+      <div class="modal modal-pro qr-modal">
+        <div class="modal-header modal-header-pro">
+          <div class="modal-header-icon tone-accent">
+            <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="12" y="3" width="5" height="5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="12" width="5" height="5" stroke="currentColor" stroke-width="1.4"/></svg>
+          </div>
+          <div>
+            <h3 id="modal-qr-title" data-i18n="h3.qr-code-client">QR code client</h3>
+            <p class="modal-subtitle">À scanner depuis l'application WireGuard mobile</p>
+          </div>
+          <button class="modal-close" data-close-modal="modal-client-qr">✕</button>
+        </div>
         <div class="modal-body" style="text-align:center;">
-          <img id="qr-image" alt="QR code de configuration WireGuard" style="width:240px;height:240px;border-radius:var(--radius-md);background:#fff;padding:8px;" />
-          <div style="display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;">
-            <button class="btn ghost sm" id="btn-download-qr" data-i18n="btn.btn-download-qr">Télécharger le QR (PNG)</button>
-            <button class="btn ghost sm" id="btn-copy-config" data-i18n="btn.btn-copy-config">Copier la config</button>
-            <button class="btn ghost sm" id="btn-download-conf-from-qr" data-i18n="btn.btn-download-conf-from-qr">Télécharger le .conf</button>
+          <div class="qr-frame">
+            <span class="qr-corner tl"></span><span class="qr-corner tr"></span>
+            <span class="qr-corner bl"></span><span class="qr-corner br"></span>
+            <div class="qr-scan-line"></div>
+            <div class="qr-image-wrap">
+              <div class="qr-skeleton" id="qr-skeleton"></div>
+              <img id="qr-image" alt="QR code de configuration WireGuard" hidden />
+            </div>
+          </div>
+          <p class="qr-hint">Ouvrez l'app WireGuard → « + » → Scanner un code QR</p>
+          <div class="qr-actions">
+            <button class="btn ghost sm" id="btn-download-qr" data-i18n="btn.btn-download-qr">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              PNG
+            </button>
+            <button class="btn ghost sm" id="btn-copy-config" data-i18n="btn.btn-copy-config">
+              <svg viewBox="0 0 20 20" fill="none"><rect x="6" y="6" width="10" height="11" rx="1.4" stroke="currentColor" stroke-width="1.4"/><path d="M4 13V4.5A1.5 1.5 0 0 1 5.5 3H13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              Copier la config
+            </button>
+            <button class="btn ghost sm" id="btn-download-conf-from-qr" data-i18n="btn.btn-download-conf-from-qr">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v2.5h12V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              Fichier .conf
+            </button>
           </div>
         </div>
       </div>
@@ -489,7 +540,7 @@
 
     <!-- ---------- MODALE : Ajout multiple / import CSV ---------- -->
     <div class="modal-overlay" id="modal-bulk-clients">
-      <div class="modal modal-pro" style="max-width:660px;">
+      <div class="modal modal-pro modal-wizard" style="max-width:760px;">
         <div class="modal-header modal-header-pro">
           <div class="modal-header-icon tone-accent">
             <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="9" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M2.8 16c0-2.7 1.9-4.5 4.2-4.5s4.2 1.8 4.2 4.5M12.2 16c0-1.9 1.2-3.3 2.7-3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -500,43 +551,91 @@
           </div>
           <button class="modal-close" data-close-modal="modal-bulk-clients">✕</button>
         </div>
-        <div class="modal-body">
-          <div class="chip-group" style="margin-bottom:16px;">
-            <button class="chip is-active" data-bulk-tab="paste" data-i18n="chip.bulk.paste">
-              <svg viewBox="0 0 20 20" fill="none" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px;"><path d="M6 4h8v12H6z" stroke="currentColor" stroke-width="1.4"/><path d="M8 2h4v3H8z" stroke="currentColor" stroke-width="1.4"/></svg>
-              Coller une liste
-            </button>
-            <button class="chip" data-bulk-tab="import" data-i18n="chip.bulk.import">
-              <svg viewBox="0 0 20 20" fill="none" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px;"><path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Importer un fichier CSV
-            </button>
-          </div>
 
-          <div id="bulk-tab-paste" class="form-block tone-accent">
-            <p class="cell-muted" style="margin-bottom:8px;">Un client par ligne : <code>nom,email,telephone</code> (email et téléphone optionnels).</p>
-            <textarea class="tw-textarea" id="bulk-textarea" rows="8" style="width:100%;font-family:var(--font-mono,monospace);" placeholder="jdupont,jean.dupont@example.com,+33612345678&#10;amartin,,&#10;pdurand,paul.durand@example.com,"></textarea>
+        <div class="stepper" id="bulk-stepper">
+          <div class="stepper-step is-active" data-step="1">
+            <span class="stepper-dot">1</span><span class="stepper-label">Source</span>
           </div>
-
-          <div id="bulk-tab-import" class="form-block tone-accent" hidden>
-            <p class="cell-muted" style="margin-bottom:10px;">Colonnes attendues (mêmes champs que le formulaire « Ajouter un client ») : <code>nom, prenom, fonction, email, telephone, adresse, tags, notes, rgpd_consent, expires_days</code>. Seule la colonne <code>nom</code> est obligatoire.</p>
-            <button class="btn ghost sm" id="btn-download-template" data-i18n="btn.btn-download-template">Télécharger le modèle CSV</button>
-            <label class="file-drop" for="bulk-file-input" id="bulk-file-drop">
-              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v8m0 0 3-3m-3 3-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              <span class="file-drop-title">Glissez un fichier CSV ici</span>
-              <span class="file-drop-hint" id="bulk-file-drop-hint">ou cliquez pour parcourir vos fichiers</span>
-            </label>
-            <input type="file" id="bulk-file-input" accept=".csv" style="display:none;" />
+          <div class="stepper-line"></div>
+          <div class="stepper-step" data-step="2">
+            <span class="stepper-dot">2</span><span class="stepper-label">Aperçu</span>
           </div>
-
-          <div id="bulk-preview" style="margin-top:14px;"></div>
+          <div class="stepper-line"></div>
+          <div class="stepper-step" data-step="3">
+            <span class="stepper-dot">3</span><span class="stepper-label">Récapitulatif</span>
+          </div>
         </div>
-        <div class="modal-footer">
+
+        <div class="modal-body">
+
+          <!-- ÉTAPE 1 : Source -->
+          <div class="bulk-step" data-step="1">
+            <div class="chip-group" style="margin-bottom:16px;">
+              <button class="chip is-active" data-bulk-tab="paste" data-i18n="chip.bulk.paste">
+                <svg viewBox="0 0 20 20" fill="none" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px;"><path d="M6 4h8v12H6z" stroke="currentColor" stroke-width="1.4"/><path d="M8 2h4v3H8z" stroke="currentColor" stroke-width="1.4"/></svg>
+                Coller une liste
+              </button>
+              <button class="chip" data-bulk-tab="import" data-i18n="chip.bulk.import">
+                <svg viewBox="0 0 20 20" fill="none" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px;"><path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Importer un fichier CSV
+              </button>
+            </div>
+
+            <div id="bulk-tab-paste" class="form-block tone-accent">
+              <p class="cell-muted" style="margin-bottom:8px;">Un client par ligne : <code>nom,email,telephone</code> (email et téléphone optionnels).</p>
+              <textarea class="tw-textarea" id="bulk-textarea" rows="8" style="width:100%;font-family:var(--font-mono,monospace);" placeholder="jdupont,jean.dupont@example.com,+33612345678&#10;amartin,,&#10;pdurand,paul.durand@example.com,"></textarea>
+            </div>
+
+            <div id="bulk-tab-import" class="form-block tone-accent" hidden>
+              <p class="cell-muted" style="margin-bottom:10px;">Colonnes attendues (mêmes champs que le formulaire « Ajouter un client ») : <code>nom, prenom, fonction, email, telephone, adresse, tags, notes, rgpd_consent, expires_days</code>. Seule la colonne <code>nom</code> est obligatoire.</p>
+              <button class="btn ghost sm" id="btn-download-template" data-i18n="btn.btn-download-template">Télécharger le modèle CSV</button>
+              <label class="file-drop" for="bulk-file-input" id="bulk-file-drop">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v8m0 0 3-3m-3 3-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <span class="file-drop-title">Glissez un fichier CSV ici</span>
+                <span class="file-drop-hint" id="bulk-file-drop-hint">ou cliquez pour parcourir vos fichiers</span>
+              </label>
+              <input type="file" id="bulk-file-input" accept=".csv" style="display:none;" />
+            </div>
+          </div>
+
+          <!-- ÉTAPE 2 : Aperçu (dry-run) -->
+          <div class="bulk-step" data-step="2" hidden>
+            <div class="form-block tone-warning">
+              <div class="tw-settings-section-header" style="margin-bottom:10px;">
+                <div class="tw-settings-icon tone-warning">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div><h2 class="tw-h2">Aperçu (dry-run)</h2><p class="tw-p-muted">Validation des lignes avant création — aucun client n'est encore créé</p></div>
+              </div>
+              <div id="bulk-preview"><div class="empty-state"><strong>En attente de validation…</strong></div></div>
+            </div>
+          </div>
+
+          <!-- ÉTAPE 3 : Récapitulatif -->
+          <div class="bulk-step" data-step="3" hidden>
+            <div class="form-block tone-success">
+              <div class="tw-settings-section-header" style="margin-bottom:10px;">
+                <div class="tw-settings-icon tone-success">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div><h2 class="tw-h2">Récapitulatif</h2><p class="tw-p-muted">Vérifiez avant de créer les clients en une seule opération</p></div>
+              </div>
+              <div class="recap-grid" id="bulk-recap-body"></div>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer modal-footer-wizard">
           <button class="btn ghost" data-close-modal="modal-bulk-clients" data-i18n="btn.cancel">Annuler</button>
-          <button class="btn ghost" id="btn-bulk-preview" data-i18n="btn.btn-bulk-preview">Aperçu (dry-run)</button>
-          <button class="btn primary" id="btn-bulk-submit" data-i18n="btn.btn-bulk-submit">
-            <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            Créer les clients
-          </button>
+          <div class="row-flex" style="gap:8px;">
+            <button class="btn ghost" id="btn-bulk-prev" hidden>← Précédent</button>
+            <button class="btn primary" id="btn-bulk-preview" data-i18n="btn.btn-bulk-preview">Vérifier les données →</button>
+            <button class="btn primary" id="btn-bulk-next" hidden>Suivant →</button>
+            <button class="btn primary" id="btn-bulk-submit" data-i18n="btn.btn-bulk-submit" hidden>
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              Créer les clients
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1281,7 +1380,7 @@
 
 <!-- ============ MODALS ============ -->
 <div class="modal-overlay" id="modal-client">
-  <div class="modal modal-pro" style="max-width:800px;">
+  <div class="modal modal-pro modal-wizard" style="max-width:900px;">
     <div class="modal-header modal-header-pro">
       <div class="client-avatar-preview" id="client-modal-avatar">+</div>
       <div>
@@ -1290,10 +1389,25 @@
       </div>
       <button class="icon-btn" data-close-modal>✕</button>
     </div>
-    <div class="modal-body">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
 
-        <!-- Colonne gauche : identité & configuration -->
+    <div class="stepper" id="client-stepper">
+      <div class="stepper-step is-active" data-step="1">
+        <span class="stepper-dot">1</span><span class="stepper-label">Identité</span>
+      </div>
+      <div class="stepper-line"></div>
+      <div class="stepper-step" data-step="2">
+        <span class="stepper-dot">2</span><span class="stepper-label">Configuration &amp; contact</span>
+      </div>
+      <div class="stepper-line"></div>
+      <div class="stepper-step" data-step="3">
+        <span class="stepper-dot">3</span><span class="stepper-label">Récapitulatif</span>
+      </div>
+    </div>
+
+    <div class="modal-body">
+
+      <!-- ÉTAPE 1 : Identité -->
+      <div class="client-step" data-step="1">
         <div class="form-block tone-accent">
           <div class="tw-settings-section-header" style="margin-bottom:10px;">
             <div class="tw-settings-icon tone-accent">
@@ -1301,52 +1415,56 @@
             </div>
             <div><h2 class="tw-h2">Identité</h2><p class="tw-p-muted">Nom technique du pair et informations de la personne</p></div>
           </div>
-          <div class="field" style="margin-bottom:12px;">
-            <label class="tw-label" data-i18n="label.nom-du-client">Nom du client <span style="color:var(--danger, #dc2626);">*</span></label>
-            <input class="tw-input" id="field-client-name" placeholder="ex. alice-laptop" autocomplete="off" />
-            <p class="tw-hint">Identifiant technique unique du pair WireGuard (pas d'espaces).</p>
-          </div>
-          <div class="field" style="margin-bottom:12px;">
-            <label class="tw-label" data-i18n="label.prenom-nom-complet">Prénom / nom complet</label>
-            <input class="tw-input" id="field-client-prenom" placeholder="ex. Alice Martin" />
-          </div>
-          <div class="field">
-            <label class="tw-label" data-i18n="label.fonction">Fonction</label>
-            <input class="tw-input" id="field-client-fonction" placeholder="ex. Technicienne" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label" data-i18n="label.nom-du-client">Nom du client <span style="color:var(--danger, #dc2626);">*</span></label>
+              <input class="tw-input" id="field-client-name" placeholder="ex. alice-laptop" autocomplete="off" />
+              <p class="tw-hint">Identifiant technique unique du pair WireGuard (pas d'espaces).</p>
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label" data-i18n="label.prenom-nom-complet">Prénom / nom complet</label>
+              <input class="tw-input" id="field-client-prenom" placeholder="ex. Alice Martin" />
+            </div>
+            <div class="field">
+              <label class="tw-label" data-i18n="label.fonction">Fonction</label>
+              <input class="tw-input" id="field-client-fonction" placeholder="ex. Technicienne" />
+            </div>
           </div>
         </div>
+      </div>
 
-        <div class="form-block tone-warning">
-          <div class="tw-settings-section-header" style="margin-bottom:10px;">
-            <div class="tw-settings-icon tone-warning">
-              <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <!-- ÉTAPE 2 : Configuration & Contact -->
+      <div class="client-step" data-step="2" hidden>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div class="form-block tone-warning">
+            <div class="tw-settings-section-header" style="margin-bottom:10px;">
+              <div class="tw-settings-icon tone-warning">
+                <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              </div>
+              <div><h2 class="tw-h2">Configuration</h2><p class="tw-p-muted">Cycle de vie de l'accès</p></div>
             </div>
-            <div><h2 class="tw-h2">Configuration</h2><p class="tw-p-muted">Cycle de vie de l'accès</p></div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label" data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par virgule)</label>
+              <input class="tw-input" id="field-client-tags" placeholder="vip, audit" />
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label class="tw-label" data-i18n="label.date-d-expiration-optionnel">Date d'expiration</label>
+              <input class="tw-input" type="date" id="field-client-expires" />
+              <p class="tw-hint">Laisser vide pour un accès sans expiration.</p>
+            </div>
+            <label class="tw-toggle-row" style="cursor:pointer;">
+              <input type="checkbox" class="tw-checkbox" id="field-client-rgpd-consent" />
+              <span class="tw-p-muted" style="font-size:13px;">Consentement RGPD recueilli</span>
+            </label>
           </div>
-          <div class="field" style="margin-bottom:12px;">
-            <label class="tw-label" data-i18n="label.tags-separes-par-des-virgules-ex-vip-externe">Tags (séparés par virgule)</label>
-            <input class="tw-input" id="field-client-tags" placeholder="vip, audit" />
-          </div>
-          <div class="field" style="margin-bottom:12px;">
-            <label class="tw-label" data-i18n="label.date-d-expiration-optionnel">Date d'expiration</label>
-            <input class="tw-input" type="date" id="field-client-expires" />
-            <p class="tw-hint">Laisser vide pour un accès sans expiration.</p>
-          </div>
-          <label class="tw-toggle-row" style="cursor:pointer;">
-            <input type="checkbox" class="tw-checkbox" id="field-client-rgpd-consent" />
-            <span class="tw-p-muted" style="font-size:13px;">Consentement RGPD recueilli</span>
-          </label>
-        </div>
 
-        <!-- Colonne droite : contact -->
-        <div class="form-block tone-success" style="grid-column: 1 / -1;">
-          <div class="tw-settings-section-header" style="margin-bottom:10px;">
-            <div class="tw-settings-icon tone-success">
-              <svg viewBox="0 0 20 20" fill="none"><path d="M3 5.5h14v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3 6l7 5 7-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <div class="form-block tone-success">
+            <div class="tw-settings-section-header" style="margin-bottom:10px;">
+              <div class="tw-settings-icon tone-success">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M3 5.5h14v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3 6l7 5 7-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+              </div>
+              <div><h2 class="tw-h2">Contact</h2><p class="tw-p-muted">Coordonnées de la personne, facultatives</p></div>
             </div>
-            <div><h2 class="tw-h2">Contact</h2><p class="tw-p-muted">Coordonnées de la personne, facultatives</p></div>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
             <div class="field" style="margin-bottom:12px;">
               <label class="tw-label" data-i18n="label.email">Email</label>
               <input class="tw-input" type="email" id="field-client-email" placeholder="alice@example.com" />
@@ -1359,21 +1477,38 @@
               <label class="tw-label" data-i18n="label.adresse">Adresse</label>
               <input class="tw-input" id="field-client-adresse" placeholder="12 rue de Paris, 75001 Paris" />
             </div>
-            <div class="field" style="margin-bottom:12px;">
+            <div class="field">
               <label class="tw-label" data-i18n="label.notes">Notes</label>
               <textarea class="tw-textarea" id="field-client-notes" rows="1" style="width:100%;min-height:42px;"></textarea>
             </div>
           </div>
         </div>
-
       </div>
+
+      <!-- ÉTAPE 3 : Récapitulatif -->
+      <div class="client-step" data-step="3" hidden>
+        <div class="form-block tone-accent">
+          <div class="tw-settings-section-header" style="margin-bottom:10px;">
+            <div class="tw-settings-icon tone-accent">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div><h2 class="tw-h2">Récapitulatif</h2><p class="tw-p-muted">Vérifiez les informations avant de créer le client</p></div>
+          </div>
+          <div class="recap-grid" id="client-recap-body"></div>
+        </div>
+      </div>
+
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer modal-footer-wizard">
       <button class="btn" data-close-modal data-i18n="btn.cancel">Annuler</button>
-      <button class="btn primary" id="btn-confirm-client" data-i18n="btn.btn-confirm-client">
-        <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        Créer
-      </button>
+      <div class="row-flex" style="gap:8px;">
+        <button class="btn ghost" id="btn-client-prev" hidden>← Précédent</button>
+        <button class="btn primary" id="btn-client-next">Suivant →</button>
+        <button class="btn primary" id="btn-confirm-client" data-i18n="btn.btn-confirm-client" hidden>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Créer
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -1429,6 +1564,20 @@
 </div>
 
 <div class="toast-stack" id="toast-stack"></div>
+
+<div class="success-popup-overlay" id="success-popup-overlay">
+  <div class="success-popup">
+    <div class="success-popup-icon">
+      <svg viewBox="0 0 52 52" fill="none">
+        <circle class="success-popup-ring" cx="26" cy="26" r="23" stroke="currentColor" stroke-width="2.5"/>
+        <path class="success-popup-check" d="M15 27l7 7 15-15" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <h3 id="success-popup-title">Créé avec succès</h3>
+    <p id="success-popup-message"></p>
+    <div class="success-popup-bar"><div class="success-popup-bar-fill" id="success-popup-bar-fill"></div></div>
+  </div>
+</div>
 
 <script src="js/config.js"></script>
 <script src="js/vendor/chart.umd.js"></script>

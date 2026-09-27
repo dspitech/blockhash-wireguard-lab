@@ -189,6 +189,43 @@ function toast(kind, title, message) {
 }
 
 // ---------------------------------------------------------------
+// Popup de succès centré (auto-masqué après 5 s)
+// ---------------------------------------------------------------
+let _successPopupTimer = null;
+function showSuccessPopup(title, message) {
+  const overlay = document.getElementById("success-popup-overlay");
+  document.getElementById("success-popup-title").textContent = title;
+  document.getElementById("success-popup-message").textContent = message || "";
+  overlay.classList.remove("is-open");
+  void overlay.offsetWidth; // rejoue l'animation si déjà ouvert juste avant
+  overlay.classList.add("is-open");
+  clearTimeout(_successPopupTimer);
+  _successPopupTimer = setTimeout(() => overlay.classList.remove("is-open"), 5000);
+}
+document.getElementById("success-popup-overlay").addEventListener("click", () => {
+  document.getElementById("success-popup-overlay").classList.remove("is-open");
+  clearTimeout(_successPopupTimer);
+});
+
+// ---------------------------------------------------------------
+// État de chargement générique pour boutons (retour visuel rapide)
+// ---------------------------------------------------------------
+async function withButtonLoading(btn, loadingText, fn) {
+  if (!btn || btn.disabled) return;
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.classList.add("is-loading");
+  btn.innerHTML = `<span class="btn-spinner"></span>${loadingText ? `<span>${loadingText}</span>` : ""}`;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-loading");
+    btn.innerHTML = original;
+  }
+}
+
+// ---------------------------------------------------------------
 // Connexion / thème / sidebar
 // ---------------------------------------------------------------
 function setConnPill(mode) {
@@ -1686,18 +1723,20 @@ document.querySelectorAll("[data-bulk-do]").forEach(btn => {
     }
     if (action === "revoke" && !confirm(`Révoquer définitivement ${names.length} client(s) ?`)) return;
     if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
-    let okCount = 0, errCount = 0;
-    for (const name of names) {
-      try {
-        if (action === "enable") await apiSend("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: true });
-        else if (action === "disable") await apiSend("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: false });
-        else if (action === "revoke") await apiSend("DELETE", `/api/clients/${encodeURIComponent(name)}`);
-        okCount++;
-      } catch { errCount++; }
-    }
-    toast(errCount ? "warning" : "success", `${okCount} client(s) traité(s)`, errCount ? `${errCount} échec(s).` : "");
-    STATE.clientsSelected.clear();
-    renderClients();
+    await withButtonLoading(btn, `${action === "enable" ? "Activation" : action === "disable" ? "Désactivation" : "Révocation"}…`, async () => {
+      // Requêtes envoyées en parallèle (au lieu d'une boucle séquentielle) pour un traitement nettement plus rapide.
+      const results = await Promise.allSettled(names.map(name => {
+        if (action === "enable") return apiSend("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: true });
+        if (action === "disable") return apiSend("PATCH", `/api/clients/${encodeURIComponent(name)}`, { enabled: false });
+        if (action === "revoke") return apiSend("DELETE", `/api/clients/${encodeURIComponent(name)}`);
+        return Promise.resolve();
+      }));
+      const okCount = results.filter(r => r.status === "fulfilled").length;
+      const errCount = results.length - okCount;
+      toast(errCount ? "warning" : "success", `${okCount} client(s) traité(s)`, errCount ? `${errCount} échec(s).` : "");
+      STATE.clientsSelected.clear();
+      renderClients();
+    });
   });
 });
 
@@ -1739,13 +1778,26 @@ document.getElementById("clients-page-size").addEventListener("change", e => {
 document.getElementById("btn-toggle-advanced-filters").addEventListener("click", () => {
   const panel = document.getElementById("clients-advanced-filters");
   panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    panel.classList.remove("is-opening");
+    void panel.offsetWidth; // force reflow pour rejouer l'animation
+    panel.classList.add("is-opening");
+  }
 });
+function updateAdvFiltersBadge() {
+  const f = STATE.clientsFilter;
+  const n = ["created", "expiry", "contact"].filter(k => f[k]).length;
+  const badge = document.getElementById("adv-filters-active-count");
+  badge.hidden = n === 0;
+  badge.textContent = `${n} actif(s)`;
+}
 ["filter-created", "filter-expiry", "filter-contact"].forEach(id => {
   document.getElementById(id).addEventListener("change", e => {
     const key = id.replace("filter-", "");
     STATE.clientsFilter[key] = e.target.value;
     STATE.clientsFilter.page = 1;
     saveClientsFilter();
+    updateAdvFiltersBadge();
     drawClientsTable();
   });
 });
@@ -1763,6 +1815,7 @@ document.getElementById("btn-reset-filters").addEventListener("click", () => {
   document.getElementById("filter-contact").value = "";
   document.getElementById("filter-sort").value = "name";
   document.querySelectorAll("#clients-status-filter .chip").forEach(c => c.classList.toggle("is-active", c.dataset.status === "all"));
+  updateAdvFiltersBadge();
   drawClientsTable();
 });
 document.querySelectorAll("#table-clients [data-client-sort]").forEach(th => {
@@ -1781,10 +1834,14 @@ function showClientQr(name) {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
   document.getElementById("modal-qr-title").textContent = `QR code — ${name}`;
   const img = document.getElementById("qr-image");
+  const skeleton = document.getElementById("qr-skeleton");
   img.removeAttribute("src");
+  img.hidden = true;
+  skeleton.hidden = false;
   openModal("modal-client-qr");
   apiGet(`/api/clients/${encodeURIComponent(name)}/config`).then(data => {
     img.src = `data:image/png;base64,${data.qr_base64}`;
+    img.onload = () => { skeleton.hidden = true; img.hidden = false; };
     img.dataset.filename = `${name}-qrcode.png`;
     document.getElementById("btn-download-qr").dataset.filename = `${name}-qrcode.png`;
     document.getElementById("btn-download-qr").dataset.base64 = data.qr_base64;
@@ -1794,21 +1851,23 @@ function showClientQr(name) {
   }).catch(err => { closeModal("modal-client-qr"); toast("danger", "Échec du chargement du QR code", err.message); });
 }
 document.getElementById("btn-download-qr").addEventListener("click", e => {
-  const b64 = e.target.dataset.base64;
+  const btn = e.currentTarget;
+  const b64 = btn.dataset.base64;
   if (!b64) return;
   const a = document.createElement("a");
   a.href = `data:image/png;base64,${b64}`;
-  a.download = e.target.dataset.filename || "qrcode.png";
+  a.download = btn.dataset.filename || "qrcode.png";
   document.body.appendChild(a); a.click(); a.remove();
 });
 document.getElementById("btn-copy-config").addEventListener("click", async e => {
-  const conf = e.target.dataset.conf;
+  const conf = e.currentTarget.dataset.conf;
   if (!conf) return;
   try { await navigator.clipboard.writeText(conf); toast("success", "Configuration copiée dans le presse-papier"); }
   catch { toast("danger", "Impossible de copier (accès presse-papier refusé)"); }
 });
 document.getElementById("btn-download-conf-from-qr").addEventListener("click", e => {
-  const conf = e.target.dataset.conf, name = e.target.dataset.name;
+  const btn = e.currentTarget;
+  const conf = btn.dataset.conf, name = btn.dataset.name;
   if (!conf) return;
   const blob = new Blob([conf], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
@@ -1818,9 +1877,11 @@ document.getElementById("btn-download-conf-from-qr").addEventListener("click", e
   URL.revokeObjectURL(url);
 });
 
-document.getElementById("btn-export-clients").addEventListener("click", () => {
-  const status = STATE.clientsFilter.status;
-  downloadWithAuth(`/api/clients/export?status=${encodeURIComponent(status)}`, "clients.csv");
+document.getElementById("btn-export-clients").addEventListener("click", async () => {
+  await withButtonLoading(document.getElementById("btn-export-clients"), "Export…", async () => {
+    const status = STATE.clientsFilter.status;
+    await downloadWithAuth(`/api/clients/export?status=${encodeURIComponent(status)}`, "clients.csv");
+  });
 });
 
 async function toggleClient(name, currentlyEnabled) {
@@ -1944,36 +2005,93 @@ function updateClientModalAvatar() {
 }
 document.getElementById("field-client-name")?.addEventListener("input", updateClientModalAvatar);
 
+// ---------------------------------------------------------------
+// Assistant "Ajouter un client" (3 étapes)
+// ---------------------------------------------------------------
+let clientWizardStep = 1;
+const CLIENT_WIZARD_FIELDS = ["prenom", "email", "telephone", "adresse", "tags", "notes", "fonction"];
+
+function setClientStep(step) {
+  clientWizardStep = step;
+  document.querySelectorAll("#modal-client .client-step").forEach(el => { el.hidden = Number(el.dataset.step) !== step; });
+  document.querySelectorAll("#client-stepper .stepper-step").forEach(el => {
+    const n = Number(el.dataset.step);
+    el.classList.toggle("is-active", n === step);
+    el.classList.toggle("is-done", n < step);
+  });
+  document.getElementById("btn-client-prev").hidden = step === 1;
+  document.getElementById("btn-client-next").hidden = step === 3;
+  document.getElementById("btn-confirm-client").hidden = step !== 3;
+  if (step === 3) renderClientRecap();
+  document.querySelector("#modal-client .modal-body").scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function validateClientStep(step) {
+  if (step === 1) {
+    const name = document.getElementById("field-client-name").value.trim();
+    if (!name) { toast("danger", "Le nom du client est requis"); document.getElementById("field-client-name").focus(); return false; }
+  }
+  return true;
+}
+
+function renderClientRecap() {
+  const name = document.getElementById("field-client-name").value.trim();
+  const rows = [
+    ["Nom du client", name || "—"],
+    ["Prénom / nom complet", document.getElementById("field-client-prenom").value.trim() || "—"],
+    ["Fonction", document.getElementById("field-client-fonction").value.trim() || "—"],
+    ["Tags", document.getElementById("field-client-tags").value.trim() || "—"],
+    ["Expiration", document.getElementById("field-client-expires").value || "Aucune"],
+    ["Consentement RGPD", document.getElementById("field-client-rgpd-consent").checked ? "Recueilli" : "Non recueilli"],
+    ["Email", document.getElementById("field-client-email").value.trim() || "—"],
+    ["Téléphone", document.getElementById("field-client-telephone").value.trim() || "—"],
+    ["Adresse", document.getElementById("field-client-adresse").value.trim() || "—"],
+    ["Notes", document.getElementById("field-client-notes").value.trim() || "—"],
+  ];
+  document.getElementById("client-recap-body").innerHTML = rows.map(([label, value]) => `
+    <div class="recap-row"><span class="recap-label">${escapeHtml(label)}</span><span class="recap-value">${escapeHtml(value)}</span></div>
+  `).join("");
+}
+
+document.getElementById("btn-client-next").addEventListener("click", () => {
+  if (!validateClientStep(clientWizardStep)) return;
+  setClientStep(Math.min(3, clientWizardStep + 1));
+});
+document.getElementById("btn-client-prev").addEventListener("click", () => setClientStep(Math.max(1, clientWizardStep - 1)));
+
 document.getElementById("btn-add-client").addEventListener("click", () => {
   document.getElementById("modal-client-title").textContent = "Ajouter un client";
   document.getElementById("field-client-name").value = "";
   document.getElementById("field-client-expires").value = "";
   document.getElementById("field-client-rgpd-consent").checked = false;
-  ["prenom", "email", "telephone", "adresse", "tags", "notes", "fonction"].forEach(f => {
+  CLIENT_WIZARD_FIELDS.forEach(f => {
     const el = document.getElementById(`field-client-${f}`);
     if (el) el.value = "";
   });
   updateClientModalAvatar();
+  setClientStep(1);
   openModal("modal-client");
 });
 document.getElementById("btn-confirm-client").addEventListener("click", async () => {
   const name = document.getElementById("field-client-name").value.trim();
   const expiresDate = document.getElementById("field-client-expires").value;
-  if (!name) return toast("danger", "Nom requis");
+  if (!name) { setClientStep(1); return toast("danger", "Nom requis"); }
   if (STATE.demoMode) { closeModal("modal-client"); return toast("info", "Mode démonstration", "Création indisponible sans API connectée."); }
-  try {
-    let expiresDays;
-    if (expiresDate) expiresDays = Math.max(1, Math.ceil((new Date(expiresDate) - new Date()) / 86400000));
-    const body = { name, expires_days: expiresDays, rgpd_consent: document.getElementById("field-client-rgpd-consent").checked };
-    ["prenom", "email", "telephone", "adresse", "tags", "notes", "fonction"].forEach(f => {
-      const el = document.getElementById(`field-client-${f}`);
-      if (el && el.value.trim()) body[f] = el.value.trim();
-    });
-    await apiSend("POST", "/api/clients", body);
-    toast("success", `Client ${name} créé`);
-    closeModal("modal-client");
-    renderClients();
-  } catch (err) { toast("danger", "Échec de la création", err.message); }
+  await withButtonLoading(document.getElementById("btn-confirm-client"), "Création…", async () => {
+    try {
+      let expiresDays;
+      if (expiresDate) expiresDays = Math.max(1, Math.ceil((new Date(expiresDate) - new Date()) / 86400000));
+      const body = { name, expires_days: expiresDays, rgpd_consent: document.getElementById("field-client-rgpd-consent").checked };
+      CLIENT_WIZARD_FIELDS.forEach(f => {
+        const el = document.getElementById(`field-client-${f}`);
+        if (el && el.value.trim()) body[f] = el.value.trim();
+      });
+      await apiSend("POST", "/api/clients", body);
+      closeModal("modal-client");
+      showSuccessPopup("Client créé avec succès", `${name} a été ajouté et son accès WireGuard provisionné.`);
+      renderClients();
+    } catch (err) { toast("danger", "Échec de la création", err.message); }
+  });
 });
 
 // ---------------------------------------------------------------
@@ -2010,6 +2128,23 @@ function parseCsv(text) {
 }
 
 let _bulkParsedRows = [];
+let _bulkStep = 1;
+let _bulkLastResult = null;
+
+function setBulkStep(step) {
+  _bulkStep = step;
+  document.querySelectorAll("#modal-bulk-clients .bulk-step").forEach(el => { el.hidden = Number(el.dataset.step) !== step; });
+  document.querySelectorAll("#bulk-stepper .stepper-step").forEach(el => {
+    const n = Number(el.dataset.step);
+    el.classList.toggle("is-active", n === step);
+    el.classList.toggle("is-done", n < step);
+  });
+  document.getElementById("btn-bulk-prev").hidden = step === 1;
+  document.getElementById("btn-bulk-preview").hidden = step !== 1;
+  document.getElementById("btn-bulk-next").hidden = step !== 2;
+  document.getElementById("btn-bulk-submit").hidden = step !== 3;
+  document.querySelector("#modal-bulk-clients .modal-body").scrollTo({ top: 0, behavior: "smooth" });
+}
 
 document.querySelectorAll("[data-bulk-tab]").forEach(tab => {
   tab.addEventListener("click", () => {
@@ -2017,7 +2152,6 @@ document.querySelectorAll("[data-bulk-tab]").forEach(tab => {
     tab.classList.add("is-active");
     document.getElementById("bulk-tab-paste").hidden = tab.dataset.bulkTab !== "paste";
     document.getElementById("bulk-tab-import").hidden = tab.dataset.bulkTab !== "import";
-    document.getElementById("bulk-preview").innerHTML = "";
     _bulkParsedRows = [];
   });
 });
@@ -2026,8 +2160,10 @@ document.getElementById("btn-bulk-clients").addEventListener("click", () => {
   document.getElementById("bulk-file-input").value = "";
   const hint = document.getElementById("bulk-file-drop-hint");
   if (hint) hint.textContent = "ou cliquez pour parcourir vos fichiers";
-  document.getElementById("bulk-preview").innerHTML = "";
+  document.getElementById("bulk-preview").innerHTML = `<div class="empty-state"><strong>En attente de validation…</strong></div>`;
   _bulkParsedRows = [];
+  _bulkLastResult = null;
+  setBulkStep(1);
   openModal("modal-bulk-clients");
 });
 document.getElementById("btn-download-template").addEventListener("click", () => {
@@ -2041,7 +2177,7 @@ document.getElementById("bulk-file-input").addEventListener("change", e => {
   const reader = new FileReader();
   reader.onload = () => {
     _bulkParsedRows = parseCsv(String(reader.result));
-    toast("info", `${_bulkParsedRows.length} ligne(s) lues du fichier`, "Cliquez sur « Aperçu » pour valider avant création.");
+    toast("info", `${_bulkParsedRows.length} ligne(s) lues du fichier`, "Cliquez sur « Vérifier les données » pour continuer.");
   };
   reader.readAsText(file, "utf-8");
 });
@@ -2089,7 +2225,10 @@ function collectBulkRows() {
 function renderBulkPreview(result) {
   const el = document.getElementById("bulk-preview");
   const okCount = result.created.length, errCount = result.errors.length;
-  let html = `<p class="cell-muted">${okCount} ligne(s) valide(s)${errCount ? `, ${errCount} erreur(s)` : ""}.</p>`;
+  let html = `<div class="row-flex" style="gap:10px;margin-bottom:10px;">
+      <span class="badge success">${okCount} valide(s)</span>
+      ${errCount ? `<span class="badge danger">${errCount} erreur(s)</span>` : ""}
+    </div>`;
   if (errCount) {
     html += `<table class="data-table"><thead><tr><th>Ligne</th><th>Nom</th><th>Erreur</th></tr></thead><tbody>` +
       result.errors.map(e => `<tr><td>${e.row}</td><td class="mono">${escapeHtml(e.name || "—")}</td><td class="cell-muted">${escapeHtml(e.error)}</td></tr>`).join("") +
@@ -2098,24 +2237,52 @@ function renderBulkPreview(result) {
   el.innerHTML = html;
 }
 
+function renderBulkRecap(clients, result) {
+  const rows = [
+    ["Lignes soumises", String(clients.length)],
+    ["Lignes valides", String(result.created.length)],
+    ["Lignes en erreur", String(result.errors.length)],
+    ["Aperçu des noms", clients.slice(0, 6).map(c => c.name).filter(Boolean).join(", ") + (clients.length > 6 ? "…" : "")],
+  ];
+  document.getElementById("bulk-recap-body").innerHTML = rows.map(([label, value]) => `
+    <div class="recap-row"><span class="recap-label">${escapeHtml(label)}</span><span class="recap-value">${escapeHtml(value || "—")}</span></div>
+  `).join("");
+}
+
 document.getElementById("btn-bulk-preview").addEventListener("click", async () => {
   const clients = collectBulkRows();
   if (!clients.length) return toast("danger", "Aucune ligne à traiter");
-  try {
-    const result = await apiSend("POST", "/api/clients/bulk", { clients, dry_run: true });
-    renderBulkPreview(result);
-  } catch (err) { toast("danger", "Échec de l'aperçu", err.message); }
+  await withButtonLoading(document.getElementById("btn-bulk-preview"), "Vérification…", async () => {
+    try {
+      const result = await apiSend("POST", "/api/clients/bulk", { clients, dry_run: true });
+      _bulkLastResult = result;
+      renderBulkPreview(result);
+      setBulkStep(2);
+    } catch (err) { toast("danger", "Échec de l'aperçu", err.message); }
+  });
+});
+document.getElementById("btn-bulk-prev").addEventListener("click", () => setBulkStep(Math.max(1, _bulkStep - 1)));
+document.getElementById("btn-bulk-next").addEventListener("click", () => {
+  const clients = collectBulkRows();
+  if (_bulkLastResult) renderBulkRecap(clients, _bulkLastResult);
+  setBulkStep(3);
 });
 document.getElementById("btn-bulk-submit").addEventListener("click", async () => {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Création indisponible sans API connectée.");
   const clients = collectBulkRows();
   if (!clients.length) return toast("danger", "Aucune ligne à traiter");
-  try {
-    const result = await apiSend("POST", "/api/clients/bulk", { clients, dry_run: false });
-    renderBulkPreview(result);
-    toast(result.errors.length ? "warning" : "success", `${result.created.length} client(s) créé(s)`, result.errors.length ? `${result.errors.length} ligne(s) en erreur.` : "");
-    if (result.created.length) renderClients();
-  } catch (err) { toast("danger", "Échec de la création groupée", err.message); }
+  await withButtonLoading(document.getElementById("btn-bulk-submit"), "Création…", async () => {
+    try {
+      const result = await apiSend("POST", "/api/clients/bulk", { clients, dry_run: false });
+      renderBulkPreview(result);
+      closeModal("modal-bulk-clients");
+      showSuccessPopup(
+        result.errors.length ? "Import terminé avec des erreurs" : "Clients créés avec succès",
+        `${result.created.length} client(s) créé(s)${result.errors.length ? `, ${result.errors.length} ligne(s) en erreur.` : "."}`
+      );
+      if (result.created.length) renderClients();
+    } catch (err) { toast("danger", "Échec de la création groupée", err.message); }
+  });
 });
 
 // ---------------------------------------------------------------
