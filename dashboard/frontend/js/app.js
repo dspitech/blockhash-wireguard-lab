@@ -1070,11 +1070,27 @@ async function renderOverview() {
     renderActivityFeed(data.logs || []);
     renderOverviewPeersTable(data.peers || []);
     renderStatusDonut(data.peers || []);
+    renderHandshakeAgeChart(data.peers || []);
+    renderVolumeSplitChart(data.peers || [], data.stats || {});
+    renderTopPeersChart(data.peers || []);
     renderExpiringFeed(data.peers || []);
     if (STATE.demoMode) toast("info", "Mode démonstration", "L'API ne répond pas : données d'exemple affichées.");
   } catch (err) {
     toast("danger", "Impossible de charger la vue d'ensemble", err.message);
   }
+}
+
+function renderDonutLegend(el, items) {
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-state"><strong>Aucune donnée</strong></div>`;
+    return;
+  }
+  el.innerHTML = items.map(item => `
+    <div class="donut-legend-row" title="${escapeHtml(item.label)}">
+      <span class="donut-legend-label"><i style="background:${item.color}"></i><span>${escapeHtml(item.label)}</span></span>
+      <span class="donut-legend-value">${escapeHtml(String(item.value))}</span>
+    </div>`).join("");
 }
 
 function renderStatusDonut(peers) {
@@ -1090,7 +1106,7 @@ function renderStatusDonut(peers) {
 
   if (STATE.charts["chart-status-donut"]) STATE.charts["chart-status-donut"].destroy();
   if (!keys.length) {
-    document.getElementById("status-donut-legend").innerHTML = `<div class="empty-state"><strong>Aucun client</strong></div>`;
+    renderDonutLegend(document.getElementById("status-donut-legend"), []);
     return;
   }
   STATE.charts["chart-status-donut"] = new Chart(canvas, {
@@ -1101,16 +1117,107 @@ function renderStatusDonut(peers) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: "68%",
+      layout: { padding: 2 },
       animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutCubic" },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}` } } },
     },
   });
+  renderDonutLegend(document.getElementById("status-donut-legend"), keys.map(k => ({
+    label: labels[k], value: buckets[k], color: colors[k],
+  })));
+}
 
-  document.getElementById("status-donut-legend").innerHTML = keys.map(k => `
-    <div class="row-flex" style="justify-content:space-between;font-size:var(--fs-sm);">
-      <span class="row-flex" style="gap:8px;"><i style="width:9px;height:9px;border-radius:2px;background:${colors[k]};display:inline-block;"></i>${labels[k]}</span>
-      <span class="cell-primary mono">${buckets[k]}</span>
-    </div>`).join("");
+function renderHandshakeAgeChart(peers) {
+  const canvas = document.getElementById("chart-handshake-age");
+  if (!canvas || typeof Chart === "undefined") return;
+  const buckets = { live: 0, hour: 0, day: 0, older: 0, never: 0 };
+  const now = Date.now();
+  peers.forEach(p => {
+    if (!p.last_handshake) { buckets.never++; return; }
+    const age = now - new Date(p.last_handshake).getTime();
+    if (Number.isNaN(age) || age < 0) { buckets.never++; return; }
+    if (age < 3 * 60 * 1000) buckets.live++;
+    else if (age < 60 * 60 * 1000) buckets.hour++;
+    else if (age < 24 * 60 * 60 * 1000) buckets.day++;
+    else buckets.older++;
+  });
+  if (STATE.charts["chart-handshake-age"]) STATE.charts["chart-handshake-age"].destroy();
+  STATE.charts["chart-handshake-age"] = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: ["< 3 min", "< 1 h", "< 24 h", "> 24 h", "Jamais"],
+      datasets: [{
+        data: [buckets.live, buckets.hour, buckets.day, buckets.older, buckets.never],
+        backgroundColor: ["#1a8a5c", "#2f8f8a", "#b6740f", "#98a2ae", "#c23b3b"],
+        borderRadius: 5, maxBarThickness: 28,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} client(s)` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxRotation: 0, autoSkip: false } },
+        y: { beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+      },
+    },
+  });
+}
+
+function renderVolumeSplitChart(peers, stats) {
+  const canvas = document.getElementById("chart-volume-split");
+  if (!canvas || typeof Chart === "undefined") return;
+  const rx = Number(stats.total_rx_bytes ?? peers.reduce((s, p) => s + (p.rx_bytes || 0), 0)) || 0;
+  const tx = Number(stats.total_tx_bytes ?? peers.reduce((s, p) => s + (p.tx_bytes || 0), 0)) || 0;
+  if (STATE.charts["chart-volume-split"]) STATE.charts["chart-volume-split"].destroy();
+  const items = [
+    { label: "Entrant (Rx)", value: fmtBytes(rx), raw: rx, color: "#123c47" },
+    { label: "Sortant (Tx)", value: fmtBytes(tx), raw: tx, color: "#1c5b63" },
+  ];
+  if (!rx && !tx) {
+    renderDonutLegend(document.getElementById("volume-split-legend"), []);
+    return;
+  }
+  STATE.charts["chart-volume-split"] = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: items.map(i => i.label),
+      datasets: [{ data: items.map(i => i.raw), backgroundColor: items.map(i => i.color), borderWidth: 2, borderColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#fff" }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "68%",
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${fmtBytes(c.parsed)}` } } },
+    },
+  });
+  renderDonutLegend(document.getElementById("volume-split-legend"), items.map(i => ({ label: i.label, value: i.value, color: i.color })));
+}
+
+function renderTopPeersChart(peers) {
+  const canvas = document.getElementById("chart-top-peers");
+  if (!canvas || typeof Chart === "undefined") return;
+  const top = [...peers]
+    .map(p => ({ name: p.name || "—", total: (p.rx_bytes || 0) + (p.tx_bytes || 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8)
+    .reverse();
+  if (STATE.charts["chart-top-peers"]) STATE.charts["chart-top-peers"].destroy();
+  STATE.charts["chart-top-peers"] = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: top.map(p => p.name.length > 18 ? p.name.slice(0, 16) + "…" : p.name),
+      datasets: [{ data: top.map(p => p.total), backgroundColor: "#2f8f8a", borderRadius: 5, maxBarThickness: 18 }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtBytes(c.parsed.x) } } },
+      scales: {
+        x: { grid: { color: chartGridColor() }, ticks: { color: chartTextColor(), font: { size: 10 }, callback: v => fmtBytes(v) } },
+        y: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 11 } } },
+      },
+    },
+  });
 }
 
 function renderExpiringFeed(peers) {
@@ -1373,11 +1480,9 @@ function renderClientsStatusChart(peers) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}` } } },
     },
   });
-  document.getElementById("clients-donut-legend").innerHTML = keys.map(k => `
-    <div class="row-flex" style="justify-content:space-between;font-size:var(--fs-sm);">
-      <span class="row-flex" style="gap:8px;"><i style="width:9px;height:9px;border-radius:2px;background:${colors[k]};display:inline-block;"></i>${labels[k]}</span>
-      <span class="cell-primary mono">${buckets[k]}</span>
-    </div>`).join("");
+  renderDonutLegend(document.getElementById("clients-donut-legend"), keys.map(k => ({
+    label: labels[k], value: buckets[k], color: colors[k],
+  })));
 }
 
 function renderClientsGrowthChart(peers) {
@@ -2230,13 +2335,19 @@ function setBulkStep(step) {
   document.getElementById("btn-bulk-preview").hidden = step !== 1;
   document.getElementById("btn-bulk-next").hidden = step !== 2;
   document.getElementById("btn-bulk-submit").hidden = step !== 3;
+  const stepHint = document.getElementById("bulk-wizard-step-hint");
+  if (stepHint) stepHint.textContent = `Étape ${step} sur 3`;
   document.querySelector("#modal-bulk-clients .modal-body").scrollTo({ top: 0, behavior: "smooth" });
 }
 
 document.querySelectorAll("[data-bulk-tab]").forEach(tab => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll("[data-bulk-tab]").forEach(t => t.classList.remove("is-active"));
+    document.querySelectorAll("[data-bulk-tab]").forEach(t => {
+      t.classList.remove("is-active");
+      t.setAttribute("aria-selected", "false");
+    });
     tab.classList.add("is-active");
+    tab.setAttribute("aria-selected", "true");
     document.getElementById("bulk-tab-paste").hidden = tab.dataset.bulkTab !== "paste";
     document.getElementById("bulk-tab-import").hidden = tab.dataset.bulkTab !== "import";
     _bulkParsedRows = [];
@@ -2312,14 +2423,33 @@ function collectBulkRows() {
 function renderBulkPreview(result) {
   const el = document.getElementById("bulk-preview");
   const okCount = result.created.length, errCount = result.errors.length;
-  let html = `<div class="row-flex" style="gap:10px;margin-bottom:10px;">
-      <span class="badge success">${okCount} valide(s)</span>
-      ${errCount ? `<span class="badge danger">${errCount} erreur(s)</span>` : ""}
+  const total = okCount + errCount;
+  const pct = total ? Math.round((okCount / total) * 100) : 0;
+  let html = `
+    <div class="bulk-preview-head">
+      <div class="tw-settings-icon tone-warning">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v9M6.5 9 10 12.5 13.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <h2 class="tw-h2">Aperçu (dry-run)</h2>
+        <p class="tw-p-muted">Validation avant création — aucun client n'est encore créé</p>
+      </div>
+    </div>
+    <div class="recap-kpi-row">
+      <div class="recap-kpi"><span class="n">${total}</span><span class="l">Lignes</span></div>
+      <div class="recap-kpi tone-success"><span class="n">${okCount}</span><span class="l">Valides</span></div>
+      <div class="recap-kpi ${errCount ? "tone-danger" : ""}"><span class="n">${errCount}</span><span class="l">Erreurs</span></div>
+    </div>
+    <div class="recap-progress" style="margin:12px 0 14px;">
+      <div class="recap-progress-head"><strong>${pct}% valides</strong><span>${okCount} / ${total}</span></div>
+      <div class="recap-progress-track"><div class="recap-progress-fill" style="width:${pct}%;"></div></div>
     </div>`;
   if (errCount) {
-    html += `<table class="data-table"><thead><tr><th>Ligne</th><th>Nom</th><th>Erreur</th></tr></thead><tbody>` +
+    html += `<div class="bulk-preview-table"><table class="data-table"><thead><tr><th>Ligne</th><th>Nom</th><th>Erreur</th></tr></thead><tbody>` +
       result.errors.map(e => `<tr><td>${e.row}</td><td class="mono">${escapeHtml(e.name || "—")}</td><td class="cell-muted">${escapeHtml(e.error)}</td></tr>`).join("") +
-      `</tbody></table>`;
+      `</tbody></table></div>`;
+  } else {
+    html += `<div class="empty-state"><strong>Toutes les lignes sont valides</strong><span>Passez au récapitulatif pour lancer la création.</span></div>`;
   }
   el.innerHTML = html;
 }
