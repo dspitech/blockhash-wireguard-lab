@@ -239,13 +239,24 @@ def build_reconnect_stats(rows):
 
 def reconnect_counts_last_24h():
     """pubkey -> nombre de reconnexions estimees sur les dernieres 24h
-    (utilise par anomalies.py pour detecter un endpoint qui change trop souvent)."""
+    (utilise par anomalies.py pour detecter un endpoint qui change trop souvent).
+
+    Optimisation (perf) : l'ancienne version appelait store.query_logs_for_pubkey()
+    sans filtre de date pour CHAQUE client (jusqu'a 100 000 lignes par client, tout
+    l'historique depuis le debut), puis filtrait les 24 dernieres heures en Python.
+    Sur un lab qui tourne depuis plusieurs semaines/mois, ca revenait a un scan
+    complet de la table `logs` (des dizaines/centaines de milliers de lignes) a
+    CHAQUE ouverture de l'onglet Monitoring, pour chaque pair -> c'etait la
+    principale cause de lenteur ressentie a la navigation. Desormais le filtre
+    `ts >= cutoff` est pousse dans la requete SQL (via `ts_from`), qui s'appuie
+    sur l'index idx_logs_pubkey_ts : seules les lignes des 24 dernieres heures
+    sont lues, pour tous les clients."""
     import store
 
     cutoff_ts = int((datetime.now(tz=timezone.utc) - timedelta(hours=24)).timestamp())
     counts = {}
     for pubkey in load_peer_config():
-        rows = [r for r in store.query_logs_for_pubkey(pubkey) if r["ts"] >= cutoff_ts]
+        rows = store.query_logs(pubkey=pubkey, ts_from=cutoff_ts, limit=2000, sort_key="ts", sort_dir="asc")["rows"]
         counts[pubkey] = build_reconnect_stats(rows)["reconnect_count"]
     return counts
 

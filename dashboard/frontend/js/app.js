@@ -970,6 +970,7 @@ function kpiIcon(name) {
     peers: '<circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     data: '<path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
     alerts: '<path d="M10 3c-3.5 4-4.5 6-4.5 9a4.5 4.5 0 0 0 9 0c0-3-1-5-4.5-9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+    clock: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   };
   return icons[name] || "";
 }
@@ -2167,6 +2168,7 @@ async function renderAlerts() {
         `<tr><td colspan="6"><div class="empty-state"><strong>Mode démonstration</strong><span>Historique indisponible sans API connectée.</span></div></td></tr>`;
       document.getElementById("dedup-list").innerHTML = "";
       document.getElementById("alerts-stats-body").innerHTML = "";
+      document.getElementById("alerts-kpi-grid").innerHTML = "";
       return;
     }
     const params = new URLSearchParams({ limit: STATE.alertsPage.limit, offset: STATE.alertsPage.offset });
@@ -2182,10 +2184,47 @@ async function renderAlerts() {
       apiGet("/api/alerts/dedup"),
       apiGet("/api/alerts/stats?days=7"),
     ]);
+    renderAlertsKpiGrid(stats);
     renderAlertsHistory(history);
     renderDedupList(dedup);
     renderAlertsStats(stats);
   } catch (err) { toast("danger", "Impossible de charger les alertes", err.message); }
+}
+
+// ---------------------------------------------------------------
+// Cartes de synthèse en tête de la page Alertes (7 derniers jours)
+// ---------------------------------------------------------------
+function renderAlertsKpiGrid(stats) {
+  const totals = { critical: 0, warning: 0, info: 0 };
+  (stats.by_day || []).forEach(r => { totals[r.level] = (totals[r.level] || 0) + r.n; });
+  const total = totals.critical + totals.warning + totals.info;
+  const mttaMin = stats.mtta_seconds != null ? Math.round(stats.mtta_seconds / 60) : null;
+
+  const cards = [
+    { label: "Total (7 j)", value: total, icon: "alerts", tone: "neutral" },
+    { label: "Critiques", value: totals.critical, icon: "alerts", tone: totals.critical > 0 ? "danger" : "success" },
+    { label: "Avertissements", value: totals.warning, icon: "alerts", tone: totals.warning > 0 ? "warning" : "success" },
+    { label: "Info", value: totals.info, icon: "alerts", tone: "accent" },
+    { label: "Délai moyen de lecture", value: mttaMin, suffix: mttaMin != null ? " min" : "—", icon: "clock", tone: "accent" },
+  ];
+
+  document.getElementById("alerts-kpi-grid").innerHTML = cards.map((c, i) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" id="alerts-kpi-value-${i}">${c.value == null ? "—" : "0"}</div>
+    </div>
+  `).join("");
+
+  cards.forEach((c, i) => {
+    if (c.value == null) return;
+    const el = document.getElementById(`alerts-kpi-value-${i}`);
+    animateValue(el, c.value, false);
+    if (c.suffix && c.suffix !== "—") {
+      const obs = () => { el.textContent = el.textContent + c.suffix; };
+      setTimeout(obs, 950); // laisse l'animation se terminer avant d'ajouter le suffixe
+    }
+  });
 }
 
 function renderAlertsStats(stats) {
@@ -2198,35 +2237,43 @@ function renderAlertsStats(stats) {
     ? `<div style="display:flex;gap:4px;align-items:flex-end;height:60px;">${days.map(d => `<div title="${d} : ${totalsByDay[d]}" style="flex:1;background:var(--teal-mid);border-radius:2px;height:${Math.max(4, (totalsByDay[d] / maxN) * 60)}px;"></div>`).join("")}</div>`
     : `<span class="cell-muted">Aucune alerte sur la période.</span>`;
   const topClients = (stats.top_clients || []).map(c => `<div class="row-flex" style="justify-content:space-between;"><span>${escapeHtml(c.peer_name)}</span><span class="cell-muted">${c.n}</span></div>`).join("") || `<span class="cell-muted">—</span>`;
-  const mtta = stats.mtta_seconds != null ? `${Math.round(stats.mtta_seconds / 60)} min` : "—";
   el.innerHTML = `
     <div><span class="cell-muted">Volume par jour</span>${barChart}</div>
-    <div><span class="cell-muted">Top clients alertés</span>${topClients}</div>
-    <div><span class="cell-muted">Délai moyen avant lecture (MTTA)</span><div class="cell-primary">${mtta}</div></div>`;
+    <div><span class="cell-muted">Top clients alertés</span>${topClients}</div>`;
 }
+
+const ALERT_SEVERITY_LABELS = { critical: "Critique", warning: "Avertissement", info: "Info" };
 
 function renderAlertsHistory(data) {
   const rows = data.rows || data; // compat retro si jamais l'API renvoie encore une liste brute
   const total = data.total ?? rows.length;
+  STATE.alertsPage.rows = rows; // conservé pour afficher le détail au clic sans nouvel appel API
   const tbody = document.querySelector("#table-alerts-history tbody");
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><strong>Aucune alerte</strong><span>Rien à signaler pour le moment.</span></div></td></tr>`;
   } else {
     tbody.innerHTML = rows.map(a => `
-      <tr style="${a.read_at ? "opacity:.65;" : ""}">
+      <tr class="alert-row sev-${a.level} ${a.read_at ? "" : "is-unread"}" data-alert-row="${a.id}" style="${a.read_at ? "opacity:.75;" : ""}">
         <td class="mono cell-muted">${fmtDate(a.ts)}</td>
         <td class="cell-primary">${escapeHtml(a.rule_key || "—")}</td>
         <td class="cell-muted">${escapeHtml(a.peer_name || "—")}</td>
         <td>${statusBadge(a.level === "critical" ? "disabled" : a.level === "info" ? "online" : "idle")}</td>
         <td class="cell-muted">${escapeHtml(a.message || "—")}</td>
         <td>
-          <div style="display:flex;gap:4px;">
+          <div style="display:flex;gap:4px;" data-alert-actions>
             ${a.read_at ? "" : `<button class="btn ghost sm" data-alert-action="read" data-id="${a.id}" title="Marquer comme lue">Lu</button>`}
             <button class="btn ghost sm" data-alert-action="archive" data-id="${a.id}" data-archived="${a.archived}" title="${a.archived ? "Désarchiver" : "Archiver"}">${a.archived ? "Désarchiver" : "Archiver"}</button>
             <button class="btn ghost sm" data-alert-action="delete" data-id="${a.id}" title="Supprimer">✕</button>
           </div>
         </td>
       </tr>`).join("");
+    tbody.querySelectorAll("[data-alert-row]").forEach(tr => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("[data-alert-actions]")) return; // clic sur un bouton d'action : pas d'ouverture du détail
+        const alert = rows.find(a => String(a.id) === tr.dataset.alertRow);
+        if (alert) showAlertDetail(alert);
+      });
+    });
     tbody.querySelectorAll('[data-alert-action="read"]').forEach(btn => btn.addEventListener("click", async () => {
       try { await apiSend("PATCH", `/api/alerts/history/${btn.dataset.id}`, { read: true }); renderAlerts(); } catch (err) { toast("danger", "Échec", err.message); }
     }));
@@ -2243,6 +2290,42 @@ function renderAlertsHistory(data) {
     total ? `${offset + 1}–${Math.min(offset + limit, total)} sur ${total}` : "0–0 sur 0";
   document.getElementById("alerts-prev").disabled = offset <= 0;
   document.getElementById("alerts-next").disabled = offset + limit >= total;
+}
+
+// ---------------------------------------------------------------
+// Modale de détail d'une alerte (clic sur une ligne de l'historique)
+// ---------------------------------------------------------------
+function showAlertDetail(a) {
+  const severityTone = a.level === "critical" ? "danger" : a.level === "warning" ? "warning" : "accent";
+  document.getElementById("alert-detail-title").textContent = a.rule_key || "Détail de l'alerte";
+  document.getElementById("alert-detail-body").innerHTML = `
+    <div class="row-flex" style="justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);">
+      <span class="badge ${a.level === "critical" ? "danger" : a.level === "warning" ? "warning" : "success"}" style="font-size:var(--fs-sm);">
+        <span class="dot"></span>${ALERT_SEVERITY_LABELS[a.level] || a.level}
+      </span>
+      ${a.archived ? `<span class="cell-muted">Archivée</span>` : ""}
+    </div>
+    <div class="field"><label>Message</label><div class="cell-primary" style="color:var(--${severityTone});">${escapeHtml(a.message || "—")}</div></div>
+    <div class="field"><label>Client concerné</label><div class="mono">${escapeHtml(a.peer_name || "—")}</div></div>
+    <div class="field"><label>Règle déclenchée</label><div class="mono">${escapeHtml(a.rule_key || "—")}</div></div>
+    <div class="field"><label>Source</label><div class="mono">${escapeHtml(a.source || "—")}</div></div>
+    <div class="field"><label>Horodatage</label><div class="mono">${fmtDate(a.ts)}</div></div>
+    <div class="field"><label>Lue</label><div class="mono">${a.read_at ? fmtDate(a.read_at) : "Non lue"}</div></div>
+    <div class="field"><label>Canaux notifiés</label><div class="mono">${escapeHtml(a.channels || "—")}</div></div>
+    <div class="row-flex" style="gap:8px;margin-top:var(--sp-4);justify-content:flex-end;">
+      ${a.read_at ? "" : `<button class="btn ghost sm" id="alert-detail-mark-read">Marquer comme lue</button>`}
+      <button class="btn ghost sm" id="alert-detail-archive">${a.archived ? "Désarchiver" : "Archiver"}</button>
+    </div>`;
+  const markReadBtn = document.getElementById("alert-detail-mark-read");
+  if (markReadBtn) markReadBtn.addEventListener("click", async () => {
+    try { await apiSend("PATCH", `/api/alerts/history/${a.id}`, { read: true }); closeModal("modal-alert-detail"); renderAlerts(); }
+    catch (err) { toast("danger", "Échec", err.message); }
+  });
+  document.getElementById("alert-detail-archive").addEventListener("click", async () => {
+    try { await apiSend("PATCH", `/api/alerts/history/${a.id}`, { archived: !a.archived }); closeModal("modal-alert-detail"); renderAlerts(); }
+    catch (err) { toast("danger", "Échec", err.message); }
+  });
+  openModal("modal-alert-detail");
 }
 document.getElementById("alerts-prev").addEventListener("click", () => {
   STATE.alertsPage.offset = Math.max(0, STATE.alertsPage.offset - STATE.alertsPage.limit);

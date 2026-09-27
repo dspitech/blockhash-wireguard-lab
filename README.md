@@ -983,6 +983,20 @@ sudo systemctl status blockhash-dashboard
 
 ## 57. Incidents courants
 
+### `pip install` échoue avec « ResolutionImpossible » sur `cryptography`
+
+**Symptôme.** `03-install-dashboard.sh` échoue à l'étape 3 (création de l'environnement virtuel) avec un message du type :
+```
+ERROR: Cannot install -r requirements.txt (line 4) and -r requirements.txt (line 8) because these package versions have conflicting dependencies.
+The conflict is caused by:
+    pywebpush 2.5.0 depends on cryptography>=47.0.0
+    msal 1.28.0 depends on cryptography<45 and >=0.6
+```
+
+**Cause.** `pywebpush` (notifications push) exige une version récente de `cryptography`, tandis que `msal` (authentification Microsoft Graph) plafonnait cette même dépendance dans ses anciennes versions — les deux contraintes sont incompatibles entre elles.
+
+**Correctif appliqué dans ce dépôt.** `requirements.txt` épingle désormais `msal==1.39.0` (au lieu de `1.28.0`), une version dont la contrainte sur `cryptography` (`<51,>=2.5`) est compatible avec celle de `pywebpush`. Vérifié par une installation complète dans un environnement vierge (`pip install -r requirements.txt` réussit sans conflit).
+
 ### `terraform apply` reste bloqué sur « null_resource.deploy: Still creating... » indéfiniment
 
 **Symptôme.** Le déploiement automatisé (`auto_deploy = true`, voir Partie V) semble tourner indéfiniment sans jamais se terminer — alors qu'une vérification manuelle sur la VM montre que WireGuard **et** le dashboard sont bel et bien installés et fonctionnels. À l'interruption manuelle (Ctrl+C), Terraform affiche `remote command exited without exit status or exit signal`.

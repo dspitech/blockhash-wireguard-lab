@@ -415,6 +415,14 @@
       </div>
     </div>
 
+    <!-- ---------- MODALE : Détail d'une alerte ---------- -->
+    <div class="modal-overlay" id="modal-alert-detail">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header"><h3 id="alert-detail-title">Détail de l'alerte</h3><button class="icon-btn" data-close-modal>✕</button></div>
+        <div class="modal-body" id="alert-detail-body"><div class="empty-state"><strong>Chargement…</strong></div></div>
+      </div>
+    </div>
+
     <!-- ---------- MODALE : Détail d'une session (Journal) ---------- -->
     <div class="modal-overlay" id="modal-session-detail">
       <div class="modal">
@@ -608,6 +616,9 @@
         <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/></svg>Configurer les canaux</button>
       </div>
 
+      <!-- Cartes de synthese (7 derniers jours) -->
+      <div class="kpi-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4" id="alerts-kpi-grid"></div>
+
       <div class="tw-card mb-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
           <div>
@@ -635,9 +646,12 @@
 
       <div class="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div class="card">
-          <div class="card-header"><h3 data-i18n="h3.historique">Historique</h3></div>
+          <div class="card-header">
+            <h3 data-i18n="h3.historique">Historique</h3>
+            <span class="hint">Cliquez sur une ligne pour voir le détail</span>
+          </div>
           <div class="table-wrap overflow-x-auto -mx-1">
-            <table class="data-table" id="table-alerts-history">
+            <table class="data-table alerts-table" id="table-alerts-history">
               <thead><tr><th data-i18n="th.horodatage">Horodatage</th><th data-i18n="th.regle">Règle</th><th data-i18n="th.client">Client</th><th data-i18n="th.severite">Sévérité</th><th data-i18n="th.detail">Détail</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
@@ -650,7 +664,7 @@
         </div>
         <div class="stack">
           <div class="card">
-            <div class="card-header"><h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Tableau de bord (7 derniers jours)</h3></div>
+            <div class="card-header"><h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Volume &amp; top clients (7 derniers jours)</h3></div>
             <div id="alerts-stats-body" class="stack" style="padding:0 var(--sp-4) var(--sp-4);"></div>
           </div>
           <div class="card">

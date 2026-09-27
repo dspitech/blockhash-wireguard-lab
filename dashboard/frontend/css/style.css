@@ -316,6 +316,30 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .data-table thead th.sortable:hover { background: var(--teal-deeper); }
 .data-table tbody td { border-bottom: 1px solid var(--border-subtle); } /* padding/vertical-align → @layer components (index.html) */
 .data-table tbody tr { transition: background .1s var(--ease); }
+
+/* ---- Tableau historique des alertes : accent visuel par sévérité ---- */
+.alerts-table tbody tr.alert-row { cursor: pointer; }
+.alerts-table tbody tr.alert-row:hover { background: var(--neutral-dim); }
+.alerts-table tbody tr.alert-row td:first-child { position: relative; }
+.alerts-table tbody tr.alert-row td:first-child::before {
+  content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px;
+  background: var(--neutral-dim);
+}
+.alerts-table tbody tr.alert-row.sev-warning td:first-child::before { background: var(--warning); }
+.alerts-table tbody tr.alert-row.sev-info td:first-child::before { background: var(--accent); }
+.alerts-table tbody tr.alert-row.sev-critical td:first-child::before { background: var(--danger); }
+.alerts-table tbody tr.alert-row.sev-critical {
+  background: var(--danger-dim);
+}
+.alerts-table tbody tr.alert-row.sev-critical:hover { background: var(--danger-dim); filter: brightness(0.97); }
+.alerts-table tbody tr.alert-row.sev-critical td { border-bottom-color: var(--danger); }
+.alerts-table tbody tr.alert-row.sev-critical .cell-primary {
+  color: var(--danger); font-weight: 700; text-decoration: underline; text-decoration-color: var(--danger); text-underline-offset: 3px;
+}
+.alerts-table tbody tr.alert-row.is-unread .cell-primary::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: middle;
+}
+.alerts-table tbody tr.alert-row.sev-critical.is-unread .cell-primary::before { background: var(--danger); }
 .data-table tbody tr:nth-child(even) { background: var(--bg-inset); }
 .data-table tbody tr:hover { background: var(--accent-dim); }
 .data-table tbody tr:last-child td { border-bottom: none; }
