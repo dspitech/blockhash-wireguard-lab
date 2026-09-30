@@ -97,16 +97,15 @@ sudo systemctl status blockhash-dashboard --no-pager | head -5
 
 
 ```bash
-sudo -u www-data /opt/blockhash-dashboard/venv/bin/python3 << 'EOF'
-import sqlite3
+read -rsp "Mot de passe à tester : " TEST_PWD; echo
+sudo -u www-data /opt/blockhash-dashboard/venv/bin/python3 - "$TEST_PWD" << 'EOF'
+import sqlite3, sys
 from werkzeug.security import check_password_hash
 
+pwd = sys.argv[1]
 conn = sqlite3.connect('/var/log/wireguard/blockhash.db')
-row = conn.execute("SELECT password_hash FROM users WHERE username='admin'").fetchone()
-h = row[0]
+h = conn.execute("SELECT password_hash FROM users WHERE username='admin'").fetchone()[0]
 print("Hash en base :", h[:50] + "...")
-print()
-pwd = input("Tapez le mot de passe à tester : ")
 print("Match :", check_password_hash(h, pwd))
 EOF
 ```
