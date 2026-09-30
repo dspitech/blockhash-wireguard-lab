@@ -1384,85 +1384,126 @@
 
       <!-- ---------- ALERTES ---------- -->
       <section class="view" id="view-alerts">
-        <div class="tw-page-header">
-          <h1 class="tw-h1" data-i18n="view.alerts.title">Alertes</h1>
-          <p class="tw-subtitle" data-i18n="view.alerts.subtitle">Règles, canaux de notification et historique</p>
+        <div class="ops-hero">
+          <div>
+            <p class="ops-kicker">Supervision · 7 derniers jours</p>
+            <h1 class="tw-h1" data-i18n="view.alerts.title">Alertes</h1>
+            <p class="tw-subtitle" data-i18n="view.alerts.subtitle">Règles, canaux de notification et historique opérationnel</p>
+          </div>
+          <div class="ops-hero-actions">
+            <button class="btn ghost sm" id="btn-alerts-export" data-i18n="btn.btn-alerts-export">Exporter CSV</button>
+            <button class="btn primary" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin">
+              <svg viewBox="0 0 20 20" fill="none" width="16" height="16">
+                <circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5" />
+                <path d="M10 3.2v1.4M10 15.4v1.4M3.2 10h1.4M15.4 10h1.4M5.1 5.1l1 1M13.9 13.9l1 1M5.1 14.9l1-1M13.9 6.1l1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+              Configurer les canaux
+            </button>
+          </div>
         </div>
 
-        <div class="flex flex-wrap items-center justify-end gap-2 mb-4">
-          <button class="btn ghost sm" id="btn-alerts-export" data-i18n="btn.btn-alerts-export">Exporter CSV</button>
-          <button class="btn" id="btn-alert-config" data-i18n="btn.btn-alert-config" data-role-min="admin"><svg
-              viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5" />
-            </svg>Configurer les canaux</button>
-        </div>
-
-        <!-- Cartes de synthese (7 derniers jours) -->
         <div class="kpi-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4" id="alerts-kpi-grid"></div>
 
-        <div class="tw-card mb-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-            <div>
-              <label class="tw-label">Sévérité</label>
-              <select class="tw-select" id="alerts-filter-severity">
-                <option value="">Toute sévérité</option>
-                <option value="critical">Critique</option>
-                <option value="warning">Avertissement</option>
-                <option value="info">Info</option>
-              </select>
+        <div class="ops-charts-grid">
+          <div class="card reveal" style="--reveal-delay:0ms;">
+            <div class="card-header">
+              <h3>Volume par sévérité</h3>
+              <span class="hint">7 derniers jours</span>
             </div>
-            <div>
-              <label class="tw-label">Client</label>
-              <input class="tw-input" id="alerts-filter-client" placeholder="Filtrer par client…" />
+            <div class="chart-box sm"><canvas id="chart-alerts-volume"></canvas></div>
+          </div>
+          <div class="card reveal" style="--reveal-delay:60ms;">
+            <div class="card-header">
+              <h3>Répartition</h3>
+              <span class="hint" id="alerts-donut-total"></span>
             </div>
-            <div>
-              <label class="tw-label">Règle</label>
-              <input class="tw-input" id="alerts-filter-rule" placeholder="ex. inactive, bandwidth…" />
+            <div class="donut-panel">
+              <div class="chart-box sm donut-canvas"><canvas id="chart-alerts-severity"></canvas></div>
+              <div class="donut-legend" id="alerts-donut-legend"></div>
             </div>
-            <label class="tw-p-muted" style="display:flex;align-items:center;gap:8px;font-size:13px;">
-              <input type="checkbox" id="alerts-filter-archived" /> Voir aussi les archivées
-            </label>
+          </div>
+          <div class="card reveal" style="--reveal-delay:120ms;">
+            <div class="card-header">
+              <h3>Clients les plus alertés</h3>
+              <span class="hint">Top 5</span>
+            </div>
+            <div class="chart-box sm"><canvas id="chart-alerts-clients"></canvas></div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-4 items-start">
-          <div class="card">
-            <div class="card-header">
-              <h3 data-i18n="h3.historique">Historique</h3>
-              <span class="hint">Cliquez sur une ligne pour voir le détail</span>
-            </div>
-            <div class="table-wrap overflow-x-auto -mx-1">
-              <table class="data-table alerts-table" id="table-alerts-history">
-                <thead>
-                  <tr>
-                    <th data-i18n="th.horodatage">Horodatage</th>
-                    <th data-i18n="th.regle">Règle</th>
-                    <th data-i18n="th.client">Client</th>
-                    <th data-i18n="th.severite">Sévérité</th>
-                    <th data-i18n="th.detail">Détail</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-            <div class="filters-bar" style="justify-content:flex-end;">
-              <span class="cell-muted" id="alerts-page-indicator">0–0 sur 0</span>
-              <button class="btn ghost sm" id="alerts-prev" data-i18n="btn.alerts-prev">← Précédent</button>
-              <button class="btn ghost sm" id="alerts-next" data-i18n="btn.alerts-next">Suivant →</button>
+        <div class="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-4 items-start">
+          <div class="stack">
+            <form class="ops-form-card" id="alerts-filter-form" onsubmit="return false;">
+              <div class="ops-form-head">
+                <div>
+                  <h3>Filtres d’investigation</h3>
+                  <p>Affinez l’historique par sévérité, client ou règle déclenchée.</p>
+                </div>
+              </div>
+              <div class="ops-form-grid">
+                <div class="field">
+                  <label class="tw-label" for="alerts-filter-severity">Sévérité</label>
+                  <select class="tw-select" id="alerts-filter-severity">
+                    <option value="">Toute sévérité</option>
+                    <option value="critical">Critique</option>
+                    <option value="warning">Avertissement</option>
+                    <option value="info">Info</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="tw-label" for="alerts-filter-client">Client</label>
+                  <input class="tw-input" id="alerts-filter-client" placeholder="Nom du peer…" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label class="tw-label" for="alerts-filter-rule">Règle</label>
+                  <input class="tw-input" id="alerts-filter-rule" placeholder="ex. inactive, bandwidth…" autocomplete="off" />
+                </div>
+                <label class="ops-check">
+                  <input type="checkbox" id="alerts-filter-archived" />
+                  <span>Inclure les alertes archivées</span>
+                </label>
+              </div>
+            </form>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 data-i18n="h3.historique">Historique</h3>
+                <span class="hint">Cliquez sur une ligne pour ouvrir le dossier</span>
+              </div>
+              <div class="table-wrap overflow-x-auto -mx-1">
+                <table class="data-table alerts-table" id="table-alerts-history">
+                  <thead>
+                    <tr>
+                      <th data-i18n="th.horodatage">Horodatage</th>
+                      <th data-i18n="th.regle">Règle</th>
+                      <th data-i18n="th.client">Client</th>
+                      <th data-i18n="th.severite">Sévérité</th>
+                      <th data-i18n="th.detail">Détail</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="filters-bar" style="justify-content:flex-end;">
+                <span class="cell-muted" id="alerts-page-indicator">0–0 sur 0</span>
+                <button class="btn ghost sm" id="alerts-prev" data-i18n="btn.alerts-prev">← Précédent</button>
+                <button class="btn ghost sm" id="alerts-next" data-i18n="btn.alerts-next">Suivant →</button>
+              </div>
             </div>
           </div>
+
           <div class="stack">
             <div class="card">
               <div class="card-header">
-                <h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Volume &amp; top clients (7 derniers jours)</h3>
+                <h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Points d’attention</h3>
               </div>
-              <div id="alerts-stats-body" class="stack" style="padding:0 var(--sp-4) var(--sp-4);"></div>
+              <div id="alerts-stats-body" class="ops-insight-list"></div>
             </div>
             <div class="card">
               <div class="card-header">
-                <h3 data-i18n="h3.deduplication-active">Déduplication active</h3><span class="hint"
-                  id="dedup-hint"></span>
+                <h3 data-i18n="h3.deduplication-active">Déduplication active</h3>
+                <span class="hint" id="dedup-hint"></span>
               </div>
               <div id="dedup-list" class="stack"></div>
             </div>
@@ -1472,41 +1513,85 @@
 
       <!-- ---------- PROVISIONING (annuaire) ---------- -->
       <section class="view" id="view-provisioning">
-        <div class="tw-page-header">
-          <h1 class="tw-h1">Provisioning</h1>
-          <p class="tw-subtitle">Générer des clients VPN depuis un annuaire d'entreprise (Phase 1 - voir README)</p>
-        </div>
-
-        <div class="flex gap-2 mb-4" role="tablist">
-          <button class="btn ghost sm is-active" data-prov-tab="sources" id="prov-tab-sources">Sources</button>
-          <button class="btn ghost sm" data-prov-tab="explorer" id="prov-tab-explorer">Explorer</button>
-          <button class="btn ghost sm" data-prov-tab="jobs" id="prov-tab-jobs">Jobs &amp; historique</button>
-        </div>
-
-        <!-- Onglet Sources -->
-        <div id="prov-panel-sources">
-          <div class="flex justify-end mb-3">
-            <button class="btn primary sm" id="btn-prov-add-source">+ Ajouter une source</button>
+        <div class="ops-hero">
+          <div>
+            <p class="ops-kicker">Annuaire d’entreprise · Phase 1</p>
+            <h1 class="tw-h1">Provisioning</h1>
+            <p class="tw-subtitle">Connectez un annuaire, sélectionnez des comptes, puis générez les clients WireGuard avec un aperçu contrôlé.</p>
           </div>
-          <div id="prov-sources-list" class="stack"></div>
+          <div class="ops-hero-actions">
+            <button class="btn primary" id="btn-prov-add-source">
+              <svg viewBox="0 0 20 20" fill="none" width="16" height="16"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              Ajouter une source
+            </button>
+          </div>
         </div>
 
-        <!-- Onglet Explorer -->
-        <div id="prov-panel-explorer" hidden>
-          <div class="tw-card mb-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div>
-                <label class="tw-label">Source</label>
-                <select class="tw-select" id="prov-explorer-source"></select>
-              </div>
-              <div>
-                <label class="tw-label">Recherche</label>
-                <input class="tw-input" id="prov-explorer-search" placeholder="Nom, login, email…" />
-              </div>
-              <button class="btn" id="btn-prov-explorer-search">Rechercher</button>
+        <div class="kpi-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4" id="prov-kpi-grid"></div>
+
+        <div class="ops-charts-grid ops-charts-grid-2">
+          <div class="card reveal" style="--reveal-delay:0ms;">
+            <div class="card-header">
+              <h3>Santé des sources</h3>
+              <span class="hint" id="prov-sources-chart-hint">Connexions d’annuaire</span>
+            </div>
+            <div class="donut-panel">
+              <div class="chart-box sm donut-canvas"><canvas id="chart-prov-sources"></canvas></div>
+              <div class="donut-legend" id="prov-sources-legend"></div>
             </div>
           </div>
+          <div class="card reveal" style="--reveal-delay:60ms;">
+            <div class="card-header">
+              <h3>Résultats des jobs</h3>
+              <span class="hint">Derniers 30 jobs</span>
+            </div>
+            <div class="chart-box sm"><canvas id="chart-prov-jobs"></canvas></div>
+          </div>
+        </div>
+
+        <div class="ops-tabs" role="tablist">
+          <button class="ops-tab is-active" data-prov-tab="sources" id="prov-tab-sources">Sources</button>
+          <button class="ops-tab" data-prov-tab="explorer" id="prov-tab-explorer">Explorer</button>
+          <button class="ops-tab" data-prov-tab="jobs" id="prov-tab-jobs">Jobs &amp; historique</button>
+        </div>
+
+        <div id="prov-panel-sources">
+          <div id="prov-sources-list" class="ops-source-grid"></div>
+        </div>
+
+        <div id="prov-panel-explorer" hidden>
+          <form class="ops-form-card" id="prov-explorer-form" onsubmit="return false;">
+            <div class="ops-form-head">
+              <div>
+                <h3>Recherche d’annuaire</h3>
+                <p>Filtrez les comptes puis lancez un dry-run avant toute création de client.</p>
+              </div>
+            </div>
+            <div class="ops-form-grid ops-form-grid-4">
+              <div class="field">
+                <label class="tw-label" for="prov-explorer-source">Source</label>
+                <select class="tw-select" id="prov-explorer-source"></select>
+              </div>
+              <div class="field">
+                <label class="tw-label" for="prov-explorer-search">Recherche</label>
+                <input class="tw-input" id="prov-explorer-search" placeholder="Nom, login, e-mail…" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label class="tw-label" for="prov-name-template">Modèle de nom client</label>
+                <input class="tw-input" id="prov-name-template" value="{login}" placeholder="{login}" />
+                <p class="tw-hint">Placeholders : {login}, {display_name}, {department}</p>
+              </div>
+              <div class="field ops-form-action">
+                <button class="btn primary" id="btn-prov-explorer-search" type="button">Rechercher</button>
+              </div>
+            </div>
+          </form>
+
           <div class="card">
+            <div class="card-header">
+              <h3>Utilisateurs</h3>
+              <span class="hint" id="prov-explorer-count">0 utilisateur</span>
+            </div>
             <div class="table-wrap overflow-x-auto -mx-1">
               <table class="data-table" id="table-prov-users">
                 <thead>
@@ -1521,20 +1606,20 @@
                 <tbody></tbody>
               </table>
             </div>
-            <div class="filters-bar" style="justify-content:space-between;">
-              <span class="cell-muted" id="prov-explorer-count">0 utilisateur</span>
-              <button class="btn primary sm" id="btn-prov-preview" disabled>Aperçu (dry-run) →</button>
+            <div class="ops-select-bar">
+              <span class="cell-muted" id="prov-selection-hint">Aucun compte sélectionné</span>
+              <button class="btn primary sm" id="btn-prov-preview" disabled>Aperçu (dry-run)</button>
             </div>
           </div>
         </div>
 
-        <!-- Onglet Jobs -->
         <div id="prov-panel-jobs" hidden>
           <div class="card">
             <div class="card-header">
               <h3>Jobs de provisioning</h3>
+              <span class="hint">Suivi des exécutions et volumes traités</span>
             </div>
-            <div id="prov-jobs-list" class="stack" style="padding:0 var(--sp-4) var(--sp-4);"></div>
+            <div id="prov-jobs-list" class="ops-job-list"></div>
           </div>
         </div>
       </section>
@@ -1546,33 +1631,43 @@
             <h3>Ajouter une source d'annuaire</h3><button class="icon-btn" data-close-modal>✕</button>
           </div>
           <div class="modal-body">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Nom</label>
-                <input class="tw-input" id="prov-src-name" placeholder="AD local" />
+            <div class="ops-form-section">
+              <h4>Identité</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                <div class="field">
+                  <label class="tw-label" for="prov-src-name">Nom d’affichage</label>
+                  <input class="tw-input" id="prov-src-name" placeholder="AD Production" />
+                </div>
+                <div class="field">
+                  <label class="tw-label" for="prov-src-type">Type d’annuaire</label>
+                  <select class="tw-select" id="prov-src-type"></select>
+                </div>
               </div>
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Type</label>
-                <select class="tw-select" id="prov-src-type"></select>
+            </div>
+            <div class="ops-form-section">
+              <h4>Connexion LDAP</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                <div class="field">
+                  <label class="tw-label" for="prov-src-host">Hôte</label>
+                  <input class="tw-input" id="prov-src-host" placeholder="ad.entreprise.local" />
+                </div>
+                <div class="field">
+                  <label class="tw-label" for="prov-src-basedn">Base DN</label>
+                  <input class="tw-input" id="prov-src-basedn" placeholder="DC=entreprise,DC=local" />
+                </div>
+                <div class="field md:col-span-2">
+                  <label class="tw-label" for="prov-src-binddn">Bind DN (compte de service)</label>
+                  <input class="tw-input" id="prov-src-binddn"
+                    placeholder="CN=svc-blockhash,CN=Users,DC=entreprise,DC=local" />
+                </div>
               </div>
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Hôte LDAP</label>
-                <input class="tw-input" id="prov-src-host" placeholder="ad.entreprise.local" />
-              </div>
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Base DN</label>
-                <input class="tw-input" id="prov-src-basedn" placeholder="DC=entreprise,DC=local" />
-              </div>
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Bind DN</label>
-                <input class="tw-input" id="prov-src-binddn"
-                  placeholder="CN=svc-blockhash,CN=Users,DC=entreprise,DC=local" />
-              </div>
-              <div class="field" style="margin-bottom:12px;">
-                <label class="tw-label">Variable d'environnement (mot de passe)</label>
+            </div>
+            <div class="ops-form-section">
+              <h4>Secret</h4>
+              <div class="field">
+                <label class="tw-label" for="prov-src-secretenv">Variable d’environnement du mot de passe</label>
                 <input class="tw-input" id="prov-src-secretenv" placeholder="AD_BIND_PASSWORD_AD_LOCAL" />
-                <p class="tw-hint">Le mot de passe lui-même n'est jamais saisi ici : définissez cette variable dans
-                  l'environnement du service (voir README).</p>
+                <p class="tw-hint">Le mot de passe n’est jamais saisi ici : définissez cette variable dans l’environnement du service.</p>
               </div>
             </div>
           </div>

@@ -1055,6 +1055,8 @@ function kpiIcon(name) {
     idle: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
     disabled: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     growth: '<path d="M3.5 14l4-5 3 3 5.5-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 5h3.5v3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    directory: '<rect x="3.5" y="4" width="13" height="12" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 8h13M8 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+    jobs: '<rect x="4" y="3.5" width="12" height="13" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M7 7.5h6M7 10.5h6M7 13.5h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
   };
   return icons[name] || "";
 }
@@ -1350,6 +1352,18 @@ function chartGridColor() {
 }
 function chartSurfaceColor() {
   return getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#fff";
+}
+function destroyNamedChart(id) {
+  if (STATE.charts[id]) { STATE.charts[id].destroy(); delete STATE.charts[id]; }
+}
+function kpiCardHtml(c, id) {
+  return `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));"><svg viewBox="0 0 20 20" fill="none">${kpiIcon(c.icon)}</svg></div>
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" id="${id}">${c.value == null ? "-" : "0"}</div>
+      ${c.trend ? `<div class="kpi-trend" style="color:var(--text-tertiary);">${c.trend}</div>` : ""}
+    </div>`;
 }
 function makeChartGradient(canvas, color, topAlpha = 0.32) {
   const ctx = canvas.getContext("2d");
@@ -3587,9 +3601,10 @@ async function renderAlerts() {
     if (STATE.demoMode) {
       document.querySelector("#table-alerts-history tbody").innerHTML =
         `<tr><td colspan="6"><div class="empty-state"><strong>Mode démonstration</strong><span>Historique indisponible sans API connectée.</span></div></td></tr>`;
-      document.getElementById("dedup-list").innerHTML = "";
-      document.getElementById("alerts-stats-body").innerHTML = "";
-      document.getElementById("alerts-kpi-grid").innerHTML = "";
+      document.getElementById("dedup-list").innerHTML = `<div class="empty-state"><strong>Canaux en pause</strong><span>Connectez l'API pour voir les cooldowns.</span></div>`;
+      renderAlertsKpiGrid({ by_day: [], top_clients: [], mtta_seconds: null });
+      renderAlertsStats({ by_day: [], top_clients: [], mtta_seconds: null });
+      renderAlertsCharts({ by_day: [], top_clients: [] });
       return;
     }
     const params = new URLSearchParams({ limit: STATE.alertsPage.limit, offset: STATE.alertsPage.offset });
@@ -3609,58 +3624,161 @@ async function renderAlerts() {
     renderAlertsHistory(history);
     renderDedupList(dedup);
     renderAlertsStats(stats);
+    renderAlertsCharts(stats);
   } catch (err) { toast("danger", "Impossible de charger les alertes", err.message); }
 }
 
 // ---------------------------------------------------------------
 // Cartes de synthèse en tête de la page Alertes (7 derniers jours)
 // ---------------------------------------------------------------
-function renderAlertsKpiGrid(stats) {
+function summarizeAlertStats(stats) {
   const totals = { critical: 0, warning: 0, info: 0 };
   (stats.by_day || []).forEach(r => { totals[r.level] = (totals[r.level] || 0) + r.n; });
   const total = totals.critical + totals.warning + totals.info;
   const mttaMin = stats.mtta_seconds != null ? Math.round(stats.mtta_seconds / 60) : null;
+  return { totals, total, mttaMin };
+}
 
+function renderAlertsKpiGrid(stats) {
+  const { totals, total, mttaMin } = summarizeAlertStats(stats);
+  const pct = (n) => total ? `${Math.round((n / total) * 100)}% du volume` : "Aucun événement";
   const cards = [
-    { label: "Total (7 j)", value: total, icon: "alerts", tone: "neutral" },
-    { label: "Critiques", value: totals.critical, icon: "alerts", tone: totals.critical > 0 ? "danger" : "success" },
-    { label: "Avertissements", value: totals.warning, icon: "alerts", tone: totals.warning > 0 ? "warning" : "success" },
-    { label: "Info", value: totals.info, icon: "alerts", tone: "accent" },
-    { label: "Délai moyen de lecture", value: mttaMin, suffix: mttaMin != null ? " min" : "-", icon: "clock", tone: "accent" },
+    { label: "Volume 7 jours", value: total, icon: "alerts", tone: "neutral", trend: "Toutes sévérités confondues" },
+    { label: "Critiques", value: totals.critical, icon: "alerts", tone: totals.critical > 0 ? "danger" : "success", trend: pct(totals.critical) },
+    { label: "Avertissements", value: totals.warning, icon: "alerts", tone: totals.warning > 0 ? "warning" : "success", trend: pct(totals.warning) },
+    { label: "Informations", value: totals.info, icon: "sessions", tone: "accent", trend: pct(totals.info) },
+    { label: "MTTA", value: mttaMin, suffix: mttaMin != null ? " min" : null, icon: "clock", tone: "accent", trend: "Délai moyen de première lecture" },
   ];
-
-  document.getElementById("alerts-kpi-grid").innerHTML = cards.map((c, i) => `
-    <div class="kpi-card">
-      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
-      <div class="kpi-label">${c.label}</div>
-      <div class="kpi-value" id="alerts-kpi-value-${i}">${c.value == null ? "-" : "0"}</div>
-    </div>
-  `).join("");
-
+  const grid = document.getElementById("alerts-kpi-grid");
+  grid.innerHTML = cards.map((c, i) => kpiCardHtml(c, `alerts-kpi-value-${i}`)).join("");
   cards.forEach((c, i) => {
-    if (c.value == null) return;
+    if (c.value == null) {
+      const el = document.getElementById(`alerts-kpi-value-${i}`);
+      if (el) el.textContent = "—";
+      return;
+    }
     const el = document.getElementById(`alerts-kpi-value-${i}`);
     animateValue(el, c.value, false);
-    if (c.suffix && c.suffix !== "-") {
-      const obs = () => { el.textContent = el.textContent + c.suffix; };
-      setTimeout(obs, 950); // laisse l'animation se terminer avant d'ajouter le suffixe
-    }
+    if (c.suffix) setTimeout(() => { if (el) el.textContent = `${el.textContent}${c.suffix}`; }, 950);
   });
 }
 
 function renderAlertsStats(stats) {
   const el = document.getElementById("alerts-stats-body");
-  const totalsByDay = {};
-  (stats.by_day || []).forEach(r => { totalsByDay[r.day] = (totalsByDay[r.day] || 0) + r.n; });
-  const days = Object.keys(totalsByDay).sort();
-  const maxN = Math.max(1, ...Object.values(totalsByDay));
-  const barChart = days.length
-    ? `<div style="display:flex;gap:4px;align-items:flex-end;height:60px;">${days.map(d => `<div title="${d} : ${totalsByDay[d]}" style="flex:1;background:var(--teal-mid);border-radius:2px;height:${Math.max(4, (totalsByDay[d] / maxN) * 60)}px;"></div>`).join("")}</div>`
-    : `<span class="cell-muted">Aucune alerte sur la période.</span>`;
-  const topClients = (stats.top_clients || []).map(c => `<div class="row-flex" style="justify-content:space-between;"><span>${escapeHtml(c.peer_name)}</span><span class="cell-muted">${c.n}</span></div>`).join("") || `<span class="cell-muted">-</span>`;
-  el.innerHTML = `
-    <div><span class="cell-muted">Volume par jour</span>${barChart}</div>
-    <div><span class="cell-muted">Top clients alertés</span>${topClients}</div>`;
+  const { totals, total, mttaMin } = summarizeAlertStats(stats);
+  const peak = (stats.by_day || []).reduce((acc, r) => {
+    const cur = acc.days[r.day] || 0;
+    acc.days[r.day] = cur + r.n;
+    if (acc.days[r.day] > acc.max) { acc.max = acc.days[r.day]; acc.day = r.day; }
+    return acc;
+  }, { days: {}, max: 0, day: null });
+  const top = (stats.top_clients || [])[0];
+  const items = [
+    { title: "Charge critique", detail: totals.critical ? `${totals.critical} alerte(s) à traiter en priorité` : "Aucune alerte critique", val: totals.critical },
+    { title: "Pic journalier", detail: peak.day ? peak.day : "Pas de pic sur la période", val: peak.max || 0 },
+    { title: "Client le plus exposé", detail: top ? escapeHtml(top.peer_name) : "Aucun client identifié", val: top ? top.n : 0 },
+    { title: "Couverture", detail: `${total} événement(s) agrégés sur 7 jours`, val: mttaMin != null ? `${mttaMin} min` : "—" },
+  ];
+  el.innerHTML = items.map(i => `
+    <div class="ops-insight">
+      <div><strong>${i.title}</strong><span>${i.detail}</span></div>
+      <div class="ops-insight-val">${i.val}</div>
+    </div>`).join("");
+}
+
+function lastIsoDays(n) {
+  const days = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    days.push(d.toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+function renderAlertsCharts(stats) {
+  if (typeof Chart === "undefined") return;
+  const days = lastIsoDays(7);
+  const series = { critical: days.map(() => 0), warning: days.map(() => 0), info: days.map(() => 0) };
+  (stats.by_day || []).forEach(r => {
+    const idx = days.indexOf(r.day);
+    if (idx >= 0 && series[r.level]) series[r.level][idx] = r.n;
+  });
+  const { totals, total } = summarizeAlertStats(stats);
+  const labels = days.map(d => d.slice(5).replace("-", "/"));
+
+  const vol = document.getElementById("chart-alerts-volume");
+  if (vol) {
+    destroyNamedChart("chart-alerts-volume");
+    STATE.charts["chart-alerts-volume"] = new Chart(vol, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Critique", data: series.critical, backgroundColor: "#c23b3b", borderRadius: 4, stack: "sev" },
+          { label: "Avertissement", data: series.warning, backgroundColor: "#b6740f", borderRadius: 4, stack: "sev" },
+          { label: "Info", data: series.info, backgroundColor: "#1c5b63", borderRadius: 4, stack: "sev" },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: chartTextColor(), boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+        },
+      },
+    });
+  }
+
+  const donut = document.getElementById("chart-alerts-severity");
+  const hint = document.getElementById("alerts-donut-total");
+  const legend = document.getElementById("alerts-donut-legend");
+  if (hint) hint.textContent = `${total} au total`;
+  const sevItems = [
+    { key: "critical", label: "Critiques", color: "#c23b3b", n: totals.critical },
+    { key: "warning", label: "Avertissements", color: "#b6740f", n: totals.warning },
+    { key: "info", label: "Info", color: "#1c5b63", n: totals.info },
+  ].filter(i => i.n > 0);
+  if (legend) {
+    legend.innerHTML = sevItems.length
+      ? sevItems.map(i => `<div class="donut-legend-row"><div class="donut-legend-label"><i style="background:${i.color}"></i><span>${i.label}</span></div><div class="donut-legend-value">${i.n}</div></div>`).join("")
+      : `<div class="empty-state"><strong>Aucun volume</strong></div>`;
+  }
+  if (donut) {
+    destroyNamedChart("chart-alerts-severity");
+    if (sevItems.length) {
+      STATE.charts["chart-alerts-severity"] = new Chart(donut, {
+        type: "doughnut",
+        data: { labels: sevItems.map(i => i.label), datasets: [{ data: sevItems.map(i => i.n), backgroundColor: sevItems.map(i => i.color), borderWidth: 2, borderColor: chartSurfaceColor() }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: "68%",
+          plugins: { legend: { display: false } },
+        },
+      });
+    }
+  }
+
+  const clientsCanvas = document.getElementById("chart-alerts-clients");
+  if (clientsCanvas) {
+    destroyNamedChart("chart-alerts-clients");
+    const top = (stats.top_clients || []).slice(0, 5);
+    STATE.charts["chart-alerts-clients"] = new Chart(clientsCanvas, {
+      type: "bar",
+      data: {
+        labels: top.length ? top.map(c => c.peer_name) : ["—"],
+        datasets: [{ data: top.length ? top.map(c => c.n) : [0], backgroundColor: "#2f8f8a", borderRadius: 6, barThickness: 18 }],
+      },
+      options: {
+        indexAxis: "y", responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+          y: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 11 } } },
+        },
+      },
+    });
+  }
 }
 
 const ALERT_SEVERITY_LABELS = { critical: "Critique", warning: "Avertissement", info: "Info" };
@@ -3766,7 +3884,7 @@ function renderDedupList(entries) {
   const el = document.getElementById("dedup-list");
   document.getElementById("dedup-hint").textContent = `${entries.length} règle(s) en cooldown`;
   if (!entries.length) {
-    el.innerHTML = `<div class="empty-state"><strong>Aucune règle en cooldown</strong></div>`;
+    el.innerHTML = `<div class="empty-state"><strong>Aucune règle en cooldown</strong><span>Les canaux sont prêts à relayer.</span></div>`;
     return;
   }
   el.innerHTML = entries.map(e => `
@@ -4471,13 +4589,106 @@ async function maybeShowDesktopNotification(title, body) {
 const PROV_STATE = { sources: [], selectedSource: null, users: [], selectedUserIds: new Set() };
 
 function renderProvisioning() {
+  setupProvTabs();
   if (STATE.demoMode) {
     document.getElementById("prov-sources-list").innerHTML =
-      `<p class="cell-muted">Provisioning indisponible en mode démonstration (nécessite une API connectée).</p>`;
+      `<div class="empty-ops"><strong>Mode démonstration</strong>Le provisioning nécessite une API connectée.</div>`;
+    renderProvDashboard([], []);
     return;
   }
-  setupProvTabs();
-  loadProvSources();
+  refreshProvDashboard();
+}
+
+async function refreshProvDashboard() {
+  try {
+    const [sources, jobs] = await Promise.all([
+      apiGet("/api/directory/sources"),
+      apiGet("/api/provision/jobs?limit=30").catch(() => []),
+    ]);
+    PROV_STATE.sources = sources;
+    renderProvDashboard(sources, jobs);
+    renderProvSourcesList(sources);
+    const jobsPanel = document.getElementById("prov-panel-jobs");
+    if (jobsPanel && !jobsPanel.hidden) renderProvJobsList(jobs);
+  } catch (err) {
+    document.getElementById("prov-sources-list").innerHTML =
+      `<div class="empty-ops"><strong>Impossible de charger les sources</strong>${escapeHtml(err.message)}</div>`;
+    renderProvDashboard([], []);
+  }
+}
+
+function renderProvDashboard(sources, jobs) {
+  const healthy = sources.filter(s => s.last_test_ok === true).length;
+  const failing = sources.filter(s => s.last_test_ok === false).length;
+  const untested = sources.length - healthy - failing;
+  const running = jobs.filter(j => j.status === "pending" || j.status === "running").length;
+  const created = jobs.reduce((n, j) => n + (j.succeeded || 0), 0);
+  const failed = jobs.reduce((n, j) => n + (j.failed || 0), 0);
+  const cards = [
+    { label: "Sources", value: sources.length, icon: "directory", tone: "accent", trend: "Annuaires configurés" },
+    { label: "Connexions OK", value: healthy, icon: "online", tone: healthy && !failing ? "success" : failing ? "warning" : "neutral", trend: failing ? `${failing} en échec` : "Dernier test positif" },
+    { label: "Jobs en cours", value: running, icon: "jobs", tone: running ? "warning" : "success", trend: `${jobs.length} dans l’historique` },
+    { label: "Clients créés", value: created, icon: "peers", tone: "success", trend: "Cumul des jobs listés" },
+    { label: "Échecs", value: failed, icon: "alerts", tone: failed ? "danger" : "success", trend: "Lignes en erreur" },
+  ];
+  const grid = document.getElementById("prov-kpi-grid");
+  if (grid) {
+    grid.innerHTML = cards.map((c, i) => kpiCardHtml(c, `prov-kpi-value-${i}`)).join("");
+    cards.forEach((c, i) => animateValue(document.getElementById(`prov-kpi-value-${i}`), c.value, false));
+  }
+  renderProvCharts(sources, jobs, { healthy, failing, untested, created, failed, skipped: jobs.reduce((n, j) => n + (j.skipped || 0), 0) });
+}
+
+function renderProvCharts(sources, jobs, bag) {
+  if (typeof Chart === "undefined") return;
+  const srcItems = [
+    { label: "OK", n: bag.healthy, color: "#1a8a5c" },
+    { label: "Échec", n: bag.failing, color: "#c23b3b" },
+    { label: "Non testé", n: bag.untested, color: "#98a2ae" },
+  ].filter(i => i.n > 0);
+  const legend = document.getElementById("prov-sources-legend");
+  const hint = document.getElementById("prov-sources-chart-hint");
+  if (hint) hint.textContent = `${sources.length} source(s)`;
+  if (legend) {
+    legend.innerHTML = srcItems.length
+      ? srcItems.map(i => `<div class="donut-legend-row"><div class="donut-legend-label"><i style="background:${i.color}"></i><span>${i.label}</span></div><div class="donut-legend-value">${i.n}</div></div>`).join("")
+      : `<div class="empty-state"><strong>Aucune source</strong></div>`;
+  }
+  const srcCanvas = document.getElementById("chart-prov-sources");
+  if (srcCanvas) {
+    destroyNamedChart("chart-prov-sources");
+    if (srcItems.length) {
+      STATE.charts["chart-prov-sources"] = new Chart(srcCanvas, {
+        type: "doughnut",
+        data: { labels: srcItems.map(i => i.label), datasets: [{ data: srcItems.map(i => i.n), backgroundColor: srcItems.map(i => i.color), borderWidth: 2, borderColor: chartSurfaceColor() }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } },
+      });
+    }
+  }
+  const jobsCanvas = document.getElementById("chart-prov-jobs");
+  if (jobsCanvas) {
+    destroyNamedChart("chart-prov-jobs");
+    const last = jobs.slice(0, 8).reverse();
+    STATE.charts["chart-prov-jobs"] = new Chart(jobsCanvas, {
+      type: "bar",
+      data: {
+        labels: last.length ? last.map(j => (j.id || "").slice(0, 8)) : ["—"],
+        datasets: [
+          { label: "Créés", data: last.length ? last.map(j => j.succeeded || 0) : [0], backgroundColor: "#1a8a5c", stack: "j", borderRadius: 3 },
+          { label: "Ignorés", data: last.length ? last.map(j => j.skipped || 0) : [0], backgroundColor: "#b6740f", stack: "j", borderRadius: 3 },
+          { label: "Échecs", data: last.length ? last.map(j => j.failed || 0) : [0], backgroundColor: "#c23b3b", stack: "j", borderRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: chartTextColor(), boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+        },
+      },
+    });
+  }
 }
 
 function setupProvTabs() {
@@ -4492,6 +4703,7 @@ function setupProvTabs() {
       document.getElementById("prov-panel-jobs").hidden = tab !== "jobs";
       if (tab === "explorer") loadProvExplorerSources();
       if (tab === "jobs") loadProvJobs();
+      if (tab === "sources") refreshProvDashboard();
     });
   });
 
@@ -4519,7 +4731,7 @@ function setupProvTabs() {
       toast("success", "Source créée");
       closeModal("modal-prov-source");
       ["name", "host", "basedn", "binddn", "secretenv"].forEach(f => document.getElementById(`prov-src-${f}`).value = "");
-      loadProvSources();
+      refreshProvDashboard();
     } catch (err) { toast("danger", "Échec de la création", err.message); }
   });
 
@@ -4541,41 +4753,53 @@ async function loadProvSources() {
   list.innerHTML = `<p class="cell-muted">Chargement…</p>`;
   try {
     PROV_STATE.sources = await apiGet("/api/directory/sources");
-    if (!PROV_STATE.sources.length) {
-      list.innerHTML = `<p class="cell-muted">Aucune source configurée. Cliquez sur « + Ajouter une source » pour connecter un annuaire (Active Directory, OpenLDAP, Samba AD, FreeIPA…).</p>`;
-      return;
-    }
-    list.innerHTML = PROV_STATE.sources.map(s => `
-      <div class="card" style="padding:14px 16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-          <div>
-            <strong>${s.last_test_ok === false ? "⚠️" : s.last_test_ok ? "✅" : "•"} ${escapeHtml(s.name)}</strong>
-            <div class="cell-muted" style="font-size:12px;">Type : ${escapeHtml(s.type)} · Hôte : ${escapeHtml(s.host || "-")}${s.read_only ? " · lecture seule" : ""}</div>
-            ${s.last_test_error ? `<div class="cell-muted" style="font-size:12px;color:var(--danger,#dc2626);">${escapeHtml(s.last_test_error)}</div>` : ""}
-          </div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn ghost sm" data-prov-test="${s.id}">Tester</button>
-            <button class="btn ghost sm" data-prov-delete="${s.id}">Supprimer</button>
-          </div>
-        </div>
-      </div>`).join("");
-
-    list.querySelectorAll("[data-prov-test]").forEach(btn => btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      try {
-        const r = await apiSend("POST", `/api/directory/sources/${btn.dataset.provTest}/test`);
-        toast(r.ok ? "success" : "danger", r.ok ? "Connexion réussie" : "Échec de connexion", r.detail);
-      } catch (err) { toast("danger", "Échec du test", err.message); }
-      finally { btn.disabled = false; loadProvSources(); }
-    }));
-    list.querySelectorAll("[data-prov-delete]").forEach(btn => btn.addEventListener("click", async () => {
-      if (!confirm("Supprimer cette source d'annuaire ?")) return;
-      try { await apiSend("DELETE", `/api/directory/sources/${btn.dataset.provDelete}`); toast("success", "Source supprimée"); loadProvSources(); }
-      catch (err) { toast("danger", "Échec de la suppression", err.message); }
-    }));
+    const jobs = await apiGet("/api/provision/jobs?limit=30").catch(() => []);
+    renderProvDashboard(PROV_STATE.sources, jobs);
+    renderProvSourcesList(PROV_STATE.sources);
   } catch (err) {
-    list.innerHTML = `<p class="cell-muted">Impossible de charger les sources : ${escapeHtml(err.message)}</p>`;
+    list.innerHTML = `<div class="empty-ops"><strong>Impossible de charger les sources</strong>${escapeHtml(err.message)}</div>`;
   }
+}
+
+function renderProvSourcesList(sources) {
+  const list = document.getElementById("prov-sources-list");
+  if (!sources.length) {
+    list.innerHTML = `<div class="empty-ops"><strong>Aucune source configurée</strong>Ajoutez un annuaire (Active Directory, OpenLDAP, Samba AD, FreeIPA…) pour commencer.</div>`;
+    return;
+  }
+  list.innerHTML = sources.map(s => {
+    const tone = s.last_test_ok === false ? "danger" : s.last_test_ok ? "success" : "neutral";
+    const label = s.last_test_ok === false ? "Échec" : s.last_test_ok ? "OK" : "Non testé";
+    return `
+      <article class="ops-source-card">
+        <div class="ops-source-card-top">
+          <div>
+            <h4 class="ops-source-name">${escapeHtml(s.name)}</h4>
+            <p class="ops-source-meta">Type ${escapeHtml(s.type)} · ${escapeHtml(s.host || "hôte non renseigné")}${s.read_only ? " · lecture seule" : ""}</p>
+            ${s.last_test_error ? `<p class="ops-source-meta" style="color:var(--danger);">${escapeHtml(s.last_test_error)}</p>` : ""}
+          </div>
+          <span class="badge ${tone}"><span class="dot"></span>${label}</span>
+        </div>
+        <div class="ops-source-actions">
+          <button class="btn ghost sm" data-prov-test="${s.id}">Tester la connexion</button>
+          <button class="btn ghost sm" data-prov-delete="${s.id}">Supprimer</button>
+        </div>
+      </article>`;
+  }).join("");
+
+  list.querySelectorAll("[data-prov-test]").forEach(btn => btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const r = await apiSend("POST", `/api/directory/sources/${btn.dataset.provTest}/test`);
+      toast(r.ok ? "success" : "danger", r.ok ? "Connexion réussie" : "Échec de connexion", r.detail);
+    } catch (err) { toast("danger", "Échec du test", err.message); }
+    finally { btn.disabled = false; refreshProvDashboard(); }
+  }));
+  list.querySelectorAll("[data-prov-delete]").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Supprimer cette source d'annuaire ?")) return;
+    try { await apiSend("DELETE", `/api/directory/sources/${btn.dataset.provDelete}`); toast("success", "Source supprimée"); refreshProvDashboard(); }
+    catch (err) { toast("danger", "Échec de la suppression", err.message); }
+  }));
 }
 
 async function loadProvExplorerSources() {
@@ -4624,8 +4848,10 @@ async function loadProvUsers() {
 function updateProvSelectionCount() {
   const n = PROV_STATE.selectedUserIds.size;
   const btn = document.getElementById("btn-prov-preview");
+  const hint = document.getElementById("prov-selection-hint");
   btn.disabled = n === 0;
-  btn.textContent = n ? `Aperçu (dry-run) - ${n} sélectionné${n > 1 ? "s" : ""} →` : "Aperçu (dry-run) →";
+  btn.textContent = n ? `Aperçu dry-run · ${n} sélectionné${n > 1 ? "s" : ""}` : "Aperçu (dry-run)";
+  if (hint) hint.textContent = n ? `${n} compte${n > 1 ? "s" : ""} prêt${n > 1 ? "s" : ""} pour le provisioning` : "Aucun compte sélectionné";
 }
 
 async function runProvPreviewAndExecute() {
@@ -4633,15 +4859,16 @@ async function runProvPreviewAndExecute() {
   const userIds = Array.from(PROV_STATE.selectedUserIds);
   if (!sourceId || !userIds.length) return;
   try {
+    const template = (document.getElementById("prov-name-template")?.value || "{login}").trim() || "{login}";
     const plan = await apiSend("POST", "/api/provision/preview", {
-      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template: "{login}" },
+      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template },
     });
     const summary = `À créer : ${plan.stats.will_create} · Déjà provisionnés : ${plan.stats.already_exists} · `
       + `Conflits : ${plan.stats.conflict} · Désactivés ignorés : ${plan.stats.disabled_skipped}`;
     if (!confirm(`Aperçu du provisioning (${plan.total} utilisateur(s)) :\n\n${summary}\n\nLancer le provisioning maintenant ?`)) return;
 
     const job = await apiSend("POST", "/api/provision/execute", {
-      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template: "{login}" },
+      source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template },
     });
     toast("success", "Job de provisioning lancé", `${job.id} - suivez sa progression dans l'onglet « Jobs & historique ».`);
     document.getElementById("prov-tab-jobs").click();
@@ -4655,25 +4882,44 @@ async function loadProvJobs() {
   list.innerHTML = `<p class="cell-muted">Chargement…</p>`;
   try {
     const jobs = await apiGet("/api/provision/jobs?limit=30");
-    if (!jobs.length) { list.innerHTML = `<p class="cell-muted">Aucun job de provisioning pour l'instant.</p>`; return; }
-    const statusIcon = { pending: "🟡", running: "🔵", done: "🟢", failed: "🔴", cancelled: "⚪" };
-    list.innerHTML = jobs.map(j => `
-      <div class="card" style="padding:12px 16px;">
-        <strong>${statusIcon[j.status] || "•"} ${escapeHtml(j.id)}</strong>
-        <div class="cell-muted" style="font-size:12px;">Mode : ${escapeHtml(j.mode)} · Lancé par ${escapeHtml(j.started_by)} · ${fmtDate(new Date(j.started_at * 1000).toISOString())}</div>
-        <div style="font-size:13px;margin-top:4px;">✅ ${j.succeeded} créés · ⚠️ ${j.skipped} ignorés · ❌ ${j.failed} échoués (${j.processed}/${j.total})</div>
-        ${j.error ? `<div class="cell-muted" style="font-size:12px;color:var(--danger,#dc2626);">${escapeHtml(j.error)}</div>` : ""}
-      </div>`).join("");
-
-    // Rafraichit automatiquement tant qu'un job est en cours (F9 : suivi de
-    // progression en temps reel - implemente ici par polling simple ; voir
-    // README feuille de route pour un futur passage a du SSE comme pour les
-    // autres flux temps reel du dashboard).
+    renderProvJobsList(jobs);
+    renderProvDashboard(PROV_STATE.sources, jobs);
     if (jobs.some(j => j.status === "pending" || j.status === "running")) {
       clearTimeout(loadProvJobs._t);
       loadProvJobs._t = setTimeout(() => { if (STATE.currentView === "provisioning") loadProvJobs(); }, 3000);
     }
   } catch (err) {
-    list.innerHTML = `<p class="cell-muted">${escapeHtml(err.message)}</p>`;
+    list.innerHTML = `<div class="empty-ops"><strong>Impossible de charger les jobs</strong>${escapeHtml(err.message)}</div>`;
   }
+}
+
+function renderProvJobsList(jobs) {
+  const list = document.getElementById("prov-jobs-list");
+  if (!list) return;
+  if (!jobs.length) {
+    list.innerHTML = `<div class="empty-ops"><strong>Aucun job</strong>Lancez un dry-run depuis l’explorateur pour créer le premier lot.</div>`;
+    return;
+  }
+  const statusTone = { pending: "warning", running: "accent", done: "success", failed: "danger", cancelled: "neutral" };
+  const statusLabel = { pending: "En attente", running: "En cours", done: "Terminé", failed: "Échec", cancelled: "Annulé" };
+  list.innerHTML = jobs.map(j => {
+    const pct = j.total ? Math.round((j.processed / j.total) * 100) : 0;
+    const started = j.started_at ? fmtDate(new Date(j.started_at * 1000).toISOString()) : "—";
+    return `
+      <article class="ops-job-card">
+        <div class="ops-job-head">
+          <span class="ops-job-id">${escapeHtml(j.id)}</span>
+          <span class="badge ${statusTone[j.status] || "neutral"}"><span class="dot"></span>${statusLabel[j.status] || j.status}</span>
+        </div>
+        <p class="ops-source-meta">Mode ${escapeHtml(j.mode || "—")} · ${escapeHtml(j.started_by || "—")} · ${started}</p>
+        <div class="ops-job-stats">
+          <span>${j.succeeded || 0} créés</span>
+          <span>${j.skipped || 0} ignorés</span>
+          <span>${j.failed || 0} échecs</span>
+          <span>${j.processed || 0}/${j.total || 0}</span>
+        </div>
+        <div class="ops-progress"><i style="width:${pct}%"></i></div>
+        ${j.error ? `<p class="ops-source-meta" style="color:var(--danger);margin-top:8px;">${escapeHtml(j.error)}</p>` : ""}
+      </article>`;
+  }).join("");
 }
