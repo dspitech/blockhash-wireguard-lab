@@ -46,7 +46,7 @@ variable "dns_label_prefix" {
 }
 
 variable "admin_source_ip" {
-  description = "CIDR IP autorisé en permanence pour le SSH et le dashboard (ex: 203.0.113.10/32) — typiquement l'IP de l'opérateur pour l'accès après déploiement. Automatiquement complété par l'IP de la machine exécutant 'terraform apply' (voir auto_allow_deployer_ip) pour que le déploiement SSH automatisé fonctionne quel que soit l'endroit d'où Terraform est lancé."
+  description = "CIDR IP autorisé en permanence pour le SSH et le dashboard (ex: 203.0.113.10/32) - typiquement l'IP de l'opérateur pour l'accès après déploiement. Automatiquement complété par l'IP de la machine exécutant 'terraform apply' (voir auto_allow_deployer_ip) pour que le déploiement SSH automatisé fonctionne quel que soit l'endroit d'où Terraform est lancé."
   type        = string
 }
 
@@ -97,7 +97,7 @@ variable "auto_deploy" {
 }
 
 variable "auto_allow_deployer_ip" {
-  description = "Si vrai (défaut), Terraform détecte l'IP publique de la machine qui exécute 'terraform apply' et l'ajoute automatiquement aux règles NSG admin (SSH + dashboard), en plus de admin_source_ip. Évite l'erreur 'dial tcp ...:22: i/o timeout' lorsque terraform apply est lancé depuis une machine différente de celle indiquée dans admin_source_ip. Mettre à faux si la détection d'IP publique n'est pas fiable dans votre environnement (ex : CI derrière un NAT partagé) — dans ce cas, admin_source_ip doit inclure l'IP exacte du runner."
+  description = "Si vrai (défaut), Terraform détecte l'IP publique de la machine qui exécute 'terraform apply' et l'ajoute automatiquement aux règles NSG admin (SSH + dashboard), en plus de admin_source_ip. Évite l'erreur 'dial tcp ...:22: i/o timeout' lorsque terraform apply est lancé depuis une machine différente de celle indiquée dans admin_source_ip. Mettre à faux si la détection d'IP publique n'est pas fiable dans votre environnement (ex : CI derrière un NAT partagé) - dans ce cas, admin_source_ip doit inclure l'IP exacte du runner."
   type        = bool
   default     = true
 }

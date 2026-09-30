@@ -478,7 +478,7 @@ def latest_bucket_totals(pubkey=None, bucket_sec=300, now=None):
 
 
 # ---------------------------------------------------------------------
-# Anomalies simples (pic de trafic) — reutilise par anomalies.py
+# Anomalies simples (pic de trafic) - reutilise par anomalies.py
 # ---------------------------------------------------------------------
 def detect_traffic_spike(pubkey, range_key="24h", z_threshold=3.0, min_floor_bytes=1_000_000):
     series = query_series(pubkey, range_key)

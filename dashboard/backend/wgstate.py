@@ -143,7 +143,7 @@ def load_live_peers(online_threshold_sec=180):
                 "name": cfg.get("name", pubkey[:8] + "…"),
                 "public_key": pubkey,
                 "endpoint": live["endpoint"] if live else None,
-                "allowed_ips": (live["allowed_ips"] if live else cfg.get("allowed_ips")) or "—",
+                "allowed_ips": (live["allowed_ips"] if live else cfg.get("allowed_ips")) or "-",
                 "last_handshake": (
                     datetime.fromtimestamp(handshake_ts, tz=timezone.utc).isoformat()
                     if handshake_ts

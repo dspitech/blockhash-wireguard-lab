@@ -522,7 +522,7 @@ Le script génère la paire de clés du client, alloue une adresse IP dans le so
 
 ```bash
 # Depuis la racine du dépôt cloné à l'étape 2 (le script attend un dossier
-# ./dashboard voisin — ne pas l'exécuter depuis scripts/) :
+# ./dashboard voisin - ne pas l'exécuter depuis scripts/) :
 cd ~/blockhash-wireguard-lab
 sudo ./scripts/03-install-dashboard.sh 8080
 ```
@@ -813,15 +813,15 @@ BLOCKHash est organisé en **onze sections** accessibles depuis la barre de navi
 Génère des clients VPN à partir d'un annuaire d'entreprise existant, pour éviter la double saisie manuelle. Nouvel onglet **Provisioning**, réservé au rôle `admin`.
 
 **Livré (Phase 1)** :
-- Connecteur **LDAP générique** (`dashboard/backend/directory/ldap_connector.py`), couvrant Active Directory local, Azure AD Domain Services, OpenLDAP, Samba AD, FreeIPA, JumpCloud LDAP et Google Secure LDAP — LDAPS/StartTLS obligatoire, échappement systématique des valeurs dans les filtres LDAP (protection anti-injection), détection du bit `ACCOUNTDISABLE` pour les comptes désactivés côté AD.
+- Connecteur **LDAP générique** (`dashboard/backend/directory/ldap_connector.py`), couvrant Active Directory local, Azure AD Domain Services, OpenLDAP, Samba AD, FreeIPA, JumpCloud LDAP et Google Secure LDAP - LDAPS/StartTLS obligatoire, échappement systématique des valeurs dans les filtres LDAP (protection anti-injection), détection du bit `ACCOUNTDISABLE` pour les comptes désactivés côté AD.
 - Interface abstraite `DirectoryConnector` (`directory/base.py`) : tout le reste du module ignore le type de source réel, ce qui permettra d'ajouter Microsoft Graph ou Google Workspace sans réécrire l'explorateur ni le moteur de provisioning.
 - Gestion des sources (créer / tester / activer-désactiver / supprimer), avec le mot de passe de bind LDAP **toujours** résolu depuis une variable d'environnement (jamais stocké dans `directory_sources.config_json` ni dans la base SQLite).
 - Explorateur : recherche paginée, sélection multiple, statut VPN affiché par utilisateur.
 - **Dry-run obligatoire** avant toute exécution : détecte les comptes déjà provisionnés, les conflits de nom, les comptes désactivés.
-- **Job asynchrone** (thread dédié) avec suivi de progression par polling, journalisé dans `provisioning_log` et dans `audit.log`. Réutilise `wgctl.py` via `run_wgctl` — aucune réimplémentation de la création de client.
+- **Job asynchrone** (thread dédié) avec suivi de progression par polling, journalisé dans `provisioning_log` et dans `audit.log`. Réutilise `wgctl.py` via `run_wgctl` - aucune réimplémentation de la création de client.
 
 **Feuille de route (non livré)** :
-- Connecteurs API REST **Microsoft Graph** (M365/Entra ID) et **Google Admin SDK** (Google Workspace) — l'architecture (`DirectoryConnector`) est prête à les recevoir.
+- Connecteurs API REST **Microsoft Graph** (M365/Entra ID) et **Google Admin SDK** (Google Workspace) - l'architecture (`DirectoryConnector`) est prête à les recevoir.
 - Politiques de provisioning par groupe, quotas par source, tags dynamiques calculés depuis les attributs annuaire.
 - Synchronisation périodique (cron) avec désactivation automatique des comptes annuaire désactivés, historique des synchronisations avec diff.
 - Rollback d'un job, notifications post-provisioning (réutilisation d'`alerts.py`), export PDF signé du rapport.
@@ -993,18 +993,18 @@ The conflict is caused by:
     msal 1.28.0 depends on cryptography<45 and >=0.6
 ```
 
-**Cause.** `pywebpush` (notifications push) exige une version récente de `cryptography`, tandis que `msal` (authentification Microsoft Graph) plafonnait cette même dépendance dans ses anciennes versions — les deux contraintes sont incompatibles entre elles.
+**Cause.** `pywebpush` (notifications push) exige une version récente de `cryptography`, tandis que `msal` (authentification Microsoft Graph) plafonnait cette même dépendance dans ses anciennes versions - les deux contraintes sont incompatibles entre elles.
 
 **Correctif appliqué dans ce dépôt.** `requirements.txt` épingle désormais `msal==1.39.0` (au lieu de `1.28.0`), une version dont la contrainte sur `cryptography` (`<51,>=2.5`) est compatible avec celle de `pywebpush`. Vérifié par une installation complète dans un environnement vierge (`pip install -r requirements.txt` réussit sans conflit).
 
 ### `terraform apply` reste bloqué sur « null_resource.deploy: Still creating... » indéfiniment
 
-**Symptôme.** Le déploiement automatisé (`auto_deploy = true`, voir Partie V) semble tourner indéfiniment sans jamais se terminer — alors qu'une vérification manuelle sur la VM montre que WireGuard **et** le dashboard sont bel et bien installés et fonctionnels. À l'interruption manuelle (Ctrl+C), Terraform affiche `remote command exited without exit status or exit signal`.
+**Symptôme.** Le déploiement automatisé (`auto_deploy = true`, voir Partie V) semble tourner indéfiniment sans jamais se terminer - alors qu'une vérification manuelle sur la VM montre que WireGuard **et** le dashboard sont bel et bien installés et fonctionnels. À l'interruption manuelle (Ctrl+C), Terraform affiche `remote command exited without exit status or exit signal`.
 
-**Cause.** `needrestart`, un mécanisme Ubuntu qui affiche une invite interactive (`whiptail`) dès qu'une mise à jour de paquet nécessite de redémarrer un service — quasi systématique avec `package_upgrade: true` (mise à jour de `libc`/`openssl` au premier boot) et les `apt install` des scripts. Sur une session SSH non interactive (le `remote-exec` de Terraform), cette invite ne reçoit jamais de réponse : la commande sous-jacente a beau être terminée depuis longtemps, le canal SSH ne se referme jamais, et Terraform attend indéfiniment un signal de fin qui ne viendra jamais.
+**Cause.** `needrestart`, un mécanisme Ubuntu qui affiche une invite interactive (`whiptail`) dès qu'une mise à jour de paquet nécessite de redémarrer un service - quasi systématique avec `package_upgrade: true` (mise à jour de `libc`/`openssl` au premier boot) et les `apt install` des scripts. Sur une session SSH non interactive (le `remote-exec` de Terraform), cette invite ne reçoit jamais de réponse : la commande sous-jacente a beau être terminée depuis longtemps, le canal SSH ne se referme jamais, et Terraform attend indéfiniment un signal de fin qui ne viendra jamais.
 
 **Correctif appliqué dans ce dépôt.**
-- `terraform/modules/compute/cloud-init.yaml.tpl` désactive le mode interactif de `needrestart` (`$nrconf{restart} = 'a';`) via `write_files`, **avant** que `package_upgrade` ne s'exécute — c'est le point critique : une désactivation plus tardive (`runcmd`) arriverait après le blocage potentiel.
+- `terraform/modules/compute/cloud-init.yaml.tpl` désactive le mode interactif de `needrestart` (`$nrconf{restart} = 'a';`) via `write_files`, **avant** que `package_upgrade` ne s'exécute - c'est le point critique : une désactivation plus tardive (`runcmd`) arriverait après le blocage potentiel.
 - Les trois scripts (`01`, `03`, `04`) exportent en plus `DEBIAN_FRONTEND=noninteractive` et `NEEDRESTART_MODE=a` en tout début d'exécution, en défense en profondeur pour un lancement manuel hors Terraform.
 - `terraform/main.tf` enveloppe chaque étape du `remote-exec` dans `timeout Nm ... </dev/null` : `</dev/null` coupe l'entrée standard (toute invite imprévue reçoit un EOF immédiat plutôt que d'attendre), et `timeout` fait échouer proprement l'étape au bout de quelques minutes si un cas imprévu bloque quand même la commande, plutôt que de bloquer `terraform apply` indéfiniment.
 

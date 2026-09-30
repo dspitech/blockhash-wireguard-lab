@@ -110,7 +110,7 @@ print("Match :", check_password_hash(h, pwd))
 EOF
 ```
 
-Vous devez voir **Match : True**. Si vous voyez **False**, l'étape 2 a échoué — recommencez.
+Vous devez voir **Match : True**. Si vous voyez **False**, l'étape 2 a échoué - recommencez.
 
 ---
 

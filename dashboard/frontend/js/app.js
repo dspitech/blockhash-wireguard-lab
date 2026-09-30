@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================
-   BLOCKHash — app.js
+   BLOCKHash - app.js
    Console vanilla JS : pas de framework, un seul fichier chargé
    après config.js (jeton) et les vendors (Chart.js, Leaflet).
    ========================================================== */
@@ -123,7 +123,7 @@ async function loadDemoOverview() {
 // Formatage
 // ---------------------------------------------------------------
 function fmtBytes(n) {
-  if (n === null || n === undefined) return "—";
+  if (n === null || n === undefined) return "-";
   const units = ["o", "Ko", "Mo", "Go", "To"];
   let v = n, i = 0;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
@@ -151,7 +151,7 @@ function fmtRelative(iso) {
 }
 
 function fmtDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = parseTs(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -258,13 +258,13 @@ function applyTheme() {
   const btn = document.getElementById("btn-theme");
   if (STATE.theme === "auto") {
     icon.innerHTML = '<path d="M10 3a7 7 0 1 0 0 14V3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="currentColor" fill-opacity=".25"/><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.4"/>';
-    btn.title = "Thème : auto (suit le système) — cliquer pour clair";
+    btn.title = "Thème : auto (suit le système) - cliquer pour clair";
   } else if (resolved === "dark") {
     icon.innerHTML = '<path d="M10 3v1.5M10 15.5V17M17 10h-1.5M4.5 10H3M14.8 5.2l-1 1M6.2 13.8l-1 1M14.8 14.8l-1-1M6.2 6.2l-1-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="10" r="3.4" stroke="currentColor" stroke-width="1.5"/>';
-    btn.title = "Thème : sombre — cliquer pour auto";
+    btn.title = "Thème : sombre - cliquer pour auto";
   } else {
     icon.innerHTML = '<path d="M16.5 11.8A6.5 6.5 0 0 1 8.2 3.5 6.5 6.5 0 1 0 16.5 11.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>';
-    btn.title = "Thème : clair — cliquer pour sombre";
+    btn.title = "Thème : clair - cliquer pour sombre";
   }
 }
 if (window.matchMedia) {
@@ -712,7 +712,7 @@ async function renderTokens() {
       <tr>
         <td class="cell-primary">${escapeHtml(t.name)}</td>
         <td>${fmtRole(t.scope)}</td>
-        <td class="cell-muted">${escapeHtml(t.created_by || "—")}</td>
+        <td class="cell-muted">${escapeHtml(t.created_by || "-")}</td>
         <td class="cell-muted">${t.expires_ts ? fmtDate(t.expires_ts * 1000) : "jamais"}</td>
         <td class="cell-muted">${t.last_used_ts ? fmtDate(t.last_used_ts * 1000) : "jamais"}</td>
         <td><button class="btn ghost sm" data-token-revoke="${t.rowid}">Révoquer</button></td>
@@ -765,7 +765,7 @@ async function maybeShowOnboarding() {
     const data = await apiGet("/api/system/diagnostics");
     el.innerHTML = data.checks.slice(0, 4).map(c => `<div>${c.ok ? "✅" : "⚠️"} ${escapeHtml(c.name)}</div>`).join("");
   } catch {
-    el.innerHTML = `<span class="cell-muted">Diagnostic non disponible pour le moment — tout le reste du dashboard fonctionne normalement.</span>`;
+    el.innerHTML = `<span class="cell-muted">Diagnostic non disponible pour le moment - tout le reste du dashboard fonctionne normalement.</span>`;
   }
 }
 
@@ -850,7 +850,7 @@ const HELP_TOPICS = [
       "Ouvrez la page <strong>Utilisateurs</strong> (réservée aux comptes admin).",
       "Cliquez sur <strong>Ajouter un utilisateur</strong>, choisissez un rôle : lecteur, opérateur ou admin.",
       "Pour désactiver ou changer le rôle d'un compte, utilisez <strong>Modifier</strong> sur sa ligne.",
-      "Pour l'automatisation, générez un <strong>Token API</strong> scopé depuis la page dédiée — il ne s'affiche qu'une seule fois, copiez-le immédiatement.",
+      "Pour l'automatisation, générez un <strong>Token API</strong> scopé depuis la page dédiée - il ne s'affiche qu'une seule fois, copiez-le immédiatement.",
     ],
   },
 ];
@@ -962,7 +962,7 @@ function openBugDetail(id, rows) {
       <span class="tw-badge" style="background:var(--bg-inset);color:var(--text-tertiary);">${escapeHtml(BUG_CATEGORY_LABELS[r.category] || r.category)}</span>
     </div>
     <p class="cell-muted" style="white-space:pre-wrap;margin-bottom:14px;">${escapeHtml(r.description)}</p>
-    <div class="tw-note mb-3"><span class="tw-note-label">Signalé par</span><span class="tw-note-value">${escapeHtml(r.reported_by || "anonyme")} — ${fmtDate(r.created_ts * 1000)}</span></div>
+    <div class="tw-note mb-3"><span class="tw-note-label">Signalé par</span><span class="tw-note-value">${escapeHtml(r.reported_by || "anonyme")} - ${fmtDate(r.created_ts * 1000)}</span></div>
     ${r.context ? `<div class="tw-note"><span class="tw-note-label">Contexte technique</span><span class="tw-note-value">${escapeHtml(r.context)}</span></div>` : ""}`;
   document.getElementById("bug-detail-status").value = r.status;
   document.getElementById("btn-save-bug-status").dataset.id = id;
@@ -1235,7 +1235,7 @@ function renderTopPeersChart(peers) {
   const canvas = document.getElementById("chart-top-peers");
   if (!canvas || typeof Chart === "undefined") return;
   const top = [...peers]
-    .map(p => ({ name: p.name || "—", total: (p.rx_bytes || 0) + (p.tx_bytes || 0) }))
+    .map(p => ({ name: p.name || "-", total: (p.rx_bytes || 0) + (p.tx_bytes || 0) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 8)
     .reverse();
@@ -1329,7 +1329,7 @@ function renderOverviewPeersTable(peers) {
     <tr>
       <td class="row-flex"><span class="peer-avatar">${initials(p.name)}</span><span class="cell-primary">${escapeHtml(p.name)}</span></td>
       <td>${statusBadge(peerStatus(p))}</td>
-      <td class="mono cell-muted">${escapeHtml(p.endpoint || "—")}</td>
+      <td class="mono cell-muted">${escapeHtml(p.endpoint || "-")}</td>
       <td class="cell-muted">${fmtRelative(p.last_handshake)}</td>
       <td class="mono cell-muted">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</td>
     </tr>
@@ -1473,7 +1473,7 @@ function renderClientsStats() {
     { label: "Total clients", value: s.total, icon: "peers", tone: "accent",
       trend: s.newThisWeek > 0 ? `+${s.newThisWeek} cette semaine` : "Stable cette semaine" },
     { label: "En ligne", value: s.online, icon: "online", tone: "success",
-      trend: s.total ? `${Math.round((s.online / s.total) * 100)}% du parc` : "—" },
+      trend: s.total ? `${Math.round((s.online / s.total) * 100)}% du parc` : "-" },
     { label: "Inactifs", value: s.idle + s.never, icon: "idle", tone: "warning",
       trend: "Sans trafic récent" },
     { label: "Expirent bientôt", value: s.expiringSoon, icon: "clock", tone: s.expiringSoon > 0 ? "danger" : "success",
@@ -1682,12 +1682,12 @@ function renderClientsTableRows(pageRows, canOperate) {
       <td ${canOperate ? "" : "hidden"}><input type="checkbox" class="client-select" data-name="${escapeHtml(p.name)}" ${STATE.clientsSelected.has(p.name) ? "checked" : ""} /></td>
       <td class="row-flex"><span class="peer-avatar">${initials(p.name)}</span><span class="cell-primary">${escapeHtml(p.name)}</span></td>
       <td>${statusBadge(peerStatus(p))}</td>
-      <td class="cell-muted">${escapeHtml(p.email || p.telephone || "—")}</td>
-      <td class="mono cell-muted">${escapeHtml(p.allowed_ips || "—")}</td>
-      <td class="mono cell-muted">${escapeHtml(p.endpoint || "—")}</td>
+      <td class="cell-muted">${escapeHtml(p.email || p.telephone || "-")}</td>
+      <td class="mono cell-muted">${escapeHtml(p.allowed_ips || "-")}</td>
+      <td class="mono cell-muted">${escapeHtml(p.endpoint || "-")}</td>
       <td class="mono cell-muted">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</td>
       <td class="cell-muted">${fmtDate(p.created)}</td>
-      <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "—"}</td>
+      <td class="cell-muted">${p.expires ? fmtDate(p.expires) : "-"}</td>
       <td>
         <div class="row-actions">
           <button class="icon-btn sm" data-action="toggle" data-name="${escapeHtml(p.name)}" data-enabled="${p.enabled}" title="${p.enabled ? "Désactiver" : "Activer"}" ${canOperate ? "" : "hidden"}>
@@ -1720,10 +1720,10 @@ function renderClientsCardsGrid(pageRows, canOperate) {
         ${statusBadge(status)}
       </div>
       <div class="client-card-body">
-        <div><span class="ccb-label">IP tunnel</span><span class="ccb-value">${escapeHtml(p.allowed_ips || "—")}</span></div>
+        <div><span class="ccb-label">IP tunnel</span><span class="ccb-value">${escapeHtml(p.allowed_ips || "-")}</span></div>
         <div><span class="ccb-label">Volume</span><span class="ccb-value">${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}</span></div>
         <div><span class="ccb-label">Créé le</span><span class="ccb-value">${fmtDate(p.created)}</span></div>
-        <div><span class="ccb-label">Expire</span><span class="ccb-value">${p.expires ? fmtDate(p.expires) : "—"}</span></div>
+        <div><span class="ccb-label">Expire</span><span class="ccb-value">${p.expires ? fmtDate(p.expires) : "-"}</span></div>
       </div>
       ${tags.length ? `<div class="client-card-tags">${tags.map(t => `<span class="client-card-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
       <div class="client-card-actions">
@@ -1771,7 +1771,7 @@ function renderClientsKanban(rows, canOperate) {
             <div class="kanban-card-avatar">${initials(p.name)}</div>
             <div class="kanban-card-body">
               <div class="kanban-card-name">${escapeHtml(p.name)}</div>
-              <div class="kanban-card-meta">${escapeHtml(p.email || p.allowed_ips || "—")}</div>
+              <div class="kanban-card-meta">${escapeHtml(p.email || p.allowed_ips || "-")}</div>
             </div>
           </div>`).join("") : `<div class="kanban-empty">Aucun client</div>`}
         ${total > PER_COL_LIMIT ? `<div class="kanban-more">+ ${total - PER_COL_LIMIT} autre(s)</div>` : ""}
@@ -1887,7 +1887,7 @@ document.querySelectorAll("[data-bulk-do]").forEach(btn => {
 
 function showClientDetail(name) {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
-  document.getElementById("detail-client-title").textContent = `Détail — ${name}`;
+  document.getElementById("detail-client-title").textContent = `Détail - ${name}`;
   document.getElementById("detail-client-body").innerHTML = `<div class="empty-state"><strong>Chargement…</strong></div>`;
   openModal("modal-client-detail");
   apiGet(`/api/clients/${encodeURIComponent(name)}/history?range=24h`).then(data => {
@@ -1898,13 +1898,13 @@ function showClientDetail(name) {
         <div><span class="cell-muted">Statut</span><div>${statusBadge(peerStatus(peer))}</div></div>
         <div><span class="cell-muted">Dernier handshake</span><div>${lastSeen}</div></div>
         <div><span class="cell-muted">Reconnexions (24h)</span><div class="cell-primary">${data.reconnect_count ?? 0}</div></div>
-        <div><span class="cell-muted">Dernier endpoint</span><div class="mono">${escapeHtml(data.last_endpoint || "—")}</div></div>
+        <div><span class="cell-muted">Dernier endpoint</span><div class="mono">${escapeHtml(data.last_endpoint || "-")}</div></div>
       </div>
       <h4 style="margin:12px 0 6px;">Sessions récentes</h4>
       <div class="table-wrap">
         <table class="data-table">
           <thead><tr><th>Horodatage</th><th>Endpoint</th><th>Rx / Tx</th></tr></thead>
-          <tbody>${(data.logs || []).slice(0, 20).map(l => `<tr><td class="mono cell-muted">${fmtDate(l.ts)}</td><td class="mono cell-muted">${escapeHtml(l.endpoint || "—")}</td><td class="mono cell-muted">${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</td></tr>`).join("") || `<tr><td colspan="3" class="cell-muted">Aucune session enregistrée.</td></tr>`}</tbody>
+          <tbody>${(data.logs || []).slice(0, 20).map(l => `<tr><td class="mono cell-muted">${fmtDate(l.ts)}</td><td class="mono cell-muted">${escapeHtml(l.endpoint || "-")}</td><td class="mono cell-muted">${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</td></tr>`).join("") || `<tr><td colspan="3" class="cell-muted">Aucune session enregistrée.</td></tr>`}</tbody>
         </table>
       </div>`;
   }).catch(err => {
@@ -1982,7 +1982,7 @@ document.querySelectorAll("#table-clients [data-client-sort]").forEach(th => {
 
 function showClientQr(name) {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
-  document.getElementById("modal-qr-title").textContent = `QR code — ${name}`;
+  document.getElementById("modal-qr-title").textContent = `QR code - ${name}`;
   const img = document.getElementById("qr-image");
   const skeleton = document.getElementById("qr-skeleton");
   img.removeAttribute("src");
@@ -2471,7 +2471,7 @@ function renderBulkPreview(result) {
       </div>
       <div>
         <h2 class="tw-h2">Aperçu (dry-run)</h2>
-        <p class="tw-p-muted">Validation avant création — aucun client n'est encore créé</p>
+        <p class="tw-p-muted">Validation avant création - aucun client n'est encore créé</p>
       </div>
     </div>
     <div class="recap-kpi-row">
@@ -2485,7 +2485,7 @@ function renderBulkPreview(result) {
     </div>`;
   if (errCount) {
     html += `<div class="bulk-preview-table"><table class="data-table"><thead><tr><th>Ligne</th><th>Nom</th><th>Erreur</th></tr></thead><tbody>` +
-      result.errors.map(e => `<tr><td>${e.row}</td><td class="mono">${escapeHtml(e.name || "—")}</td><td class="cell-muted">${escapeHtml(e.error)}</td></tr>`).join("") +
+      result.errors.map(e => `<tr><td>${e.row}</td><td class="mono">${escapeHtml(e.name || "-")}</td><td class="cell-muted">${escapeHtml(e.error)}</td></tr>`).join("") +
       `</tbody></table></div>`;
   } else {
     html += `<div class="empty-state"><strong>Toutes les lignes sont valides</strong><span>Passez au récapitulatif pour lancer la création.</span></div>`;
@@ -2507,7 +2507,7 @@ function renderBulkRecap(clients, result) {
     </div>` : "";
 
   document.getElementById("bulk-recap-body").innerHTML =
-    recapHero(String(total), `Import groupé — ${total} ligne(s)`, "Vérifiez le résumé avant de lancer la création en une opération", "", { avatarClass: "tone-bulk" }) +
+    recapHero(String(total), `Import groupé - ${total} ligne(s)`, "Vérifiez le résumé avant de lancer la création en une opération", "", { avatarClass: "tone-bulk" }) +
     `<div class="recap-progress">
       <div class="recap-progress-head"><strong>${pct}% prêtes à créer</strong><span>${okCount} valide(s) · ${errCount} erreur(s)</span></div>
       <div class="recap-progress-track"><div class="recap-progress-fill" style="width:${pct}%;"></div></div>
@@ -2575,7 +2575,7 @@ document.getElementById("btn-bulk-submit").addEventListener("click", async () =>
 // ---------------------------------------------------------------
 // VUE : Journal
 // ---------------------------------------------------------------
-function journalPeer(l) { return l.peer || l.name || "—"; }
+function journalPeer(l) { return l.peer || l.name || "-"; }
 function journalRowMs(l) {
   if (typeof l.ts === "number") return l.ts * 1000;
   if (l.timestamp) {
@@ -2758,7 +2758,7 @@ function renderJournalTypeCards(rows) {
   const rx = rows.reduce((s, l) => s + (l.rx_bytes || 0), 0);
   const tx = rows.reduce((s, l) => s + (l.tx_bytes || 0), 0);
   const volume = rx + tx;
-  const unique = new Set(rows.map(journalPeer).filter(n => n && n !== "—")).size;
+  const unique = new Set(rows.map(journalPeer).filter(n => n && n !== "-")).size;
   const hours = journalHourBuckets(rows);
   const latest = [...rows].sort((a, b) => journalRowMs(b) - journalRowMs(a))[0];
   const latestHs = [...rows].sort((a, b) => {
@@ -3099,8 +3099,8 @@ function renderJournalTable(rows) {
     <tr class="row-clickable" data-journal-row="${i}">
       <td class="mono cell-muted">${fmtDate(l.timestamp)}</td>
       <td class="cell-primary">${escapeHtml(journalPeer(l))}</td>
-      <td class="mono cell-muted">${escapeHtml(l.endpoint || "—")}</td>
-      <td class="mono cell-muted">${escapeHtml(l.allowed_ips || "—")}</td>
+      <td class="mono cell-muted">${escapeHtml(l.endpoint || "-")}</td>
+      <td class="mono cell-muted">${escapeHtml(l.allowed_ips || "-")}</td>
       <td class="mono cell-muted">${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</td>
     </tr>
   `).join("");
@@ -3128,7 +3128,7 @@ function renderJournalCards(rows) {
       <div class="journal-session-meta">
         <div><span>Horodatage</span><strong>${fmtDate(l.timestamp)}</strong></div>
         <div><span>Volume</span><strong>${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</strong></div>
-        <div style="grid-column:1/-1;"><span>IP autorisées</span><strong>${escapeHtml(l.allowed_ips || "—")}</strong></div>
+        <div style="grid-column:1/-1;"><span>IP autorisées</span><strong>${escapeHtml(l.allowed_ips || "-")}</strong></div>
       </div>
     </article>`;
   }).join("");
@@ -3154,14 +3154,14 @@ function renderJournalTimeline(rows) {
     <div class="journal-tl-day">${escapeHtml(g.day)}</div>
     ${g.items.map(({ l, i }) => {
       const ms = journalRowMs(l);
-      const time = ms ? new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—";
+      const time = ms ? new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "-";
       return `
       <div class="journal-tl-item" data-journal-row="${i}">
         <div class="journal-tl-time">${time}</div>
         <div class="journal-tl-rail"><span class="journal-tl-dot"></span></div>
         <div class="journal-tl-body">
           <div class="journal-tl-title">${escapeHtml(journalPeer(l))}</div>
-          <div class="journal-tl-meta">${escapeHtml(l.endpoint || "—")} · ${fmtBytes(l.rx_bytes)} Rx / ${fmtBytes(l.tx_bytes)} Tx</div>
+          <div class="journal-tl-meta">${escapeHtml(l.endpoint || "-")} · ${fmtBytes(l.rx_bytes)} Rx / ${fmtBytes(l.tx_bytes)} Tx</div>
         </div>
       </div>`;
     }).join("")}
@@ -3171,12 +3171,12 @@ function renderJournalTimeline(rows) {
 
 function showSessionDetail(l) {
   document.getElementById("session-detail-body").innerHTML = `
-    <div class="field"><label>Client</label><div class="cell-primary">${escapeHtml(l.peer || l.name || "—")}</div></div>
+    <div class="field"><label>Client</label><div class="cell-primary">${escapeHtml(l.peer || l.name || "-")}</div></div>
     <div class="field"><label>Horodatage</label><div class="mono">${fmtDate(l.timestamp)}</div></div>
-    <div class="field"><label>Endpoint</label><div class="mono">${escapeHtml(l.endpoint || "—")}</div></div>
-    <div class="field"><label>IP autorisées</label><div class="mono">${escapeHtml(l.allowed_ips || "—")}</div></div>
+    <div class="field"><label>Endpoint</label><div class="mono">${escapeHtml(l.endpoint || "-")}</div></div>
+    <div class="field"><label>IP autorisées</label><div class="mono">${escapeHtml(l.allowed_ips || "-")}</div></div>
     <div class="field"><label>Volume</label><div class="mono">${fmtBytes(l.rx_bytes)} reçus / ${fmtBytes(l.tx_bytes)} envoyés</div></div>
-    <div class="field"><label>Clé publique</label><div class="mono" style="word-break:break-all;">${escapeHtml(l.public_key || "—")}</div></div>`;
+    <div class="field"><label>Clé publique</label><div class="mono" style="word-break:break-all;">${escapeHtml(l.public_key || "-")}</div></div>`;
   openModal("modal-session-detail");
 }
 
@@ -3291,7 +3291,7 @@ async function renderSystemPanel() {
         <div>
           <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);margin-bottom:6px;">
             <span style="font-weight:600;color:var(--text-secondary);">${r.label}</span>
-            <span class="cell-muted mono">${r.value === null || r.value === undefined ? "—" : r.value.toFixed(0) + "%"} · ${r.of}</span>
+            <span class="cell-muted mono">${r.value === null || r.value === undefined ? "-" : r.value.toFixed(0) + "%"} · ${r.of}</span>
           </div>
           <div class="meter ${tone}"><i style="width:${pct}%"></i></div>
         </div>`;
@@ -3331,7 +3331,7 @@ async function renderGeoipMap() {
       if (pt.lat === undefined || pt.lon === undefined) return;
       const marker = L.circleMarker([pt.lat, pt.lon], {
         radius: 6, color: "#1c5b63", fillColor: "#1c5b63", fillOpacity: 0.6, weight: 1.5,
-      }).bindTooltip(`${pt.name || pt.peer_name || "Client"} — ${pt.city || pt.country || ""}`);
+      }).bindTooltip(`${pt.name || pt.peer_name || "Client"} - ${pt.city || pt.country || ""}`);
       marker.addTo(STATE.map);
       STATE.mapMarkers.push(marker);
     });
@@ -3435,14 +3435,14 @@ function renderAlertsKpiGrid(stats) {
     { label: "Critiques", value: totals.critical, icon: "alerts", tone: totals.critical > 0 ? "danger" : "success" },
     { label: "Avertissements", value: totals.warning, icon: "alerts", tone: totals.warning > 0 ? "warning" : "success" },
     { label: "Info", value: totals.info, icon: "alerts", tone: "accent" },
-    { label: "Délai moyen de lecture", value: mttaMin, suffix: mttaMin != null ? " min" : "—", icon: "clock", tone: "accent" },
+    { label: "Délai moyen de lecture", value: mttaMin, suffix: mttaMin != null ? " min" : "-", icon: "clock", tone: "accent" },
   ];
 
   document.getElementById("alerts-kpi-grid").innerHTML = cards.map((c, i) => `
     <div class="kpi-card">
       <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
       <div class="kpi-label">${c.label}</div>
-      <div class="kpi-value" id="alerts-kpi-value-${i}">${c.value == null ? "—" : "0"}</div>
+      <div class="kpi-value" id="alerts-kpi-value-${i}">${c.value == null ? "-" : "0"}</div>
     </div>
   `).join("");
 
@@ -3450,7 +3450,7 @@ function renderAlertsKpiGrid(stats) {
     if (c.value == null) return;
     const el = document.getElementById(`alerts-kpi-value-${i}`);
     animateValue(el, c.value, false);
-    if (c.suffix && c.suffix !== "—") {
+    if (c.suffix && c.suffix !== "-") {
       const obs = () => { el.textContent = el.textContent + c.suffix; };
       setTimeout(obs, 950); // laisse l'animation se terminer avant d'ajouter le suffixe
     }
@@ -3466,7 +3466,7 @@ function renderAlertsStats(stats) {
   const barChart = days.length
     ? `<div style="display:flex;gap:4px;align-items:flex-end;height:60px;">${days.map(d => `<div title="${d} : ${totalsByDay[d]}" style="flex:1;background:var(--teal-mid);border-radius:2px;height:${Math.max(4, (totalsByDay[d] / maxN) * 60)}px;"></div>`).join("")}</div>`
     : `<span class="cell-muted">Aucune alerte sur la période.</span>`;
-  const topClients = (stats.top_clients || []).map(c => `<div class="row-flex" style="justify-content:space-between;"><span>${escapeHtml(c.peer_name)}</span><span class="cell-muted">${c.n}</span></div>`).join("") || `<span class="cell-muted">—</span>`;
+  const topClients = (stats.top_clients || []).map(c => `<div class="row-flex" style="justify-content:space-between;"><span>${escapeHtml(c.peer_name)}</span><span class="cell-muted">${c.n}</span></div>`).join("") || `<span class="cell-muted">-</span>`;
   el.innerHTML = `
     <div><span class="cell-muted">Volume par jour</span>${barChart}</div>
     <div><span class="cell-muted">Top clients alertés</span>${topClients}</div>`;
@@ -3485,10 +3485,10 @@ function renderAlertsHistory(data) {
     tbody.innerHTML = rows.map(a => `
       <tr class="alert-row sev-${a.level} ${a.read_at ? "" : "is-unread"}" data-alert-row="${a.id}" style="${a.read_at ? "opacity:.75;" : ""}">
         <td class="mono cell-muted">${fmtDate(a.ts)}</td>
-        <td class="cell-primary">${escapeHtml(a.rule_key || "—")}</td>
-        <td class="cell-muted">${escapeHtml(a.peer_name || "—")}</td>
+        <td class="cell-primary">${escapeHtml(a.rule_key || "-")}</td>
+        <td class="cell-muted">${escapeHtml(a.peer_name || "-")}</td>
         <td>${statusBadge(a.level === "critical" ? "disabled" : a.level === "info" ? "online" : "idle")}</td>
-        <td class="cell-muted">${escapeHtml(a.message || "—")}</td>
+        <td class="cell-muted">${escapeHtml(a.message || "-")}</td>
         <td>
           <div style="display:flex;gap:4px;" data-alert-actions>
             ${a.read_at ? "" : `<button class="btn ghost sm" data-alert-action="read" data-id="${a.id}" title="Marquer comme lue">Lu</button>`}
@@ -3535,13 +3535,13 @@ function showAlertDetail(a) {
       </span>
       ${a.archived ? `<span class="cell-muted">Archivée</span>` : ""}
     </div>
-    <div class="field"><label>Message</label><div class="cell-primary" style="color:var(--${severityTone});">${escapeHtml(a.message || "—")}</div></div>
-    <div class="field"><label>Client concerné</label><div class="mono">${escapeHtml(a.peer_name || "—")}</div></div>
-    <div class="field"><label>Règle déclenchée</label><div class="mono">${escapeHtml(a.rule_key || "—")}</div></div>
-    <div class="field"><label>Source</label><div class="mono">${escapeHtml(a.source || "—")}</div></div>
+    <div class="field"><label>Message</label><div class="cell-primary" style="color:var(--${severityTone});">${escapeHtml(a.message || "-")}</div></div>
+    <div class="field"><label>Client concerné</label><div class="mono">${escapeHtml(a.peer_name || "-")}</div></div>
+    <div class="field"><label>Règle déclenchée</label><div class="mono">${escapeHtml(a.rule_key || "-")}</div></div>
+    <div class="field"><label>Source</label><div class="mono">${escapeHtml(a.source || "-")}</div></div>
     <div class="field"><label>Horodatage</label><div class="mono">${fmtDate(a.ts)}</div></div>
     <div class="field"><label>Lue</label><div class="mono">${a.read_at ? fmtDate(a.read_at) : "Non lue"}</div></div>
-    <div class="field"><label>Canaux notifiés</label><div class="mono">${escapeHtml(a.channels || "—")}</div></div>
+    <div class="field"><label>Canaux notifiés</label><div class="mono">${escapeHtml(a.channels || "-")}</div></div>
     <div class="row-flex" style="gap:8px;margin-top:var(--sp-4);justify-content:flex-end;">
       ${a.read_at ? "" : `<button class="btn ghost sm" id="alert-detail-mark-read">Marquer comme lue</button>`}
       <button class="btn ghost sm" id="alert-detail-archive">${a.archived ? "Désarchiver" : "Archiver"}</button>
@@ -3654,7 +3654,7 @@ function renderAlertConfigForm(cfg) {
             <p class="tw-hint">0 pour désactiver.</p>
           </div>
           <div>
-            <label class="tw-label">Expiration client — alerte N jours avant</label>
+            <label class="tw-label">Expiration client - alerte N jours avant</label>
             <input class="tw-input" type="number" min="0" id="cfg-client-expiry-days" value="${r.client_expiry_days ?? 3}" />
             <p class="tw-hint">0 pour désactiver.</p>
           </div>
@@ -3851,8 +3851,8 @@ async function renderCompliance() {
         <tbody>${clients.map(c => `
           <tr>
             <td class="cell-primary">${escapeHtml(c.name)}</td>
-            <td class="mono cell-muted">${escapeHtml(c.allowed_ips || "—")}</td>
-            <td class="mono">${c.days_inactive ?? "—"}</td>
+            <td class="mono cell-muted">${escapeHtml(c.allowed_ips || "-")}</td>
+            <td class="mono">${c.days_inactive ?? "-"}</td>
             <td>${c.bucket === "never" ? statusBadge("disabled") : `<span class="badge warning"><span class="dot"></span>${c.bucket}+ j</span>`}</td>
             <td class="cell-muted">${fmtDate(c.created)}</td>
           </tr>`).join("")}</tbody>
@@ -3870,7 +3870,7 @@ document.getElementById("btn-report-pdf").addEventListener("click", async () => 
     title: "Rapport de conformité BLOCKHash",
     subtitle: `Généré le ${new Date().toLocaleString("fr-FR")}`,
     columns: ["Client", "IP", "Jours d'inactivité", "Seuil"],
-    rows: clients.map(c => [c.name, c.allowed_ips || "—", String(c.days_inactive ?? "—"), c.bucket === "never" ? "jamais connecté" : `${c.bucket}+ j`]),
+    rows: clients.map(c => [c.name, c.allowed_ips || "-", String(c.days_inactive ?? "-"), c.bucket === "never" ? "jamais connecté" : `${c.bucket}+ j`]),
   };
   try {
     const resp = await fetch("/api/reports/pdf", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) });
@@ -3912,7 +3912,7 @@ async function renderSystem() {
     if (!backups.length) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>Aucune sauvegarde</strong></div></td></tr>`; return; }
     tbody.innerHTML = backups.map(b => `<tr>
       <td class="mono cell-primary">${escapeHtml(b.filename || b.name)}</td>
-      <td class="cell-muted">${escapeHtml(b.description || "—")}</td>
+      <td class="cell-muted">${escapeHtml(b.description || "-")}</td>
       <td class="cell-muted">${fmtDate(b.modified || b.created_at || b.date)}</td>
       <td class="mono cell-muted" style="font-size:11px;" title="${escapeHtml(b.sha256 || "")}">${escapeHtml((b.sha256 || "").slice(0, 12))}…</td>
       <td>
@@ -4085,9 +4085,9 @@ async function renderAudit() {
     tbody.innerHTML = data.rows.length
       ? data.rows.map(r => `
           <tr>
-            <td class="mono cell-muted">${escapeHtml(r.date || "—")}</td>
-            <td class="mono cell-muted">${escapeHtml(r.ip || "—")}</td>
-            <td class="cell-primary">${escapeHtml(r.action || "—")}</td>
+            <td class="mono cell-muted">${escapeHtml(r.date || "-")}</td>
+            <td class="mono cell-muted">${escapeHtml(r.ip || "-")}</td>
+            <td class="cell-primary">${escapeHtml(r.action || "-")}</td>
             <td class="cell-muted" style="font-size:12px;">${escapeHtml(r.detail || "")}</td>
           </tr>`).join("")
       : `<tr><td colspan="4"><div class="empty-state"><strong>Aucune entrée</strong><span>Aucun événement ne correspond à ces filtres.</span></div></td></tr>`;
@@ -4141,7 +4141,7 @@ async function renderSettings() {
     } else {
       const { available } = await apiGet("/api/push/vapid-public-key");
       if (!available) {
-        hint.textContent = "Dépendances serveur non installées (pywebpush) — voir requirements.txt.";
+        hint.textContent = "Dépendances serveur non installées (pywebpush) - voir requirements.txt.";
         checkbox.disabled = true;
       } else {
         const sub = await getCurrentPushSubscription();
@@ -4359,7 +4359,7 @@ async function loadProvSources() {
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
           <div>
             <strong>${s.last_test_ok === false ? "⚠️" : s.last_test_ok ? "✅" : "•"} ${escapeHtml(s.name)}</strong>
-            <div class="cell-muted" style="font-size:12px;">Type : ${escapeHtml(s.type)} · Hôte : ${escapeHtml(s.host || "—")}${s.read_only ? " · lecture seule" : ""}</div>
+            <div class="cell-muted" style="font-size:12px;">Type : ${escapeHtml(s.type)} · Hôte : ${escapeHtml(s.host || "-")}${s.read_only ? " · lecture seule" : ""}</div>
             ${s.last_test_error ? `<div class="cell-muted" style="font-size:12px;color:var(--danger,#dc2626);">${escapeHtml(s.last_test_error)}</div>` : ""}
           </div>
           <div style="display:flex;gap:6px;">
@@ -4414,7 +4414,7 @@ async function loadProvUsers() {
         <td><input type="checkbox" data-user-id="${escapeHtml(u.id)}" ${u.account_disabled ? "disabled" : ""}></td>
         <td class="mono">${escapeHtml(u.id)}</td>
         <td>${escapeHtml(u.display_name)}</td>
-        <td class="cell-muted">${escapeHtml(u.email || "—")}</td>
+        <td class="cell-muted">${escapeHtml(u.email || "-")}</td>
         <td>${u.account_disabled ? '<span class="badge danger"><span class="dot"></span>AD désactivé</span>'
              : u.vpn_client_name ? `<span class="badge success"><span class="dot"></span>provisionné (${escapeHtml(u.vpn_client_name)})</span>`
              : '<span class="badge neutral"><span class="dot"></span>non provisionné</span>'}</td>
@@ -4434,7 +4434,7 @@ function updateProvSelectionCount() {
   const n = PROV_STATE.selectedUserIds.size;
   const btn = document.getElementById("btn-prov-preview");
   btn.disabled = n === 0;
-  btn.textContent = n ? `Aperçu (dry-run) — ${n} sélectionné${n > 1 ? "s" : ""} →` : "Aperçu (dry-run) →";
+  btn.textContent = n ? `Aperçu (dry-run) - ${n} sélectionné${n > 1 ? "s" : ""} →` : "Aperçu (dry-run) →";
 }
 
 async function runProvPreviewAndExecute() {
@@ -4452,7 +4452,7 @@ async function runProvPreviewAndExecute() {
     const job = await apiSend("POST", "/api/provision/execute", {
       source_id: sourceId, mode: "manual", selection: { user_ids: userIds }, options: { template: "{login}" },
     });
-    toast("success", "Job de provisioning lancé", `${job.id} — suivez sa progression dans l'onglet « Jobs & historique ».`);
+    toast("success", "Job de provisioning lancé", `${job.id} - suivez sa progression dans l'onglet « Jobs & historique ».`);
     document.getElementById("prov-tab-jobs").click();
   } catch (err) {
     toast("danger", "Échec du provisioning", err.message);

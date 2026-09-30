@@ -188,7 +188,7 @@ def _record_auth_failure(ip, max_attempts=None, lockout_seconds=None):
                 rule_key = f"failed_auth:{ip}"
                 cooldown = alert_cfg["cooldowns_sec"].get("failed_auth_attempts", 300)
                 if store.should_send(rule_key, cooldown, now=int(time.time())):
-                    msg = f"{entry['count']} tentatives d'authentification échouées depuis {ip} — verrouillage {lockout_seconds}s."
+                    msg = f"{entry['count']} tentatives d'authentification échouées depuis {ip} - verrouillage {lockout_seconds}s."
                     alerts.dispatch(alert_cfg, "BLOCKHash - Tentatives échouées", msg, level="critical", rule_key=rule_key)
         except Exception:
             pass  # une alerte ratee ne doit jamais bloquer la reponse d'authentification

@@ -1,5 +1,5 @@
 /* ==========================================================
-   BLOCKHash — Console de supervision WireGuard
+   BLOCKHash - Console de supervision WireGuard
    Design system "control plane" : dense, neutre, orienté données.
    Inspiré des consoles cloud d'entreprise (AWS/GCP) : hiérarchie
    typographique stricte, accents rares, tout passe par des tokens.
@@ -140,7 +140,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 /* ---- Sidebar ---- */
 .sidebar {
   grid-area: sidebar;
-  /* Chrome clair et sobre, cohérent avec le canvas principal — le seul
+  /* Chrome clair et sobre, cohérent avec le canvas principal - le seul
      accent de marque reste le disque du logo et l'état actif du nav. */
   background: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
@@ -682,7 +682,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 @keyframes skel-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 /* ==========================================================
-   ANIMATIONS — cartes, boutons, KPI, graphiques
+   ANIMATIONS - cartes, boutons, KPI, graphiques
    ========================================================== */
 
 /* ---- Entrée en cascade des cartes (rejoué à chaque bascule de vue) ---- */
@@ -785,7 +785,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .data-table tbody tr:nth-child(8) { animation-delay: 175ms; }
 .data-table tbody tr:nth-child(n+9) { animation-duration: 0s; animation-delay: 0ms; }
 
-/* ---- Toasts : déjà animés (toast-in) — on ajoute une sortie douce en JS via opacity ---- */
+/* ---- Toasts : déjà animés (toast-in) - on ajoute une sortie douce en JS via opacity ---- */
 
 /* ---- Actions rapides (nouveau widget Vue d'ensemble) ---- */
 /* .quick-actions : layout (grid/cols/gap) géré par les classes Tailwind sur l'élément */
@@ -809,7 +809,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 
 /* ==========================================================
-   VUE CLIENTS — refonte "console entreprise"
+   VUE CLIENTS - refonte "console entreprise"
    Stat cards, sélecteur de vues, cartes clients, tableau Kanban
    par statut, modals de formulaire redessinées.
    ========================================================== */
@@ -1041,7 +1041,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 #clients-view-table, #clients-cards-grid, #clients-kanban-board { animation: chart-fade-in .3s var(--ease) both; }
 
 /* ==========================================================
-   Assistant en étapes (wizard) — Ajouter un client / import multiple
+   Assistant en étapes (wizard) - Ajouter un client / import multiple
    ========================================================== */
 .modal-wizard .modal-body { max-height: min(58vh, 560px); overflow-y: auto; }
 .stepper {
@@ -1311,7 +1311,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 
 /* ==========================================================
-   VUE JOURNAL — types, KPI, cartes session, chronologie, heatmap
+   VUE JOURNAL - types, KPI, cartes session, chronologie, heatmap
    ========================================================== */
 .journal-types-kicker {
   font-size: var(--fs-xs); font-weight: 700; color: var(--text-tertiary);

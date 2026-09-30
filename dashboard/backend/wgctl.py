@@ -340,7 +340,7 @@ def qr_png_base64(conf_text):
 
 
 # ---------------------------------------------------------------------
-# Limitation de bande passante (tc / HTB) — best effort, avance
+# Limitation de bande passante (tc / HTB) - best effort, avance
 # ---------------------------------------------------------------------
 def _octet_of(allowed_ips):
     m = re.match(rf"{re.escape(WG_SUBNET)}\.(\d+)", allowed_ips)
