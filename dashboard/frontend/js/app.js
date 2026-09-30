@@ -347,13 +347,41 @@ function hideLoginScreen() {
   document.getElementById("shell").style.display = "";
 }
 
+function setLoginBusy(busy) {
+  const btn = document.getElementById("btn-login");
+  const label = btn.querySelector(".login-btn-label");
+  btn.disabled = busy;
+  btn.classList.toggle("is-busy", busy);
+  if (label) label.textContent = busy ? t("login.busy") : t("btn.btn-login");
+}
+
+function syncLoginLangButtons() {
+  document.querySelectorAll("[data-login-lang]").forEach(btn => {
+    btn.classList.toggle("is-active", btn.getAttribute("data-login-lang") === CURRENT_LANG);
+  });
+}
+
+function initLoginChrome() {
+  const peek = document.getElementById("btn-login-peek");
+  const password = document.getElementById("login-password");
+  peek.addEventListener("click", () => {
+    const show = password.type === "password";
+    password.type = show ? "text" : "password";
+    peek.setAttribute("aria-pressed", show ? "true" : "false");
+    peek.querySelector(".login-peek-show").hidden = show;
+    peek.querySelector(".login-peek-hide").hidden = !show;
+  });
+  document.querySelectorAll("[data-login-lang]").forEach(btn => {
+    btn.addEventListener("click", () => setLanguage(btn.getAttribute("data-login-lang")));
+  });
+  syncLoginLangButtons();
+}
+
 async function handleLoginSubmit(e) {
   e.preventDefault();
-  const btn = document.getElementById("btn-login");
   const username = document.getElementById("login-username").value.trim();
   const password = document.getElementById("login-password").value;
-  btn.disabled = true;
-  btn.textContent = "Connexion…";
+  setLoginBusy(true);
   try {
     const res = await fetch("/api/login", {
       method: "POST",
@@ -376,8 +404,7 @@ async function handleLoginSubmit(e) {
     document.getElementById("login-error").textContent = err.message;
     document.getElementById("login-error").hidden = false;
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Se connecter";
+    setLoginBusy(false);
   }
 }
 
@@ -453,6 +480,7 @@ async function runDashboard(forceDemo) {
 }
 
 async function bootstrap() {
+  initLoginChrome();
   document.getElementById("login-form").addEventListener("submit", handleLoginSubmit);
   document.getElementById("btn-login-demo").addEventListener("click", () => {
     hideLoginScreen();
@@ -580,7 +608,11 @@ function applyI18n() {
     if (node) node.textContent = translated;
     else el.textContent = translated;
   });
+  document.querySelectorAll("[data-i18n-title]").forEach(el => {
+    el.title = t(el.getAttribute("data-i18n-title"));
+  });
   document.documentElement.lang = CURRENT_LANG;
+  if (typeof syncLoginLangButtons === "function") syncLoginLangButtons();
 }
 
 let CURRENT_LANG = localStorage.getItem(I18N_STORAGE_KEY) || "fr";

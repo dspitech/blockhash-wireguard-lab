@@ -99,9 +99,9 @@
     .form-section-title { @apply text-xs font-bold uppercase tracking-wide mb-3 pb-1.5; }
     .field-grid { @apply grid grid-cols-2 gap-x-3; }
 
-    .login-screen { @apply fixed inset-0 flex items-center justify-center p-4; }
-    .login-card { @apply rounded-xl w-[380px] py-8 px-5; }
-    .login-error { @apply text-xs rounded-md px-3 py-2; }
+    .login-screen { @apply fixed inset-0 flex; }
+    .login-card { @apply w-full max-w-[440px]; }
+    .login-error { @apply text-xs rounded-lg px-3.5 py-2.5; }
     .toast { @apply rounded-lg px-4 py-3 flex gap-3 items-start; }
     .toast strong { @apply text-[13px]; }
     .toast span { @apply text-xs; }
@@ -122,25 +122,86 @@
      les donnees. Masque par defaut (voir CSS #login-screen), affiche par
      app.js tant qu'aucun jeton valide n'est en localStorage. -->
 <div class="login-screen" id="login-screen" hidden>
-  <form class="login-card" id="login-form" autocomplete="on">
-    <div class="brand" style="justify-content:center;margin-bottom:var(--sp-3);">
-      <span class="brand-mark">BH</span>
-      <div class="brand-text"><strong>BLOCKHash</strong><span>Tunnel Ops</span></div>
+  <aside class="login-aside">
+    <div class="login-aside-grid"></div>
+    <div class="login-aside-glow"></div>
+    <div class="login-aside-inner">
+      <div class="login-brand">
+        <span class="brand-mark">BH</span>
+        <div class="brand-text"><strong>BLOCKHash</strong><span>Tunnel Ops</span></div>
+      </div>
+      <p class="login-kicker" data-i18n="login.kicker">Console d'exploitation</p>
+      <h2 class="login-aside-title" data-i18n="login.aside.title">Supervision WireGuard de niveau production</h2>
+      <p class="login-aside-lead" data-i18n="login.aside.lead">Accès opérateur à l'état des tunnels, des clients et des journaux — sans quitter le plan de contrôle.</p>
+      <ul class="login-aside-points">
+        <li>
+          <span class="login-point-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span data-i18n="login.aside.item1">Sessions, débit et endpoints en temps réel</span>
+        </li>
+        <li>
+          <span class="login-point-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span data-i18n="login.aside.item2">Audit, alertes et politiques de conformité</span>
+        </li>
+        <li>
+          <span class="login-point-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span data-i18n="login.aside.item3">Accès chiffré, rôles et journalisation des actions</span>
+        </li>
+      </ul>
     </div>
-    <h1 data-i18n="login.title">Connexion</h1>
-    <p class="login-hint">Identifiant et cle generes lors de l'installation (voir la sortie de <code>scripts/03-install-dashboard.sh</code> ou <code>/etc/blockhash/dashboard.env</code>).</p>
-    <div class="field">
-      <label for="login-username" data-i18n="label.identifiant">Identifiant</label>
-      <input class="input" id="login-username" name="username" autocomplete="username" required />
+    <footer class="login-aside-foot">
+      <span class="login-status-dot"></span>
+      <span data-i18n="login.aside.footer">Canal TLS · identifiants d'installation uniquement</span>
+    </footer>
+  </aside>
+
+  <section class="login-main">
+    <div class="login-lang" role="group" aria-label="Language">
+      <button type="button" class="login-lang-btn" data-login-lang="fr">FR</button>
+      <button type="button" class="login-lang-btn" data-login-lang="en">EN</button>
     </div>
-    <div class="field">
-      <label for="login-password" data-i18n="label.cle-mot-de-passe">Clé (mot de passe)</label>
-      <input class="input" id="login-password" name="password" type="password" autocomplete="current-password" required />
-    </div>
-    <div class="login-error" id="login-error" hidden></div>
-    <button class="btn primary" type="submit" id="btn-login" style="width:100%;justify-content:center;" data-i18n="btn.btn-login">Se connecter</button>
-    <button class="btn ghost" type="button" id="btn-login-demo" style="width:100%;justify-content:center;margin-top:var(--sp-2);" data-i18n="btn.btn-login-demo">Voir une démo hors-ligne</button>
-  </form>
+    <form class="login-card" id="login-form" autocomplete="on">
+      <div class="login-brand login-brand-mobile">
+        <span class="brand-mark">BH</span>
+        <div class="brand-text"><strong>BLOCKHash</strong><span>Tunnel Ops</span></div>
+      </div>
+      <header class="login-card-head">
+        <h1 data-i18n="login.title">Connexion</h1>
+        <p class="login-hint" data-i18n="login.hint">Utilisez l'identifiant et la clé générés à l'installation.</p>
+      </header>
+      <div class="field">
+        <label for="login-username" data-i18n="label.identifiant">Identifiant</label>
+        <div class="login-input-wrap">
+          <svg class="login-input-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 16.2c1.4-2.4 3.3-3.6 5.5-3.6s4.1 1.2 5.5 3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input class="input login-input" id="login-username" name="username" autocomplete="username" required />
+        </div>
+      </div>
+      <div class="field">
+        <label for="login-password" data-i18n="label.cle-mot-de-passe">Clé (mot de passe)</label>
+        <div class="login-input-wrap">
+          <svg class="login-input-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.5" y="9" width="11" height="7.5" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M7 9V7.2a3 3 0 016 0V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input class="input login-input" id="login-password" name="password" type="password" autocomplete="current-password" required />
+          <button type="button" class="login-peek" id="btn-login-peek" aria-pressed="false" title="Afficher" data-i18n-title="login.peek">
+            <svg class="login-peek-show" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 10s2.8-5.2 7.5-5.2S17.5 10 17.5 10s-2.8 5.2-7.5 5.2S2.5 10 2.5 10z" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.2" stroke="currentColor" stroke-width="1.5"/></svg>
+            <svg class="login-peek-hide" viewBox="0 0 20 20" fill="none" aria-hidden="true" hidden><path d="M3 3.5l14 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8.2 8.4A2.4 2.4 0 0010 12.4c.5 0 1-.16 1.4-.44M5.1 6.3C3.5 7.5 2.5 10 2.5 10s2.8 5.2 7.5 5.2c1.4 0 2.6-.3 3.6-.8M12.4 7.2A5.3 5.3 0 0110 4.8c-4.7 0-7.5 5.2-7.5 5.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="login-error" id="login-error" hidden role="alert"></div>
+      <button class="btn primary login-submit" type="submit" id="btn-login">
+        <span class="login-submit-spinner" aria-hidden="true"></span>
+        <span class="login-btn-label" data-i18n="btn.btn-login">Se connecter</span>
+      </button>
+      <div class="login-divider"><span data-i18n="login.or">ou</span></div>
+      <button class="btn ghost login-demo" type="button" id="btn-login-demo" data-i18n="btn.btn-login-demo">Voir une démo hors-ligne</button>
+      <p class="login-foot" data-i18n="login.secure">Session authentifiée par jeton. Les identifiants figurent dans dashboard.env.</p>
+    </form>
+  </section>
 </div>
 
 <div class="shell" id="shell">
