@@ -148,7 +148,7 @@
   "view.clients.title": "Clients WireGuard",
   "view.compliance.subtitle": "Contrôles de posture de sécurité du déploiement",
   "view.compliance.title": "Conformité",
-  "view.journal.subtitle": "Historique des sessions et handshakes",
+  "view.journal.subtitle": "Historique des sessions, volumes et handshakes",
   "view.journal.title": "Journal des connexions",
   "view.monitoring.subtitle": "Débit long terme, système hôte et localisation des endpoints",
   "view.monitoring.title": "Monitoring",

@@ -19,7 +19,13 @@ const STATE = {
   clientsFilter: loadClientsFilter(),
   clientsSelected: new Set(),
   clientsView: localStorage.getItem("blockhash_clients_view") || "table",
-  journal: { offset: 0, limit: 50, search: "", status: "all", total: 0 },
+  journal: {
+    offset: 0, limit: 50, search: "", status: "all", total: 0, range: "all", live: false, liveTimer: null,
+    view: localStorage.getItem("blockhash_journal_view") || "table",
+    sort: localStorage.getItem("blockhash_journal_sort") || "ts-desc",
+    volumeTier: "all",
+    focusType: "sessions",
+  },
   alertsPage: { offset: 0, limit: 25 },
   throughputRange: "24h",
   clientManagementEnabled: false,
@@ -293,7 +299,7 @@ function loadView(view) {
   switch (view) {
     case "overview": return renderOverview();
     case "clients": return renderClients();
-    case "journal": renderJournal(); return renderJournalHeatmap();
+    case "journal": return renderJournal();
     case "monitoring": return renderMonitoring();
     case "alerts": return renderAlerts();
     case "provisioning": return renderProvisioning();
@@ -1007,6 +1013,7 @@ function kpiIcon(name) {
     tunnels: '<path d="M4 10h12M4 6h8M4 14h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
     peers: '<circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     data: '<path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+    sessions: '<path d="M5 3h10v14l-2.5-1.5L10 17l-2.5-1.5L5 17V3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 7h5M7.5 10h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     alerts: '<path d="M10 3c-3.5 4-4.5 6-4.5 9a4.5 4.5 0 0 0 9 0c0-3-1-5-4.5-9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
     clock: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     online: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -2536,54 +2543,467 @@ document.getElementById("btn-bulk-submit").addEventListener("click", async () =>
 // ---------------------------------------------------------------
 // VUE : Journal
 // ---------------------------------------------------------------
+function journalPeer(l) { return l.peer || l.name || "—"; }
+function journalRowMs(l) {
+  if (typeof l.ts === "number") return l.ts * 1000;
+  if (l.timestamp) {
+    const t = parseTs(l.timestamp).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  }
+  return 0;
+}
+function journalVolume(l) { return (l.rx_bytes || 0) + (l.tx_bytes || 0); }
+function journalVolumeTone(l) {
+  const v = journalVolume(l);
+  if (v > 100 * 1024 * 1024) return "success";
+  if (v > 1024 * 1024) return "accent";
+  return "neutral";
+}
+function toDatetimeLocal(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function journalPeerStatus(l) {
+  const name = journalPeer(l);
+  const peer = (STATE.peers || []).find(p => p.name === name);
+  if (!peer) return "never";
+  return peerStatus(peer);
+}
+function sortJournalRows(rows) {
+  const copy = [...rows];
+  const sort = STATE.journal.sort || "ts-desc";
+  const cmp = {
+    "ts-desc": (a, b) => journalRowMs(b) - journalRowMs(a),
+    "ts-asc": (a, b) => journalRowMs(a) - journalRowMs(b),
+    "vol-desc": (a, b) => journalVolume(b) - journalVolume(a),
+    "vol-asc": (a, b) => journalVolume(a) - journalVolume(b),
+    "name-asc": (a, b) => journalPeer(a).localeCompare(journalPeer(b), "fr"),
+  };
+  return copy.sort(cmp[sort] || cmp["ts-desc"]);
+}
+function journalHourBuckets(rows) {
+  const hours = Array(24).fill(0);
+  rows.forEach(l => {
+    const ms = journalRowMs(l);
+    if (!ms) return;
+    hours[new Date(ms).getHours()]++;
+  });
+  return hours;
+}
+function journalSparkline(values, stroke) {
+  const w = 240, h = 36;
+  const max = Math.max(1, ...values);
+  const pts = values.map((v, i) => {
+    const x = values.length > 1 ? (i / (values.length - 1)) * w : w / 2;
+    const y = h - 2 - (v / max) * (h - 4);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const area = `0,${h} ${pts} ${w},${h}`;
+  return `<svg class="journal-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <polygon fill="${stroke}" fill-opacity="0.12" points="${area}"></polygon>
+    <polyline fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"></polyline>
+  </svg>`;
+}
+function applyJournalVolumeTier(tier) {
+  STATE.journal.volumeTier = tier;
+  const minEl = document.getElementById("journal-volume-min");
+  const maxEl = document.getElementById("journal-volume-max");
+  if (tier === "light") { minEl.value = ""; maxEl.value = "1"; }
+  else if (tier === "medium") { minEl.value = "1"; maxEl.value = "100"; }
+  else if (tier === "heavy") { minEl.value = "100"; maxEl.value = ""; }
+  else { minEl.value = ""; maxEl.value = ""; }
+}
+function syncJournalVolumeChips() {
+  document.querySelectorAll("#journal-volume-chips .chip").forEach(chip => {
+    chip.classList.toggle("is-active", chip.dataset.journalVolume === (STATE.journal.volumeTier || "all"));
+  });
+}
+function filterDemoJournalRows(rows) {
+  const search = (STATE.journal.search || "").toLowerCase();
+  const dateFrom = document.getElementById("journal-date-from").value;
+  const dateTo = document.getElementById("journal-date-to").value;
+  const volMin = parseFloat(document.getElementById("journal-volume-min").value);
+  const volMax = parseFloat(document.getElementById("journal-volume-max").value);
+  const fromMs = dateFrom ? new Date(dateFrom).getTime() : 0;
+  const toMs = dateTo ? new Date(dateTo).getTime() : Infinity;
+  const status = STATE.journal.status || "all";
+  return rows.filter(l => {
+    if (search) {
+      const hay = `${journalPeer(l)} ${l.endpoint || ""} ${l.allowed_ips || ""}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    if (status !== "all" && journalPeerStatus(l) !== status) return false;
+    const ms = journalRowMs(l);
+    if (fromMs && ms < fromMs) return false;
+    if (toMs !== Infinity && ms > toMs) return false;
+    const volMb = journalVolume(l) / 1_000_000;
+    if (!Number.isNaN(volMin) && volMb < volMin) return false;
+    if (!Number.isNaN(volMax) && volMb > volMax) return false;
+    return true;
+  });
+}
+function syncJournalStatusChips() {
+  document.querySelectorAll("#journal-status-chips .chip").forEach(chip => {
+    chip.classList.toggle("is-active", chip.dataset.status === STATE.journal.status);
+  });
+  const sel = document.getElementById("journal-status");
+  if (sel) sel.value = STATE.journal.status;
+}
+function syncJournalRangeChips() {
+  document.querySelectorAll("#journal-range-chips .chip").forEach(chip => {
+    chip.classList.toggle("is-active", chip.dataset.journalRange === (STATE.journal.range || "all"));
+  });
+}
+function applyJournalView() {
+  const view = STATE.journal.view || "table";
+  const table = document.getElementById("journal-view-table");
+  const cards = document.getElementById("journal-view-cards");
+  const timeline = document.getElementById("journal-view-timeline");
+  if (table) table.hidden = view !== "table";
+  if (cards) cards.hidden = view !== "cards";
+  if (timeline) timeline.hidden = view !== "timeline";
+  document.querySelectorAll("#journal-view-switch .view-switch-btn").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.journalView === view);
+  });
+}
+function updateJournalPageIndicator() {
+  const el = document.getElementById("journal-page-indicator");
+  if (!el) return;
+  const { offset, limit, total } = STATE.journal;
+  if (!total) { el.textContent = "0–0 sur 0"; return; }
+  const from = offset + 1;
+  const to = Math.min(offset + limit, total);
+  el.textContent = `${from}–${to} sur ${total.toLocaleString("fr-FR")}`;
+}
+
 async function renderJournal() {
   try {
+    applyJournalView();
+    syncJournalStatusChips();
+    syncJournalRangeChips();
+    syncJournalVolumeChips();
+    const sortSel = document.getElementById("journal-sort");
+    if (sortSel) sortSel.value = STATE.journal.sort || "ts-desc";
+    const { offset, limit, search, status } = STATE.journal;
+    let rows = [];
     if (STATE.demoMode) {
       const demo = STATE.overview || await fetchOverview();
-      renderJournalTable((demo.logs || []).map(l => ({ ts: l.ts, name: l.name, endpoint: l.endpoint, allowed_ips: l.allowed_ips, rx_bytes: l.rx_bytes, tx_bytes: l.tx_bytes })), 0);
-      return;
+      const all = sortJournalRows(filterDemoJournalRows(demo.logs || []));
+      STATE.journal.total = all.length;
+      rows = all.slice(offset, offset + limit);
+    } else {
+      const params = new URLSearchParams({ limit, offset, sort_key: "ts", sort_dir: "desc" });
+      if (search) params.set("search", search);
+      if (status !== "all") params.set("status", status);
+      const dateFrom = document.getElementById("journal-date-from").value;
+      const dateTo = document.getElementById("journal-date-to").value;
+      const volMin = document.getElementById("journal-volume-min").value;
+      const volMax = document.getElementById("journal-volume-max").value;
+      if (dateFrom) params.set("date_from", Math.floor(new Date(dateFrom).getTime() / 1000));
+      if (dateTo) params.set("date_to", Math.floor(new Date(dateTo).getTime() / 1000));
+      if (volMin) params.set("volume_min_mb", volMin);
+      if (volMax) params.set("volume_max_mb", volMax);
+      STATE.journal.lastQuery = params.toString();
+      const data = await apiGet(`/api/logs?${params.toString()}`);
+      STATE.journal.total = data.total ?? (data.rows || []).length;
+      rows = sortJournalRows(data.rows || []);
     }
-    const { offset, limit, search, status } = STATE.journal;
-    const params = new URLSearchParams({ limit, offset, sort_key: "ts", sort_dir: "desc" });
-    if (search) params.set("search", search);
-    if (status !== "all") params.set("status", status);
-    const dateFrom = document.getElementById("journal-date-from").value;
-    const dateTo = document.getElementById("journal-date-to").value;
-    const volMin = document.getElementById("journal-volume-min").value;
-    const volMax = document.getElementById("journal-volume-max").value;
-    if (dateFrom) params.set("date_from", Math.floor(new Date(dateFrom).getTime() / 1000));
-    if (dateTo) params.set("date_to", Math.floor(new Date(dateTo).getTime() / 1000));
-    if (volMin) params.set("volume_min_mb", volMin);
-    if (volMax) params.set("volume_max_mb", volMax);
-    STATE.journal.lastQuery = params.toString();
-    const data = await apiGet(`/api/logs?${params.toString()}`);
-    STATE.journal.total = data.total ?? (data.rows || []).length;
-    STATE.journal.lastRows = data.rows || [];
-    renderJournalTable(data.rows || [], offset);
+    STATE.journal.lastRows = rows;
+    renderJournalTypeCards(rows);
+    renderJournalCharts(rows);
+    renderJournalTable(rows);
+    renderJournalCards(rows);
+    renderJournalTimeline(rows);
+    updateJournalPageIndicator();
+    renderJournalHeatmap(rows);
   } catch (err) { toast("danger", "Impossible de charger le journal", err.message); }
+}
+
+function renderJournalTypeCards(rows) {
+  const grid = document.getElementById("journal-type-grid");
+  if (!grid) return;
+  const total = STATE.journal.total || rows.length;
+  const rx = rows.reduce((s, l) => s + (l.rx_bytes || 0), 0);
+  const tx = rows.reduce((s, l) => s + (l.tx_bytes || 0), 0);
+  const volume = rx + tx;
+  const unique = new Set(rows.map(journalPeer).filter(n => n && n !== "—")).size;
+  const hours = journalHourBuckets(rows);
+  const latest = [...rows].sort((a, b) => journalRowMs(b) - journalRowMs(a))[0];
+  const latestHs = [...rows].sort((a, b) => {
+    const am = a.last_handshake ? parseTs(a.last_handshake).getTime() : 0;
+    const bm = b.last_handshake ? parseTs(b.last_handshake).getTime() : 0;
+    return bm - am;
+  })[0];
+  const rxPct = volume ? Math.round((rx / volume) * 100) : 0;
+  const focus = STATE.journal.focusType || "sessions";
+  const cards = [
+    {
+      type: "sessions", badge: "Type 1 · Sessions", label: "Journal des sessions",
+      hint: "Événements de connexion", value: total.toLocaleString("fr-FR"),
+      sub: `${rows.length} affiché(s) sur cette page`,
+      metaLeft: latest ? `Dernier : ${fmtDate(latest.timestamp)}` : "Aucune session",
+      metaRight: "Vue chronologie",
+      spark: journalSparkline(hours, "#1c5b63"),
+      extra: "",
+    },
+    {
+      type: "traffic", badge: "Type 2 · Trafic", label: "Journal du volume",
+      hint: "Rx et Tx agrégés", value: fmtBytes(volume),
+      sub: `${fmtBytes(rx)} reçus · ${fmtBytes(tx)} envoyés`,
+      metaLeft: rows.length ? `Moy. ${fmtBytes(volume / rows.length)} / session` : "Pas de trafic",
+      metaRight: "Vue cartes",
+      spark: "",
+      extra: `<div class="journal-split" title="Rx ${rxPct}%"><span class="rx" style="width:${rxPct}%"></span><span class="tx" style="width:${100 - rxPct}%"></span></div>`,
+    },
+    {
+      type: "handshake", badge: "Type 3 · Handshakes", label: "Journal des handshakes",
+      hint: "Clients et fraîcheur", value: String(unique),
+      sub: unique ? "clients uniques sur la page" : "Aucun client filtré",
+      metaLeft: latestHs?.last_handshake ? `HS ${fmtRelative(latestHs.last_handshake)}` : "Pas de handshake",
+      metaRight: "Vue tableau",
+      spark: journalSparkline(hours.map(n => n ? 1 : 0), "#b6740f"),
+      extra: "",
+    },
+  ];
+  grid.innerHTML = cards.map(c => `
+    <button type="button" class="journal-type-card type-${c.type}${focus === c.type ? " is-active" : ""}" data-journal-type="${c.type}">
+      <div class="journal-type-top">
+        <div class="journal-type-icon"><svg viewBox="0 0 20 20" fill="none">${kpiIcon(c.type === "sessions" ? "sessions" : c.type === "traffic" ? "data" : "clock")}</svg></div>
+        <span class="journal-type-badge">${c.badge}</span>
+      </div>
+      <div>
+        <div class="journal-type-label">${c.label}</div>
+        <div class="journal-type-hint">${c.hint}</div>
+      </div>
+      <div class="journal-type-value">${c.value}</div>
+      <div class="journal-type-sub">${c.sub}</div>
+      ${c.extra || c.spark}
+      <div class="journal-type-meta"><span>${c.metaLeft}</span><span>${c.metaRight} →</span></div>
+    </button>`).join("");
+}
+
+function destroyJournalChart(id) {
+  if (STATE.charts[id]) { STATE.charts[id].destroy(); delete STATE.charts[id]; }
+}
+
+function renderJournalCharts(rows) {
+  const volHint = document.getElementById("journal-volume-hint");
+  const cliHint = document.getElementById("journal-clients-hint");
+  const mixHint = document.getElementById("journal-mix-hint");
+  const actHint = document.getElementById("journal-activity-hint");
+  const buckets = new Map();
+  rows.forEach(l => {
+    const ms = journalRowMs(l);
+    if (!ms) return;
+    const d = new Date(ms);
+    const key = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}h`;
+    const e = buckets.get(key) || { rx: 0, tx: 0 };
+    e.rx += l.rx_bytes || 0;
+    e.tx += l.tx_bytes || 0;
+    buckets.set(key, e);
+  });
+  const labels = [...buckets.keys()];
+  const rxSeries = labels.map(k => buckets.get(k).rx);
+  const txSeries = labels.map(k => buckets.get(k).tx);
+  if (volHint) volHint.textContent = labels.length ? `${labels.length} intervalle(s)` : "Aucune donnée";
+  destroyJournalChart("chart-journal-volume");
+  const volCanvas = document.getElementById("chart-journal-volume");
+  if (volCanvas && typeof Chart !== "undefined") {
+    STATE.charts["chart-journal-volume"] = new Chart(volCanvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Rx", data: rxSeries, backgroundColor: "#123c47", borderRadius: 4, maxBarThickness: 18 },
+          { label: "Tx", data: txSeries, backgroundColor: "#2f8f8a", borderRadius: 4, maxBarThickness: 18 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 700, easing: "easeOutCubic" },
+        plugins: { legend: { display: true, labels: { color: chartTextColor(), boxWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtBytes(c.parsed.y)}` } } },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxTicksLimit: 8 } },
+          y: { stacked: true, grid: { color: chartGridColor() }, ticks: { color: chartTextColor(), font: { size: 10 }, callback: v => fmtBytes(v) } },
+        },
+      },
+    });
+  }
+
+  const rxTot = rows.reduce((s, l) => s + (l.rx_bytes || 0), 0);
+  const txTot = rows.reduce((s, l) => s + (l.tx_bytes || 0), 0);
+  if (mixHint) mixHint.textContent = rxTot + txTot ? `${fmtBytes(rxTot + txTot)} au total` : "Aucune donnée";
+  destroyJournalChart("chart-journal-mix");
+  const mixCanvas = document.getElementById("chart-journal-mix");
+  if (mixCanvas && typeof Chart !== "undefined") {
+    STATE.charts["chart-journal-mix"] = new Chart(mixCanvas, {
+      type: "doughnut",
+      data: {
+        labels: ["Rx", "Tx"],
+        datasets: [{ data: [rxTot || 0, txTot || 0], backgroundColor: ["#123c47", "#2f8f8a"], borderWidth: 0, hoverOffset: 4 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: "62%",
+        animation: { duration: 700, easing: "easeOutCubic" },
+        plugins: {
+          legend: { position: "right", labels: { color: chartTextColor(), boxWidth: 10, font: { size: 11 } } },
+          tooltip: { callbacks: { label: c => `${c.label}: ${fmtBytes(c.parsed)}` } },
+        },
+      },
+    });
+  }
+
+  const byPeer = new Map();
+  rows.forEach(l => {
+    const name = journalPeer(l);
+    byPeer.set(name, (byPeer.get(name) || 0) + journalVolume(l));
+  });
+  const top = [...byPeer.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).reverse();
+  if (cliHint) cliHint.textContent = top.length ? `${byPeer.size} client(s) sur la page` : "Aucun client";
+  destroyJournalChart("chart-journal-clients");
+  const cliCanvas = document.getElementById("chart-journal-clients");
+  if (cliCanvas && typeof Chart !== "undefined") {
+    STATE.charts["chart-journal-clients"] = new Chart(cliCanvas, {
+      type: "bar",
+      data: {
+        labels: top.map(([n]) => n.length > 18 ? n.slice(0, 16) + "…" : n),
+        datasets: [{ data: top.map(([, v]) => v), backgroundColor: "#1c5b63", borderRadius: 5, maxBarThickness: 16 }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 700, easing: "easeOutCubic" },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtBytes(c.parsed.x) } } },
+        scales: {
+          x: { grid: { color: chartGridColor() }, ticks: { color: chartTextColor(), font: { size: 10 }, callback: v => fmtBytes(v) } },
+          y: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
+  const hours = journalHourBuckets(rows);
+  if (actHint) actHint.textContent = `${hours.reduce((a, b) => a + b, 0)} événement(s)`;
+  destroyJournalChart("chart-journal-activity");
+  const actCanvas = document.getElementById("chart-journal-activity");
+  if (actCanvas && typeof Chart !== "undefined") {
+    STATE.charts["chart-journal-activity"] = new Chart(actCanvas, {
+      type: "line",
+      data: {
+        labels: hours.map((_, h) => `${String(h).padStart(2, "0")}h`),
+        datasets: [{
+          data: hours, fill: true, tension: 0.35, borderColor: "#1c5b63",
+          backgroundColor: "rgba(28,91,99,0.12)", pointRadius: 0, borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 700, easing: "easeOutCubic" },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} événement(s)` } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxTicksLimit: 8 } },
+          y: { beginAtZero: true, ticks: { color: chartTextColor(), precision: 0, font: { size: 10 } }, grid: { color: chartGridColor() } },
+        },
+      },
+    });
+  }
 }
 
 document.getElementById("btn-toggle-journal-filters").addEventListener("click", () => {
   const panel = document.getElementById("journal-advanced-filters");
+  const btn = document.getElementById("btn-toggle-journal-filters");
   panel.hidden = !panel.hidden;
+  btn.classList.toggle("is-open", !panel.hidden);
+  btn.setAttribute("aria-expanded", String(!panel.hidden));
 });
 ["journal-date-from", "journal-date-to", "journal-volume-min", "journal-volume-max"].forEach(id => {
   document.getElementById(id).addEventListener("change", () => { STATE.journal.offset = 0; renderJournal(); });
 });
 document.getElementById("btn-journal-reset-filters").addEventListener("click", () => {
   ["journal-date-from", "journal-date-to", "journal-volume-min", "journal-volume-max"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("journal-search").value = "";
+  STATE.journal.search = "";
+  STATE.journal.status = "all";
+  STATE.journal.range = "all";
+  STATE.journal.volumeTier = "all";
+  STATE.journal.sort = "ts-desc";
+  STATE.journal.focusType = "sessions";
   STATE.journal.offset = 0;
+  localStorage.setItem("blockhash_journal_sort", "ts-desc");
   renderJournal();
 });
+function downloadJournalBlob(content, mime, filename) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
 document.getElementById("btn-journal-export").addEventListener("click", () => {
   const rows = STATE.journal.lastRows || [];
   if (!rows.length) return toast("info", "Rien à exporter", "Aucune ligne affichée sur cette page.");
   const header = "horodatage,client,endpoint,ip_autorisees,rx_bytes,tx_bytes";
-  const csv = [header, ...rows.map(l => [new Date(l.timestamp * 1000 || l.ts * 1000).toISOString(), l.peer || l.name || "", l.endpoint || "", l.allowed_ips || "", l.rx_bytes || 0, l.tx_bytes || 0].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = "journal-page.csv";
-  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  const csv = [header, ...rows.map(l => {
+    const iso = journalRowMs(l) ? new Date(journalRowMs(l)).toISOString() : "";
+    return [iso, journalPeer(l), l.endpoint || "", l.allowed_ips || "", l.rx_bytes || 0, l.tx_bytes || 0]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(",");
+  })].join("\n");
+  downloadJournalBlob(csv, "text/csv", "journal-page.csv");
+});
+document.getElementById("btn-journal-export-json").addEventListener("click", () => {
+  const rows = STATE.journal.lastRows || [];
+  if (!rows.length) return toast("info", "Rien à exporter", "Aucune ligne affichée sur cette page.");
+  downloadJournalBlob(JSON.stringify(rows, null, 2), "application/json", "journal-page.json");
+});
+document.getElementById("btn-journal-live").addEventListener("click", () => {
+  const on = !STATE.journal.live;
+  STATE.journal.live = on;
+  const btn = document.getElementById("btn-journal-live");
+  btn.classList.toggle("is-active", on);
+  btn.setAttribute("aria-pressed", String(on));
+  if (STATE.journal.liveTimer) { clearInterval(STATE.journal.liveTimer); STATE.journal.liveTimer = null; }
+  if (on) {
+    toast("success", "Live activé", "Rafraîchissement toutes les 15 secondes.");
+    STATE.journal.liveTimer = setInterval(() => {
+      if (STATE.currentView === "journal") renderJournal();
+    }, 15000);
+  } else {
+    toast("info", "Live désactivé");
+  }
+});
+document.querySelectorAll("#journal-view-switch .view-switch-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    STATE.journal.view = btn.dataset.journalView;
+    localStorage.setItem("blockhash_journal_view", STATE.journal.view);
+    applyJournalView();
+  });
+});
+document.querySelectorAll("#journal-range-chips .chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    const range = chip.dataset.journalRange;
+    STATE.journal.range = range;
+    const to = new Date();
+    const from = new Date();
+    if (range === "24h") from.setHours(from.getHours() - 24);
+    else if (range === "7d") from.setDate(from.getDate() - 7);
+    else if (range === "30d") from.setDate(from.getDate() - 30);
+    if (range === "all") {
+      document.getElementById("journal-date-from").value = "";
+      document.getElementById("journal-date-to").value = "";
+    } else {
+      document.getElementById("journal-date-from").value = toDatetimeLocal(from);
+      document.getElementById("journal-date-to").value = toDatetimeLocal(to);
+      const panel = document.getElementById("journal-advanced-filters");
+      panel.hidden = false;
+      document.getElementById("btn-toggle-journal-filters").classList.add("is-open");
+    }
+    STATE.journal.offset = 0;
+    renderJournal();
+  });
+});
+document.getElementById("journal-page-size").addEventListener("change", e => {
+  STATE.journal.limit = parseInt(e.target.value, 10) || 50;
+  STATE.journal.offset = 0;
+  renderJournal();
 });
 
 // Recherches sauvegardees (localStorage) : memorise la combinaison texte +
@@ -2625,12 +3045,19 @@ document.getElementById("journal-saved-searches").addEventListener("change", e =
   document.getElementById("journal-advanced-filters").hidden = !(s.dateFrom || s.dateTo || s.volumeMin || s.volumeMax);
   STATE.journal.search = s.search || "";
   STATE.journal.status = s.status || "all";
+  STATE.journal.range = (s.dateFrom || s.dateTo) ? "" : "all";
   STATE.journal.offset = 0;
   renderJournal();
 });
 renderSavedSearchesOptions();
 
-function renderJournalTable(rows, offset) {
+function bindJournalRowClicks(root, rows) {
+  root.querySelectorAll("[data-journal-row]").forEach(el => {
+    el.addEventListener("click", () => showSessionDetail(rows[parseInt(el.dataset.journalRow, 10)]));
+  });
+}
+
+function renderJournalTable(rows) {
   const tbody = document.querySelector("#table-journal tbody");
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>Aucune entrée</strong><span>Aucune connexion ne correspond à ces filtres.</span></div></td></tr>`;
@@ -2639,16 +3066,75 @@ function renderJournalTable(rows, offset) {
   tbody.innerHTML = rows.map((l, i) => `
     <tr class="row-clickable" data-journal-row="${i}">
       <td class="mono cell-muted">${fmtDate(l.timestamp)}</td>
-      <td class="cell-primary">${escapeHtml(l.peer || l.name || "—")}</td>
+      <td class="cell-primary">${escapeHtml(journalPeer(l))}</td>
       <td class="mono cell-muted">${escapeHtml(l.endpoint || "—")}</td>
       <td class="mono cell-muted">${escapeHtml(l.allowed_ips || "—")}</td>
       <td class="mono cell-muted">${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</td>
     </tr>
   `).join("");
-  tbody.querySelectorAll("[data-journal-row]").forEach(tr => {
-    tr.style.cursor = "pointer";
-    tr.addEventListener("click", () => showSessionDetail(rows[parseInt(tr.dataset.journalRow, 10)]));
+  bindJournalRowClicks(tbody, rows);
+}
+
+function renderJournalCards(rows) {
+  const grid = document.getElementById("journal-cards-grid");
+  if (!grid) return;
+  if (!rows.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><strong>Aucune entrée</strong><span>Aucune connexion ne correspond à ces filtres.</span></div>`;
+    return;
+  }
+  grid.innerHTML = rows.map((l, i) => {
+    const tone = journalVolumeTone(l);
+    return `
+    <article class="journal-session-card tone-${tone}" data-journal-row="${i}" style="--card-i:${i}">
+      <div class="journal-session-card-head">
+        <div class="journal-session-avatar">${escapeHtml(initials(journalPeer(l)))}</div>
+        <div>
+          <div class="journal-session-title">${escapeHtml(journalPeer(l))}</div>
+          <div class="journal-session-sub">${escapeHtml(l.endpoint || "endpoint inconnu")}</div>
+        </div>
+      </div>
+      <div class="journal-session-meta">
+        <div><span>Horodatage</span><strong>${fmtDate(l.timestamp)}</strong></div>
+        <div><span>Volume</span><strong>${fmtBytes(l.rx_bytes)} / ${fmtBytes(l.tx_bytes)}</strong></div>
+        <div style="grid-column:1/-1;"><span>IP autorisées</span><strong>${escapeHtml(l.allowed_ips || "—")}</strong></div>
+      </div>
+    </article>`;
+  }).join("");
+  bindJournalRowClicks(grid, rows);
+}
+
+function renderJournalTimeline(rows) {
+  const el = document.getElementById("journal-timeline");
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state"><strong>Aucune entrée</strong><span>Aucune connexion ne correspond à ces filtres.</span></div>`;
+    return;
+  }
+  const groups = [];
+  rows.forEach((l, i) => {
+    const ms = journalRowMs(l);
+    const day = ms ? new Date(ms).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) : "Date inconnue";
+    const last = groups[groups.length - 1];
+    if (!last || last.day !== day) groups.push({ day, items: [{ l, i }] });
+    else last.items.push({ l, i });
   });
+  el.innerHTML = groups.map(g => `
+    <div class="journal-tl-day">${escapeHtml(g.day)}</div>
+    ${g.items.map(({ l, i }) => {
+      const ms = journalRowMs(l);
+      const time = ms ? new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—";
+      return `
+      <div class="journal-tl-item" data-journal-row="${i}">
+        <div class="journal-tl-time">${time}</div>
+        <div class="journal-tl-rail"><span class="journal-tl-dot"></span></div>
+        <div class="journal-tl-body">
+          <div class="journal-tl-title">${escapeHtml(journalPeer(l))}</div>
+          <div class="journal-tl-meta">${escapeHtml(l.endpoint || "—")} · ${fmtBytes(l.rx_bytes)} Rx / ${fmtBytes(l.tx_bytes)} Tx</div>
+        </div>
+      </div>`;
+    }).join("")}
+  `).join("");
+  bindJournalRowClicks(el, rows);
 }
 
 function showSessionDetail(l) {
@@ -2662,36 +3148,58 @@ function showSessionDetail(l) {
   openModal("modal-session-detail");
 }
 
-async function renderJournalHeatmap() {
+function gridFromJournalRows(rows) {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+  (rows || []).forEach(l => {
+    const ms = journalRowMs(l);
+    if (!ms) return;
+    const d = new Date(ms);
+    grid[d.getDay()][d.getHours()]++;
+  });
+  return grid;
+}
+function paintJournalHeatmap(grid) {
   const el = document.getElementById("journal-heatmap");
-  if (STATE.demoMode) { el.innerHTML = `<span class="cell-muted">Heatmap indisponible en mode démonstration.</span>`; return; }
+  if (!el) return;
+  const days = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+  const max = Math.max(1, ...grid.flat());
+  const cellColor = n => {
+    if (!n) return "var(--bg-inset)";
+    const ratio = n / max;
+    return `color-mix(in srgb, var(--teal-mid) ${Math.round(20 + ratio * 80)}%, var(--bg-inset))`;
+  };
+  let html = `<div class="grid grid-cols-[36px_repeat(24,20px)] gap-0.5 text-[10px] items-center">`;
+  html += `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="cell-muted" style="text-align:center;">${h % 3 === 0 ? h : ""}</div>`).join("");
+  for (let d = 0; d < 7; d++) {
+    html += `<div class="cell-muted">${days[d]}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const n = grid[d][h];
+      html += `<div title="${days[d]} ${h}h : ${n} évènement(s)" class="w-5 h-4 rounded-sm" style="background:${cellColor(n)};"></div>`;
+    }
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+}
+async function renderJournalHeatmap(rows) {
+  const el = document.getElementById("journal-heatmap");
+  if (!el) return;
+  if (STATE.demoMode) { paintJournalHeatmap(gridFromJournalRows(rows)); return; }
   try {
     const { grid } = await apiGet("/api/logs/heatmap?days=30");
-    const days = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
-    const max = Math.max(1, ...grid.flat());
-    const cellColor = n => {
-      if (!n) return "var(--bg-inset)";
-      const ratio = n / max;
-      return `color-mix(in srgb, var(--teal-mid) ${Math.round(20 + ratio * 80)}%, var(--bg-inset))`;
-    };
-    let html = `<div class="grid grid-cols-[36px_repeat(24,20px)] gap-0.5 text-[10px] items-center">`;
-    html += `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="cell-muted" style="text-align:center;">${h % 3 === 0 ? h : ""}</div>`).join("");
-    for (let d = 0; d < 7; d++) {
-      html += `<div class="cell-muted">${days[d]}</div>`;
-      for (let h = 0; h < 24; h++) {
-        const n = grid[d][h];
-        html += `<div title="${days[d]} ${h}h : ${n} évènement(s)" class="w-5 h-4 rounded-sm" style="background:${cellColor(n)};"></div>`;
-      }
-    }
-    html += `</div>`;
-    el.innerHTML = html;
-  } catch (err) { el.innerHTML = `<span class="cell-muted">Heatmap indisponible : ${escapeHtml(err.message)}</span>`; }
+    paintJournalHeatmap(grid);
+  } catch {
+    paintJournalHeatmap(gridFromJournalRows(rows));
+  }
 }
 
 document.getElementById("journal-search").addEventListener("input", e => { STATE.journal.search = e.target.value.trim(); STATE.journal.offset = 0; renderJournal(); });
 document.getElementById("journal-status").addEventListener("change", e => { STATE.journal.status = e.target.value; STATE.journal.offset = 0; renderJournal(); });
 document.getElementById("journal-prev").addEventListener("click", () => { STATE.journal.offset = Math.max(0, STATE.journal.offset - STATE.journal.limit); renderJournal(); });
-document.getElementById("journal-next").addEventListener("click", () => { STATE.journal.offset += STATE.journal.limit; renderJournal(); });
+document.getElementById("journal-next").addEventListener("click", () => {
+  if (STATE.journal.offset + STATE.journal.limit >= STATE.journal.total) return;
+  STATE.journal.offset += STATE.journal.limit;
+  renderJournal();
+});
 
 // ---------------------------------------------------------------
 // VUE : Monitoring (débit long terme, système, geoip, anomalies)

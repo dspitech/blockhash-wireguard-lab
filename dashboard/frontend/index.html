@@ -542,6 +542,10 @@
       <div class="modal">
         <div class="modal-header"><h3 data-i18n="h3.detail-de-la-session">Détail de la session</h3><button class="icon-btn" data-close-modal>✕</button></div>
         <div class="modal-body" id="session-detail-body"></div>
+        <div class="modal-footer">
+          <button class="btn ghost sm" type="button" id="btn-session-copy">Copier JSON</button>
+          <button class="btn sm" type="button" data-close-modal>Fermer</button>
+        </div>
       </div>
     </div>
 
@@ -752,43 +756,192 @@
     <!-- ---------- JOURNAL ---------- -->
     <section class="view" id="view-journal">
       <div class="view-header">
-        <div><h1 data-i18n="view.journal.title">Journal des connexions</h1><p data-i18n="view.journal.subtitle">Historique des sessions et handshakes</p></div>
-        <div class="view-actions"><button class="btn ghost sm" id="btn-journal-export" data-i18n="btn.btn-journal-export">Exporter CSV (page)</button></div>
+        <div>
+          <h1 data-i18n="view.journal.title">Journal des connexions</h1>
+          <p data-i18n="view.journal.subtitle">Historique des sessions, volumes et handshakes</p>
+        </div>
+        <div class="view-actions">
+          <button class="btn ghost sm" id="btn-journal-live" type="button" aria-pressed="false" title="Rafraîchir automatiquement">
+            <svg viewBox="0 0 20 20" fill="none" width="15" height="15"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5V7h-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Live
+          </button>
+          <button class="btn ghost sm" id="btn-journal-export-json" type="button">Exporter JSON</button>
+          <button class="btn ghost sm" id="btn-journal-export" data-i18n="btn.btn-journal-export">Exporter CSV (page)</button>
+        </div>
       </div>
-      <div class="filters-bar">
-        <input class="input" id="journal-search" placeholder="Rechercher (client, IP, endpoint)…" style="width:240px;" />
-        <select class="select" id="journal-status">
-          <option value="all">Tous les statuts</option>
-          <option value="online">En ligne</option>
-          <option value="idle">Inactif</option>
-          <option value="never">Jamais connecté</option>
-        </select>
-        <button class="btn ghost sm" id="btn-toggle-journal-filters" data-i18n="btn.btn-toggle-journal-filters">Filtres avancés</button>
-        <select class="select" id="journal-saved-searches"><option value="">Recherches sauvegardées…</option></select>
-        <div class="topbar-spacer"></div>
-        <button class="btn sm" id="journal-prev" data-i18n="btn.journal-prev">← Précédent</button>
-        <button class="btn sm" id="journal-next" data-i18n="btn.journal-next">Suivant →</button>
+
+      <p class="journal-types-kicker">Trois lectures du journal — cliquez une carte pour adapter l’affichage</p>
+      <div class="journal-type-grid" id="journal-type-grid"></div>
+
+      <div class="journal-charts-grid">
+        <div class="card reveal" style="--reveal-delay:0ms;">
+          <div class="card-header">
+            <h3 data-i18n="h3.journal-volume">Volume sur la page</h3>
+            <span class="hint" id="journal-volume-hint">Rx / Tx agrégés</span>
+          </div>
+          <div class="chart-box sm"><canvas id="chart-journal-volume"></canvas></div>
+        </div>
+        <div class="card reveal" style="--reveal-delay:60ms;">
+          <div class="card-header">
+            <h3 data-i18n="h3.journal-mix">Répartition Rx / Tx</h3>
+            <span class="hint" id="journal-mix-hint">Part du trafic</span>
+          </div>
+          <div class="chart-box sm journal-chart-mix"><canvas id="chart-journal-mix"></canvas></div>
+        </div>
+        <div class="card reveal" style="--reveal-delay:90ms;">
+          <div class="card-header">
+            <h3 data-i18n="h3.journal-clients">Top clients</h3>
+            <span class="hint" id="journal-clients-hint">Par volume</span>
+          </div>
+          <div class="chart-box sm"><canvas id="chart-journal-clients"></canvas></div>
+        </div>
+        <div class="card reveal" style="--reveal-delay:120ms;">
+          <div class="card-header">
+            <h3 data-i18n="h3.journal-activity">Activité horaire</h3>
+            <span class="hint" id="journal-activity-hint">Événements par heure</span>
+          </div>
+          <div class="chart-box sm"><canvas id="chart-journal-activity"></canvas></div>
+        </div>
       </div>
-      <div class="filters-bar" id="journal-advanced-filters" hidden style="flex-wrap:wrap;gap:12px;">
-        <label class="field-inline">Du <input class="input" type="datetime-local" id="journal-date-from" /></label>
-        <label class="field-inline">Au <input class="input" type="datetime-local" id="journal-date-to" /></label>
-        <label class="field-inline">Volume min (Mo) <input class="input" type="number" min="0" id="journal-volume-min" style="width:90px;" /></label>
-        <label class="field-inline">Volume max (Mo) <input class="input" type="number" min="0" id="journal-volume-max" style="width:90px;" /></label>
-        <button class="btn ghost sm" id="btn-journal-save-search" data-i18n="btn.btn-journal-save-search">Sauvegarder cette recherche</button>
-        <button class="btn ghost sm" id="btn-journal-reset-filters" data-i18n="btn.btn-journal-reset-filters">Réinitialiser</button>
+
+      <div class="clients-toolbar journal-toolbar">
+        <div class="clients-toolbar-row">
+          <div class="view-switch" id="journal-view-switch">
+            <button class="view-switch-btn is-active" data-journal-view="table" title="Vue tableau" type="button">
+              <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="12" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 8.5h14M8 8.5V16" stroke="currentColor" stroke-width="1.4"/></svg>
+              <span>Tableau</span>
+            </button>
+            <button class="view-switch-btn" data-journal-view="cards" title="Vue cartes" type="button">
+              <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="6" height="6" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="3" width="6" height="6" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="11" width="6" height="6" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="11" width="6" height="6" rx="1.2" stroke="currentColor" stroke-width="1.4"/></svg>
+              <span>Cartes</span>
+            </button>
+            <button class="view-switch-btn" data-journal-view="timeline" title="Vue chronologie" type="button">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M5 3v14M5 6h10M5 11h8M5 16h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <span>Chronologie</span>
+            </button>
+          </div>
+          <div class="chip-group" id="journal-range-chips">
+            <button class="chip" type="button" data-journal-range="24h">24 h</button>
+            <button class="chip" type="button" data-journal-range="7d">7 j</button>
+            <button class="chip" type="button" data-journal-range="30d">30 j</button>
+            <button class="chip is-active" type="button" data-journal-range="all">Tout</button>
+          </div>
+          <div class="chip-group" id="journal-status-chips">
+            <button class="chip is-active" type="button" data-status="all">Tous</button>
+            <button class="chip" type="button" data-status="online">En ligne</button>
+            <button class="chip" type="button" data-status="idle">Inactifs</button>
+            <button class="chip" type="button" data-status="never">Jamais</button>
+          </div>
+          <div class="chip-group" id="journal-volume-chips">
+            <button class="chip is-active" type="button" data-journal-volume="all">Tous volumes</button>
+            <button class="chip" type="button" data-journal-volume="light">Léger</button>
+            <button class="chip" type="button" data-journal-volume="medium">Moyen</button>
+            <button class="chip" type="button" data-journal-volume="heavy">Intense</button>
+          </div>
+          <label class="clients-page-size-field">
+            <span class="clients-page-size-label">Tri</span>
+            <select class="select clients-page-size-select" id="journal-sort">
+              <option value="ts-desc">Plus récent</option>
+              <option value="ts-asc">Plus ancien</option>
+              <option value="vol-desc">Volume ↓</option>
+              <option value="vol-asc">Volume ↑</option>
+              <option value="name-asc">Client A–Z</option>
+            </select>
+          </label>
+          <select class="select" id="journal-status" hidden>
+            <option value="all">Tous les statuts</option>
+            <option value="online">En ligne</option>
+            <option value="idle">Inactif</option>
+            <option value="never">Jamais connecté</option>
+          </select>
+          <div class="clients-toolbar-divider" aria-hidden="true"></div>
+          <label class="clients-search-field">
+            <svg class="clients-search-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 13.5 17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input class="clients-search-input" id="journal-search" type="search" placeholder="Rechercher (client, IP, endpoint)…" autocomplete="off" />
+          </label>
+          <button class="btn ghost sm clients-adv-toggle" id="btn-toggle-journal-filters" type="button" aria-expanded="false" aria-controls="journal-advanced-filters" data-i18n="btn.btn-toggle-journal-filters">Filtres avancés</button>
+          <select class="select" id="journal-saved-searches"><option value="">Recherches sauvegardées…</option></select>
+          <div class="topbar-spacer"></div>
+          <span class="cell-muted" id="journal-page-indicator">0–0 sur 0</span>
+          <label class="clients-page-size-field">
+            <span class="clients-page-size-label">Affichage</span>
+            <select class="select clients-page-size-select" id="journal-page-size">
+              <option value="25">25 / page</option>
+              <option value="50" selected>50 / page</option>
+              <option value="100">100 / page</option>
+            </select>
+          </label>
+          <button class="btn sm" id="journal-prev" data-i18n="btn.journal-prev">← Précédent</button>
+          <button class="btn sm" id="journal-next" data-i18n="btn.journal-next">Suivant →</button>
+        </div>
+        <div class="adv-filters-panel" id="journal-advanced-filters" hidden>
+          <div class="adv-filters-head">
+            <div class="adv-filters-title">
+              <span class="adv-filters-title-icon">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M3 5h14M6 10h8M8.5 15h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </span>
+              <div>
+                <span class="adv-filters-title-text">Affiner le journal</span>
+                <span class="adv-filters-title-sub">Période, volume et recherches mémorisées</span>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn ghost sm" id="btn-journal-save-search" data-i18n="btn.btn-journal-save-search">Sauvegarder cette recherche</button>
+              <button class="btn ghost sm" id="btn-journal-reset-filters" data-i18n="btn.btn-journal-reset-filters">Réinitialiser</button>
+            </div>
+          </div>
+          <div class="adv-filters-body" style="grid-template-columns:1fr;">
+            <div class="adv-filters-group">
+              <div class="adv-filters-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+                <label class="adv-filter-field">Du <input class="input adv-filter-control" type="datetime-local" id="journal-date-from" /></label>
+                <label class="adv-filter-field">Au <input class="input adv-filter-control" type="datetime-local" id="journal-date-to" /></label>
+                <label class="adv-filter-field">Volume min (Mo) <input class="input adv-filter-control" type="number" min="0" id="journal-volume-min" /></label>
+                <label class="adv-filter-field">Volume max (Mo) <input class="input adv-filter-control" type="number" min="0" id="journal-volume-max" /></label>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <div class="table-wrap overflow-x-auto -mx-1">
-          <table class="data-table" id="table-journal">
-            <thead><tr><th class="sortable" data-sort="ts" data-i18n="th.horodatage">Horodatage</th><th data-i18n="th.client">Client</th><th data-i18n="th.endpoint">Endpoint</th><th data-i18n="th.ip-autorisees">IP autorisées</th><th data-i18n="th.rx-tx">Rx / Tx</th></tr></thead>
-            <tbody></tbody>
-          </table>
+
+      <div id="journal-view-table">
+        <div class="card">
+          <div class="card-header">
+            <h3>Sessions</h3>
+            <span class="hint">Cliquez une ligne pour le détail</span>
+          </div>
+          <div class="table-wrap overflow-x-auto -mx-1">
+            <table class="data-table" id="table-journal">
+              <thead><tr>
+                <th data-i18n="th.horodatage">Horodatage</th>
+                <th data-i18n="th.client">Client</th>
+                <th data-i18n="th.endpoint">Endpoint</th>
+                <th data-i18n="th.ip-autorisees">IP autorisées</th>
+                <th data-i18n="th.rx-tx">Rx / Tx</th>
+                <th data-i18n="th.handshake">Handshake</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="journal-view-cards" hidden>
+        <div class="journal-cards-grid" id="journal-cards-grid"></div>
+      </div>
+
+      <div id="journal-view-timeline" hidden>
+        <div class="card journal-timeline-card">
+          <div class="card-header"><h3>Chronologie</h3><span class="hint">Regroupée par jour</span></div>
+          <div class="journal-timeline" id="journal-timeline"></div>
         </div>
       </div>
 
       <div class="card" style="margin-top:var(--sp-4);">
-        <div class="card-header"><h3>Heatmap des connexions</h3><span class="hint">30 derniers jours, heure locale du serveur</span></div>
-        <div id="journal-heatmap" style="padding:var(--sp-3) var(--sp-4) var(--sp-4);overflow-x:auto;"></div>
+        <div class="card-header">
+          <h3>Heatmap des connexions</h3>
+          <span class="hint">7 × 24 h — intensité relative sur la fenêtre chargée</span>
+        </div>
+        <div id="journal-heatmap" class="journal-heatmap"></div>
       </div>
     </section>
 

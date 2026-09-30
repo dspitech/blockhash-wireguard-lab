@@ -148,7 +148,7 @@
   "view.clients.title": "WireGuard clients",
   "view.compliance.subtitle": "Security posture checks for the deployment",
   "view.compliance.title": "Compliance",
-  "view.journal.subtitle": "Session and handshake history",
+  "view.journal.subtitle": "Session history, volumes and handshakes",
   "view.journal.title": "Connection log",
   "view.monitoring.subtitle": "Long-term throughput, host system and endpoint location",
   "view.monitoring.title": "Monitoring",
