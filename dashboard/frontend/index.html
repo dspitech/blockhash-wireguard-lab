@@ -796,12 +796,25 @@
 
       <!-- ---------- MODALE : Détail d'une alerte ---------- -->
       <div class="modal-overlay" id="modal-alert-detail">
-        <div class="modal" style="max-width:560px;">
-          <div class="modal-header">
-            <h3 id="alert-detail-title">Détail de l'alerte</h3><button class="icon-btn" data-close-modal>✕</button>
+        <div class="modal modal-pro modal-alert-dossier">
+          <div class="modal-header modal-header-pro">
+            <div class="modal-header-icon tone-accent" id="alert-detail-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 3.2 17.2 16H2.8L10 3.2Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                <path d="M10 8.2v4.2M10 14.4h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="modal-header-pro-copy">
+              <h3 id="alert-detail-title">Dossier d’alerte</h3>
+              <p class="modal-subtitle" id="alert-detail-subtitle">Contexte, impact et statut de traitement</p>
+            </div>
+            <button class="icon-btn modal-header-close" data-close-modal>✕</button>
           </div>
-          <div class="modal-body" id="alert-detail-body">
+          <div class="modal-body recap-pro" id="alert-detail-body">
             <div class="empty-state"><strong>Chargement…</strong></div>
+          </div>
+          <div class="modal-footer" id="alert-detail-footer">
+            <button class="btn ghost sm" type="button" data-close-modal>Fermer</button>
           </div>
         </div>
       </div>
@@ -1431,82 +1444,70 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-4 items-start">
-          <div class="stack">
-            <form class="ops-form-card" id="alerts-filter-form" onsubmit="return false;">
-              <div class="ops-form-head">
-                <div>
-                  <h3>Filtres d’investigation</h3>
-                  <p>Affinez l’historique par sévérité, client ou règle déclenchée.</p>
-                </div>
-              </div>
-              <div class="ops-form-grid">
-                <div class="field">
-                  <label class="tw-label" for="alerts-filter-severity">Sévérité</label>
-                  <select class="tw-select" id="alerts-filter-severity">
-                    <option value="">Toute sévérité</option>
-                    <option value="critical">Critique</option>
-                    <option value="warning">Avertissement</option>
-                    <option value="info">Info</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="tw-label" for="alerts-filter-client">Client</label>
-                  <input class="tw-input" id="alerts-filter-client" placeholder="Nom du peer…" autocomplete="off" />
-                </div>
-                <div class="field">
-                  <label class="tw-label" for="alerts-filter-rule">Règle</label>
-                  <input class="tw-input" id="alerts-filter-rule" placeholder="ex. inactive, bandwidth…" autocomplete="off" />
-                </div>
-                <label class="ops-check">
-                  <input type="checkbox" id="alerts-filter-archived" />
-                  <span>Inclure les alertes archivées</span>
-                </label>
-              </div>
-            </form>
+        <div class="card reveal mb-4" style="--reveal-delay:40ms;">
+          <div class="card-header">
+            <h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Tableau de bord (7 derniers jours)</h3>
+            <span class="hint">Synthèse opérationnelle</span>
+          </div>
+          <div id="alerts-stats-body" class="ops-insight-list"></div>
+        </div>
 
-            <div class="card">
-              <div class="card-header">
-                <h3 data-i18n="h3.historique">Historique</h3>
-                <span class="hint">Cliquez sur une ligne pour ouvrir le dossier</span>
-              </div>
-              <div class="table-wrap overflow-x-auto -mx-1">
-                <table class="data-table alerts-table" id="table-alerts-history">
-                  <thead>
-                    <tr>
-                      <th data-i18n="th.horodatage">Horodatage</th>
-                      <th data-i18n="th.regle">Règle</th>
-                      <th data-i18n="th.client">Client</th>
-                      <th data-i18n="th.severite">Sévérité</th>
-                      <th data-i18n="th.detail">Détail</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-              <div class="filters-bar" style="justify-content:flex-end;">
-                <span class="cell-muted" id="alerts-page-indicator">0–0 sur 0</span>
-                <button class="btn ghost sm" id="alerts-prev" data-i18n="btn.alerts-prev">← Précédent</button>
-                <button class="btn ghost sm" id="alerts-next" data-i18n="btn.alerts-next">Suivant →</button>
-              </div>
+        <form class="ops-form-card mb-4" id="alerts-filter-form" onsubmit="return false;">
+          <div class="ops-form-head">
+            <div>
+              <h3>Filtres d’investigation</h3>
+              <p>Affinez l’historique par sévérité, client ou règle déclenchée.</p>
             </div>
           </div>
+          <div class="ops-form-grid">
+            <div class="field">
+              <label class="tw-label" for="alerts-filter-severity">Sévérité</label>
+              <select class="tw-select" id="alerts-filter-severity">
+                <option value="">Toute sévérité</option>
+                <option value="critical">Critique</option>
+                <option value="warning">Avertissement</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="tw-label" for="alerts-filter-client">Client</label>
+              <input class="tw-input" id="alerts-filter-client" placeholder="Nom du peer…" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="tw-label" for="alerts-filter-rule">Règle</label>
+              <input class="tw-input" id="alerts-filter-rule" placeholder="ex. inactive, bandwidth…" autocomplete="off" />
+            </div>
+            <label class="ops-check">
+              <input type="checkbox" id="alerts-filter-archived" />
+              <span>Inclure les alertes archivées</span>
+            </label>
+          </div>
+        </form>
 
-          <div class="stack">
-            <div class="card">
-              <div class="card-header">
-                <h3 data-i18n="h3.tableau-de-bord-7-derniers-jours">Points d’attention</h3>
-              </div>
-              <div id="alerts-stats-body" class="ops-insight-list"></div>
-            </div>
-            <div class="card">
-              <div class="card-header">
-                <h3 data-i18n="h3.deduplication-active">Déduplication active</h3>
-                <span class="hint" id="dedup-hint"></span>
-              </div>
-              <div id="dedup-list" class="stack"></div>
-            </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 data-i18n="h3.historique">Historique</h3>
+            <span class="hint">Cliquez sur une ligne pour ouvrir le dossier</span>
+          </div>
+          <div class="table-wrap overflow-x-auto -mx-1">
+            <table class="data-table alerts-table" id="table-alerts-history">
+              <thead>
+                <tr>
+                  <th data-i18n="th.horodatage">Horodatage</th>
+                  <th data-i18n="th.regle">Règle</th>
+                  <th data-i18n="th.client">Client</th>
+                  <th data-i18n="th.severite">Sévérité</th>
+                  <th data-i18n="th.detail">Détail</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="filters-bar" style="justify-content:flex-end;">
+            <span class="cell-muted" id="alerts-page-indicator">0–0 sur 0</span>
+            <button class="btn ghost sm" id="alerts-prev" data-i18n="btn.alerts-prev">← Précédent</button>
+            <button class="btn ghost sm" id="alerts-next" data-i18n="btn.alerts-next">Suivant →</button>
           </div>
         </div>
       </section>
@@ -1560,30 +1561,46 @@
         </div>
 
         <div id="prov-panel-explorer" hidden>
-          <form class="ops-form-card" id="prov-explorer-form" onsubmit="return false;">
-            <div class="ops-form-head">
+          <form class="ops-form-pro" id="prov-explorer-form" onsubmit="return false;">
+            <div class="ops-form-pro-head">
+              <div class="tw-settings-icon">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M12.5 12.5 17 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </div>
               <div>
+                <p class="ops-kicker">Annuaire · dry-run</p>
                 <h3>Recherche d’annuaire</h3>
-                <p>Filtrez les comptes puis lancez un dry-run avant toute création de client.</p>
+                <p>Filtrez les comptes, prévisualisez le nom WireGuard, puis lancez un aperçu contrôlé avant toute création.</p>
               </div>
             </div>
-            <div class="ops-form-grid ops-form-grid-4">
-              <div class="field">
-                <label class="tw-label" for="prov-explorer-source">Source</label>
+            <div class="ops-form-pro-grid">
+              <div class="form-block">
+                <label class="tw-label" for="prov-explorer-source">Source d’annuaire</label>
                 <select class="tw-select" id="prov-explorer-source"></select>
+                <p class="tw-hint">Annuaire LDAP / AD déjà connecté</p>
               </div>
-              <div class="field">
-                <label class="tw-label" for="prov-explorer-search">Recherche</label>
+              <div class="form-block">
+                <label class="tw-label" for="prov-explorer-search">Filtre de recherche</label>
                 <input class="tw-input" id="prov-explorer-search" placeholder="Nom, login, e-mail…" autocomplete="off" />
+                <p class="tw-hint">Laisser vide pour lister tous les comptes visibles</p>
               </div>
-              <div class="field">
+              <div class="form-block tone-success">
                 <label class="tw-label" for="prov-name-template">Modèle de nom client</label>
                 <input class="tw-input" id="prov-name-template" value="{login}" placeholder="{login}" />
                 <p class="tw-hint">Placeholders : {login}, {display_name}, {department}</p>
               </div>
-              <div class="field ops-form-action">
-                <button class="btn primary" id="btn-prov-explorer-search" type="button">Rechercher</button>
-              </div>
+            </div>
+            <div class="ops-form-pro-footer">
+              <span class="cell-muted">Aucune modification n’est écrite tant que vous n’avez pas confirmé le dry-run.</span>
+              <button class="btn primary" id="btn-prov-explorer-search" type="button">
+                <svg viewBox="0 0 20 20" fill="none" width="16" height="16" aria-hidden="true">
+                  <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M12.5 12.5 17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+                Rechercher
+              </button>
             </div>
           </form>
 
@@ -1626,14 +1643,27 @@
 
       <!-- Modal : ajouter une source d'annuaire -->
       <div class="modal-overlay" id="modal-prov-source">
-        <div class="modal" style="max-width:640px;">
-          <div class="modal-header">
-            <h3>Ajouter une source d'annuaire</h3><button class="icon-btn" data-close-modal>✕</button>
+        <div class="modal modal-pro modal-prov-source">
+          <div class="modal-header modal-header-pro">
+            <div class="modal-header-icon tone-accent">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/>
+                <path d="M7 8h6M7 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="modal-header-pro-copy">
+              <h3>Ajouter une source d’annuaire</h3>
+              <p class="modal-subtitle">Connexion LDAP / Active Directory — le mot de passe reste dans l’environnement du service</p>
+            </div>
+            <button class="icon-btn modal-header-close" data-close-modal>✕</button>
           </div>
           <div class="modal-body">
-            <div class="ops-form-section">
-              <h4>Identité</h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            <div class="form-block">
+              <div class="ops-form-section-head">
+                <h4>Identité</h4>
+                <span>Nom visible dans la console</span>
+              </div>
+              <div class="ops-form-pro-grid ops-form-pro-grid-2">
                 <div class="field">
                   <label class="tw-label" for="prov-src-name">Nom d’affichage</label>
                   <input class="tw-input" id="prov-src-name" placeholder="AD Production" />
@@ -1644,9 +1674,12 @@
                 </div>
               </div>
             </div>
-            <div class="ops-form-section">
-              <h4>Connexion LDAP</h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            <div class="form-block">
+              <div class="ops-form-section-head">
+                <h4>Connexion LDAP</h4>
+                <span>Paramètres du bind de service</span>
+              </div>
+              <div class="ops-form-pro-grid ops-form-pro-grid-2">
                 <div class="field">
                   <label class="tw-label" for="prov-src-host">Hôte</label>
                   <input class="tw-input" id="prov-src-host" placeholder="ad.entreprise.local" />
@@ -1655,25 +1688,28 @@
                   <label class="tw-label" for="prov-src-basedn">Base DN</label>
                   <input class="tw-input" id="prov-src-basedn" placeholder="DC=entreprise,DC=local" />
                 </div>
-                <div class="field md:col-span-2">
+                <div class="field ops-form-span-2">
                   <label class="tw-label" for="prov-src-binddn">Bind DN (compte de service)</label>
                   <input class="tw-input" id="prov-src-binddn"
                     placeholder="CN=svc-blockhash,CN=Users,DC=entreprise,DC=local" />
                 </div>
               </div>
             </div>
-            <div class="ops-form-section">
-              <h4>Secret</h4>
+            <div class="form-block tone-warning">
+              <div class="ops-form-section-head">
+                <h4>Secret</h4>
+                <span>Jamais stocké dans ce formulaire</span>
+              </div>
               <div class="field">
                 <label class="tw-label" for="prov-src-secretenv">Variable d’environnement du mot de passe</label>
                 <input class="tw-input" id="prov-src-secretenv" placeholder="AD_BIND_PASSWORD_AD_LOCAL" />
-                <p class="tw-hint">Le mot de passe n’est jamais saisi ici : définissez cette variable dans l’environnement du service.</p>
+                <p class="tw-hint">Définissez cette variable dans l’environnement du service. Le mot de passe n’est jamais saisi ici.</p>
               </div>
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn" data-close-modal>Annuler</button>
-            <button class="btn primary" id="btn-prov-src-save">Créer</button>
+            <button class="btn ghost" data-close-modal>Annuler</button>
+            <button class="btn primary" id="btn-prov-src-save">Créer la source</button>
           </div>
         </div>
       </div>

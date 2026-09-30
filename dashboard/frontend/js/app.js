@@ -3601,7 +3601,6 @@ async function renderAlerts() {
     if (STATE.demoMode) {
       document.querySelector("#table-alerts-history tbody").innerHTML =
         `<tr><td colspan="6"><div class="empty-state"><strong>Mode démonstration</strong><span>Historique indisponible sans API connectée.</span></div></td></tr>`;
-      document.getElementById("dedup-list").innerHTML = `<div class="empty-state"><strong>Canaux en pause</strong><span>Connectez l'API pour voir les cooldowns.</span></div>`;
       renderAlertsKpiGrid({ by_day: [], top_clients: [], mtta_seconds: null });
       renderAlertsStats({ by_day: [], top_clients: [], mtta_seconds: null });
       renderAlertsCharts({ by_day: [], top_clients: [] });
@@ -3615,14 +3614,12 @@ async function renderAlerts() {
     if (client) params.set("client", client);
     if (rule) params.set("rule", rule);
     if (document.getElementById("alerts-filter-archived").checked) params.set("archived", "true");
-    const [history, dedup, stats] = await Promise.all([
+    const [history, stats] = await Promise.all([
       apiGet(`/api/alerts/history?${params.toString()}`),
-      apiGet("/api/alerts/dedup"),
       apiGet("/api/alerts/stats?days=7"),
     ]);
     renderAlertsKpiGrid(stats);
     renderAlertsHistory(history);
-    renderDedupList(dedup);
     renderAlertsStats(stats);
     renderAlertsCharts(stats);
   } catch (err) { toast("danger", "Impossible de charger les alertes", err.message); }
@@ -3674,13 +3671,13 @@ function renderAlertsStats(stats) {
   }, { days: {}, max: 0, day: null });
   const top = (stats.top_clients || [])[0];
   const items = [
-    { title: "Charge critique", detail: totals.critical ? `${totals.critical} alerte(s) à traiter en priorité` : "Aucune alerte critique", val: totals.critical },
-    { title: "Pic journalier", detail: peak.day ? peak.day : "Pas de pic sur la période", val: peak.max || 0 },
-    { title: "Client le plus exposé", detail: top ? escapeHtml(top.peer_name) : "Aucun client identifié", val: top ? top.n : 0 },
-    { title: "Couverture", detail: `${total} événement(s) agrégés sur 7 jours`, val: mttaMin != null ? `${mttaMin} min` : "—" },
+    { title: "Charge critique", detail: totals.critical ? `${totals.critical} alerte(s) à traiter en priorité` : "Aucune alerte critique", val: totals.critical, tone: totals.critical ? "danger" : "success" },
+    { title: "Pic journalier", detail: peak.day ? peak.day : "Pas de pic sur la période", val: peak.max || 0, tone: "warning" },
+    { title: "Client le plus exposé", detail: top ? escapeHtml(top.peer_name) : "Aucun client identifié", val: top ? top.n : 0, tone: "accent" },
+    { title: "MTTA / couverture", detail: `${total} événement(s) agrégés sur 7 jours`, val: mttaMin != null ? `${mttaMin} min` : "—", tone: "accent" },
   ];
   el.innerHTML = items.map(i => `
-    <div class="ops-insight">
+    <div class="ops-insight tone-${i.tone}">
       <div><strong>${i.title}</strong><span>${i.detail}</span></div>
       <div class="ops-insight-val">${i.val}</div>
     </div>`).join("");
@@ -3836,25 +3833,42 @@ function renderAlertsHistory(data) {
 // ---------------------------------------------------------------
 function showAlertDetail(a) {
   const severityTone = a.level === "critical" ? "danger" : a.level === "warning" ? "warning" : "accent";
-  document.getElementById("alert-detail-title").textContent = a.rule_key || "Détail de l'alerte";
-  document.getElementById("alert-detail-body").innerHTML = `
-    <div class="row-flex" style="justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);">
-      <span class="badge ${a.level === "critical" ? "danger" : a.level === "warning" ? "warning" : "success"}" style="font-size:var(--fs-sm);">
-        <span class="dot"></span>${ALERT_SEVERITY_LABELS[a.level] || a.level}
-      </span>
-      ${a.archived ? `<span class="cell-muted">Archivée</span>` : ""}
-    </div>
-    <div class="field"><label>Message</label><div class="cell-primary" style="color:var(--${severityTone});">${escapeHtml(a.message || "-")}</div></div>
-    <div class="field"><label>Client concerné</label><div class="mono">${escapeHtml(a.peer_name || "-")}</div></div>
-    <div class="field"><label>Règle déclenchée</label><div class="mono">${escapeHtml(a.rule_key || "-")}</div></div>
-    <div class="field"><label>Source</label><div class="mono">${escapeHtml(a.source || "-")}</div></div>
-    <div class="field"><label>Horodatage</label><div class="mono">${fmtDate(a.ts)}</div></div>
-    <div class="field"><label>Lue</label><div class="mono">${a.read_at ? fmtDate(a.read_at) : "Non lue"}</div></div>
-    <div class="field"><label>Canaux notifiés</label><div class="mono">${escapeHtml(a.channels || "-")}</div></div>
-    <div class="row-flex" style="gap:8px;margin-top:var(--sp-4);justify-content:flex-end;">
-      ${a.read_at ? "" : `<button class="btn ghost sm" id="alert-detail-mark-read">Marquer comme lue</button>`}
-      <button class="btn ghost sm" id="alert-detail-archive">${a.archived ? "Désarchiver" : "Archiver"}</button>
-    </div>`;
+  const severityLabel = ALERT_SEVERITY_LABELS[a.level] || a.level || "Info";
+  const statusLabel = a.archived ? "Archivée" : (a.read_at ? "Lue" : "Non lue");
+  const icon = document.getElementById("alert-detail-icon");
+  if (icon) icon.className = `modal-header-icon tone-${severityTone}`;
+  document.getElementById("alert-detail-title").textContent = a.rule_key || "Dossier d’alerte";
+  const subtitle = document.getElementById("alert-detail-subtitle");
+  if (subtitle) subtitle.textContent = `${severityLabel} · ${a.peer_name || "Client non identifié"} · ${fmtDate(a.ts)}`;
+
+  const heroBadges = `
+    <span class="badge ${severityTone === "accent" ? "success" : severityTone}"><span class="dot"></span>${escapeHtml(severityLabel)}</span>
+    <span class="badge ${a.read_at ? "success" : "warning"}"><span class="dot"></span>${escapeHtml(statusLabel)}</span>`;
+  const identite = recapField("Client concerné", a.peer_name, { mono: true, emptyText: "Aucun client" }) +
+    recapField("Règle déclenchée", a.rule_key, { mono: true }) +
+    recapField("Source", a.source, { mono: true, emptyText: "Non renseignée" });
+  const traitement = recapField("Horodatage", fmtDate(a.ts), { mono: true }) +
+    recapField("Première lecture", a.read_at ? fmtDate(a.read_at) : "", { mono: true, emptyText: "Non lue" }) +
+    recapField("Canaux notifiés", a.channels, { span2: true, emptyText: "Aucun canal enregistré" });
+  const messageHtml = recapField("Message", "", {
+    span2: true,
+    html: `<span class="recap-field-value">${escapeHtml(a.message || "Aucun message")}</span>`,
+  });
+
+  document.getElementById("alert-detail-body").innerHTML =
+    recapHero((severityLabel || "?").slice(0, 1).toUpperCase(), a.rule_key || "Alerte", a.message || "Aucun détail fourni", heroBadges, { avatarClass: `tone-${severityTone}` }) +
+    `<div class="recap-sections">` +
+    recapSection(ICON_USER, "accent", "Contexte", identite, "Cible et origine de l’événement") +
+    recapSection(ICON_CLOCK, severityTone === "accent" ? "success" : severityTone, "Traitement", traitement, "Horodatage, lecture et canaux") +
+    recapSection(ICON_MAIL, severityTone === "danger" ? "warning" : "success", "Détail", messageHtml, "Texte transmis aux canaux") +
+    `</div>`;
+
+  const footer = document.getElementById("alert-detail-footer");
+  footer.innerHTML = `
+    ${a.read_at ? "" : `<button class="btn ghost sm" type="button" id="alert-detail-mark-read">Marquer comme lue</button>`}
+    <button class="btn ghost sm" type="button" id="alert-detail-archive">${a.archived ? "Désarchiver" : "Archiver"}</button>
+    <button class="btn sm" type="button" data-close-modal>Fermer</button>`;
+  footer.querySelector("[data-close-modal]").addEventListener("click", () => closeModal("modal-alert-detail"));
   const markReadBtn = document.getElementById("alert-detail-mark-read");
   if (markReadBtn) markReadBtn.addEventListener("click", async () => {
     try { await apiSend("PATCH", `/api/alerts/history/${a.id}`, { read: true }); closeModal("modal-alert-detail"); renderAlerts(); }
@@ -3879,27 +3893,6 @@ document.getElementById("alerts-next").addEventListener("click", () => {
   el.addEventListener(el.type === "checkbox" ? "change" : "input", () => { STATE.alertsPage.offset = 0; renderAlerts(); });
 });
 document.getElementById("btn-alerts-export").addEventListener("click", () => downloadWithAuth("/api/alerts/history/export", "alertes.csv"));
-
-function renderDedupList(entries) {
-  const el = document.getElementById("dedup-list");
-  document.getElementById("dedup-hint").textContent = `${entries.length} règle(s) en cooldown`;
-  if (!entries.length) {
-    el.innerHTML = `<div class="empty-state"><strong>Aucune règle en cooldown</strong><span>Les canaux sont prêts à relayer.</span></div>`;
-    return;
-  }
-  el.innerHTML = entries.map(e => `
-    <div class="feed-item">
-      <div class="feed-body">
-        <div class="feed-title mono">${escapeHtml(e.rule_key)}</div>
-        <div class="feed-meta">Dernier envoi il y a ${Math.floor((e.age_sec || 0) / 60)} min</div>
-      </div>
-      <button class="btn ghost sm" data-clear="${escapeHtml(e.rule_key)}">Effacer</button>
-    </div>`).join("");
-  el.querySelectorAll("[data-clear]").forEach(btn => btn.addEventListener("click", async () => {
-    try { await apiSend("DELETE", `/api/alerts/dedup/${encodeURIComponent(btn.dataset.clear)}`); renderAlerts(); }
-    catch (err) { toast("danger", "Échec", err.message); }
-  }));
-}
 
 document.getElementById("btn-alert-config").addEventListener("click", async () => {
   try {
