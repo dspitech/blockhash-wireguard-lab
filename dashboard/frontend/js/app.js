@@ -1047,6 +1047,9 @@ function kpiIcon(name) {
     data: '<path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
     sessions: '<path d="M5 3h10v14l-2.5-1.5L10 17l-2.5-1.5L5 17V3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 7h5M7.5 10h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     alerts: '<path d="M10 3c-3.5 4-4.5 6-4.5 9a4.5 4.5 0 0 0 9 0c0-3-1-5-4.5-9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+    cpu: '<rect x="4" y="4" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 2.5v1.5M13 2.5v1.5M7 16v1.5M13 16v1.5M2.5 7h1.5M2.5 13h1.5M16 7h1.5M16 13h1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+    memory: '<rect x="3" y="6" width="14" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 9h2M10 9h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    globe: '<circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h14M10 3c2.2 2.4 3.2 4.6 3.2 7s-1 4.6-3.2 7c-2.2-2.4-3.2-4.6-3.2-7s1-4.6 3.2-7Z" stroke="currentColor" stroke-width="1.4"/>',
     clock: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     online: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
     idle: '<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
@@ -1344,6 +1347,21 @@ function chartTextColor() {
 }
 function chartGridColor() {
   return getComputedStyle(document.documentElement).getPropertyValue("--border-subtle").trim() || "#1c2740";
+}
+function chartSurfaceColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--bg-surface").trim() || "#fff";
+}
+function makeChartGradient(canvas, color, topAlpha = 0.32) {
+  const ctx = canvas.getContext("2d");
+  const h = canvas.parentElement?.clientHeight || 260;
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  const hex = color.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const gch = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  g.addColorStop(0, `rgba(${r},${gch},${b},${topAlpha})`);
+  g.addColorStop(1, `rgba(${r},${gch},${b},0)`);
+  return g;
 }
 
 function openKebabMenu(event, btn) {
@@ -2043,6 +2061,12 @@ async function toggleClient(name, currentlyEnabled) {
   } catch (err) { toast("danger", "Échec de l'opération", err.message); }
 }
 
+function updateEditClientAvatar() {
+  const el = document.getElementById("edit-client-avatar");
+  if (!el) return;
+  const name = document.getElementById("field-edit-name").value.trim();
+  el.textContent = name ? initials(name) : "?";
+}
 function openEditClientModal(name) {
   if (STATE.demoMode) return toast("info", "Mode démonstration", "Action indisponible sans API connectée.");
   const peer = STATE.peers.find(p => p.name === name);
@@ -2055,8 +2079,14 @@ function openEditClientModal(name) {
     const el = document.getElementById(`field-edit-${f}`);
     if (el) el.value = (peer && peer[f]) || "";
   });
+  const subtitle = document.getElementById("edit-client-subtitle");
+  if (subtitle) subtitle.textContent = peer && peer.prenom
+    ? `${peer.prenom} · profil WireGuard`
+    : "Mettre à jour le profil, le contact et la configuration";
+  updateEditClientAvatar();
   openModal("modal-client-edit");
 }
+document.getElementById("field-edit-name")?.addEventListener("input", updateEditClientAvatar);
 document.getElementById("btn-gdpr-export").addEventListener("click", () => {
   const name = document.getElementById("field-edit-name").dataset.originalName;
   if (!name) return;
@@ -3237,7 +3267,60 @@ document.getElementById("journal-next").addEventListener("click", () => {
 // VUE : Monitoring (débit long terme, système, geoip, anomalies)
 // ---------------------------------------------------------------
 async function renderMonitoring() {
-  await Promise.all([renderLongTermChart(), renderSystemPanel(), renderGeoipMap(), renderAnomalies()]);
+  const [series, snap, findings] = await Promise.all([
+    renderLongTermChart(),
+    renderSystemPanel(),
+    renderAnomalies(),
+  ]);
+  const geoCount = await renderGeoipMap();
+  renderMonitoringKpis(series || [], snap, findings || [], geoCount || 0);
+}
+
+function seriesTotals(series) {
+  return (series || []).reduce((acc, p) => {
+    acc.rx += Number(p.rx_bytes ?? p.rx ?? 0) || 0;
+    acc.tx += Number(p.tx_bytes ?? p.tx ?? 0) || 0;
+    return acc;
+  }, { rx: 0, tx: 0 });
+}
+
+function renderMonitoringKpis(series, snap, findings, geoCount) {
+  const grid = document.getElementById("monitoring-kpi-grid");
+  if (!grid) return;
+  const totals = seriesTotals(series);
+  const cpu = snap && snap.psutil_available ? Math.round(snap.cpu_percent || 0) : null;
+  const mem = snap && snap.psutil_available ? Math.round(snap.memory?.percent || 0) : null;
+  const rangeLabel = { "1h": "1 h", "24h": "24 h", "7d": "7 j", "30d": "30 j" }[STATE.throughputRange] || STATE.throughputRange;
+  const cards = [
+    { label: "CPU hôte", value: cpu, icon: "cpu", tone: cpu != null && cpu > 85 ? "danger" : cpu != null && cpu > 65 ? "warning" : "accent", trend: snap?.cpu_count ? `${snap.cpu_count} cœurs` : "Métrique hôte", isPct: true },
+    { label: "Mémoire", value: mem, icon: "memory", tone: mem != null && mem > 85 ? "danger" : mem != null && mem > 65 ? "warning" : "success", trend: snap?.memory?.used_bytes ? `${fmtBytes(snap.memory.used_bytes)} utilisés` : "Métrique hôte", isPct: true },
+    { label: `Volume ${rangeLabel}`, value: totals.rx + totals.tx, icon: "data", tone: "accent", trend: `Rx ${fmtBytes(totals.rx)} · Tx ${fmtBytes(totals.tx)}`, isBytes: true },
+    { label: "Anomalies", value: (findings || []).length, icon: "alerts", tone: (findings || []).length ? "warning" : "success", trend: geoCount ? `${geoCount} endpoint(s) géolocalisé(s)` : "Aucun point GeoIP" },
+  ];
+  grid.innerHTML = cards.map((c, i) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:var(--${c.tone}-dim, var(--neutral-dim));color:var(--${c.tone}, var(--text-secondary));">${kpiIcon(c.icon)}</div>
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" id="monitoring-kpi-value-${i}">${c.value == null ? "—" : "0"}</div>
+      <div class="kpi-trend" style="color:var(--text-tertiary);">${c.trend}</div>
+    </div>`).join("");
+  cards.forEach((c, i) => {
+    const el = document.getElementById(`monitoring-kpi-value-${i}`);
+    if (!el || c.value == null) return;
+    if (c.isPct) {
+      const start = performance.now();
+      function tick(now) {
+        const progress = Math.min(1, (now - start) / 900);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = `${Math.round(c.value * eased)} %`;
+        if (progress < 1) requestAnimationFrame(tick);
+        else el.textContent = `${c.value} %`;
+      }
+      requestAnimationFrame(tick);
+    } else {
+      animateValue(el, c.value, !!c.isBytes);
+    }
+  });
 }
 
 async function renderLongTermChart() {
@@ -3249,25 +3332,108 @@ async function renderLongTermChart() {
       const data = await apiGet(`/api/throughput?range=${encodeURIComponent(STATE.throughputRange)}`);
       series = data.series || [];
     }
+    const canvas = document.getElementById("chart-longterm");
     const labels = series.map(p => {
-      const d = new Date(p.ts || p.t);
-      return STATE.throughputRange === "1h" || STATE.throughputRange === "24h"
-        ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-        : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+      if (typeof p.ts === "number") {
+        const d = new Date(p.ts * 1000);
+        return STATE.throughputRange === "1h" || STATE.throughputRange === "24h"
+          ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+          : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+      }
+      if (p.ts) {
+        const d = new Date(p.ts);
+        if (!Number.isNaN(d.getTime())) {
+          return STATE.throughputRange === "1h" || STATE.throughputRange === "24h"
+            ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+            : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+        }
+      }
+      return p.t || "";
     });
-    buildLineChart("chart-longterm", labels, [
-      { label: "Rx", data: series.map(p => p.rx_bytes ?? p.rx ?? 0), color: "#123c47" },
-      { label: "Tx", data: series.map(p => p.tx_bytes ?? p.tx ?? 0), color: "#1c5b63" },
-    ]);
-  } catch (err) { toast("danger", "Débit indisponible", err.message); }
+    const rx = series.map(p => p.rx_bytes ?? p.rx ?? 0);
+    const tx = series.map(p => p.tx_bytes ?? p.tx ?? 0);
+    if (canvas && typeof Chart !== "undefined") {
+      if (STATE.charts["chart-longterm"]) STATE.charts["chart-longterm"].destroy();
+      if (typeof ChartZoom !== "undefined" && !Chart.registry.plugins.get("zoom")) {
+        Chart.register(ChartZoom);
+      }
+      STATE.charts["chart-longterm"] = new Chart(canvas, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            { label: "Rx", data: rx, borderColor: "#123c47", backgroundColor: makeChartGradient(canvas, "#123c47", 0.28), borderWidth: 2.4, tension: 0.4, pointRadius: 0, pointHoverRadius: 5, fill: true },
+            { label: "Tx", data: tx, borderColor: "#2f8f8a", backgroundColor: makeChartGradient(canvas, "#2f8f8a", 0.22), borderWidth: 2.4, tension: 0.4, pointRadius: 0, pointHoverRadius: 5, fill: true },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          animation: { duration: 750, easing: "easeOutCubic" },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtBytes(c.parsed.y)}` } },
+            zoom: typeof ChartZoom === "undefined" ? undefined : {
+              zoom: { wheel: { enabled: true }, pinch: { enabled: false }, mode: "x" },
+              pan: { enabled: true, mode: "x" },
+              limits: { x: { minRange: 5 } },
+            },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: chartTextColor(), font: { size: 10 }, maxTicksLimit: 8 } },
+            y: { grid: { color: chartGridColor() }, ticks: { color: chartTextColor(), font: { size: 10 }, callback: v => fmtBytes(v) } },
+          },
+        },
+      });
+    }
+    renderMonitoringVolumeChart(series);
+    return series;
+  } catch (err) {
+    toast("danger", "Débit indisponible", err.message);
+    return [];
+  }
+}
+
+function renderMonitoringVolumeChart(series) {
+  const canvas = document.getElementById("chart-monitoring-volume");
+  const hint = document.getElementById("monitoring-volume-hint");
+  const totals = seriesTotals(series);
+  const rangeLabel = { "1h": "1 heure", "24h": "24 heures", "7d": "7 jours", "30d": "30 jours" }[STATE.throughputRange] || STATE.throughputRange;
+  if (hint) hint.textContent = `Agrégé sur ${rangeLabel}`;
+  if (!canvas || typeof Chart === "undefined") return;
+  if (STATE.charts["chart-monitoring-volume"]) STATE.charts["chart-monitoring-volume"].destroy();
+  const items = [
+    { label: "Entrant (Rx)", value: fmtBytes(totals.rx), raw: totals.rx, color: "#123c47" },
+    { label: "Sortant (Tx)", value: fmtBytes(totals.tx), raw: totals.tx, color: "#2f8f8a" },
+  ];
+  if (!totals.rx && !totals.tx) {
+    renderDonutLegend(document.getElementById("monitoring-volume-legend"), []);
+    return;
+  }
+  STATE.charts["chart-monitoring-volume"] = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: items.map(i => i.label),
+      datasets: [{ data: items.map(i => i.raw), backgroundColor: items.map(i => i.color), borderWidth: 2, borderColor: chartSurfaceColor() }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "70%",
+      animation: { animateRotate: true, animateScale: true, duration: 800, easing: "easeOutCubic" },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: ${fmtBytes(c.parsed)}` } } },
+    },
+  });
+  renderDonutLegend(document.getElementById("monitoring-volume-legend"), items.map(i => ({
+    label: i.label, value: i.value, color: i.color,
+  })));
 }
 
 document.querySelectorAll("#throughput-range .chip").forEach(chip => {
-  chip.addEventListener("click", () => {
+  chip.addEventListener("click", async () => {
     document.querySelectorAll("#throughput-range .chip").forEach(c => c.classList.remove("is-active"));
     chip.classList.add("is-active");
     STATE.throughputRange = chip.dataset.range;
-    renderLongTermChart();
+    const series = await renderLongTermChart();
+    renderMonitoringKpis(series || [], STATE._lastSystemSnap, STATE._lastAnomalies || [], STATE._lastGeoCount || 0);
   });
 });
 
@@ -3275,42 +3441,45 @@ async function renderSystemPanel() {
   const el = document.getElementById("system-meters");
   try {
     const snap = STATE.demoMode ? { psutil_available: false } : await apiGet("/api/system");
+    STATE._lastSystemSnap = snap;
     if (!snap.psutil_available) {
       el.innerHTML = `<div class="empty-state"><strong>Métriques hôte indisponibles</strong><span>psutil n'est pas installé côté serveur, ou mode démonstration actif.</span></div>`;
-      return;
+      return snap;
     }
     const rows = [
-      { label: "CPU", value: snap.cpu_percent, of: `${snap.cpu_count} cœurs` },
-      { label: "Mémoire", value: snap.memory?.percent, of: `${fmtBytes(snap.memory?.used_bytes)} / ${fmtBytes(snap.memory?.total_bytes)}` },
-      { label: "Disque", value: snap.disk?.percent, of: `${fmtBytes(snap.disk?.used_bytes)} / ${fmtBytes(snap.disk?.total_bytes)}` },
+      { label: "CPU", value: snap.cpu_percent, of: `${snap.cpu_count} cœurs`, tone: "accent" },
+      { label: "Mémoire", value: snap.memory?.percent, of: `${fmtBytes(snap.memory?.used_bytes)} / ${fmtBytes(snap.memory?.total_bytes)}`, tone: "success" },
+      { label: "Disque", value: snap.disk?.percent, of: `${fmtBytes(snap.disk?.used_bytes)} / ${fmtBytes(snap.disk?.total_bytes)}`, tone: "warning" },
     ];
-    el.innerHTML = rows.map(r => {
+    el.innerHTML = `<div class="host-gauges">` + rows.map(r => {
       const pct = r.value === null || r.value === undefined ? 0 : r.value;
-      const tone = pct > 85 ? "danger" : pct > 65 ? "warn" : "";
+      const tone = pct > 85 ? "var(--danger)" : pct > 65 ? "var(--warning)" : `var(--${r.tone})`;
       return `
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);margin-bottom:6px;">
-            <span style="font-weight:600;color:var(--text-secondary);">${r.label}</span>
-            <span class="cell-muted mono">${r.value === null || r.value === undefined ? "-" : r.value.toFixed(0) + "%"} · ${r.of}</span>
+        <div class="host-gauge">
+          <div class="host-gauge-ring" style="--pct:${Math.max(0, Math.min(100, pct))};--tone:${tone}"><strong>${r.value == null ? "—" : Math.round(pct) + "%"}</strong></div>
+          <div class="host-gauge-copy">
+            <div class="host-gauge-label">${r.label}</div>
+            <div class="host-gauge-meta">${escapeHtml(r.of)}</div>
           </div>
-          <div class="meter ${tone}"><i style="width:${pct}%"></i></div>
         </div>`;
-    }).join("") + `
-      <div style="border-top:1px solid var(--border-subtle);padding-top:var(--sp-3);margin-top:var(--sp-1);">
-        <div class="kpi-label" style="margin-bottom:6px;">Services</div>
+    }).join("") + `</div>
+      <div class="host-services">
+        <div class="kpi-label">Services</div>
         ${Object.entries(snap.services || {}).map(([svc, ok]) => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:var(--fs-xs);">
+          <div class="host-service-row">
             <span class="mono">${escapeHtml(svc)}</span>${statusBadge(ok ? "online" : "disabled")}
-          </div>`).join("")}
+          </div>`).join("") || `<span class="cell-muted">Aucun service reporté</span>`}
       </div>`;
+    return snap;
   } catch (err) {
     el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`;
+    return { psutil_available: false };
   }
 }
 
 async function renderGeoipMap() {
   const mapEl = document.getElementById("geoip-map");
-  if (typeof L === "undefined") { mapEl.innerHTML = "Leaflet indisponible."; return; }
+  if (typeof L === "undefined") { mapEl.innerHTML = "Leaflet indisponible."; return 0; }
   if (!STATE.map) {
     STATE.map = L.map(mapEl, { worldCopyJump: true }).setView([20, 10], 2);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
@@ -3326,11 +3495,16 @@ async function renderGeoipMap() {
       const data = await apiGet("/api/geoip");
       points = data.points || [];
     }
-    if (!points.length) return;
+    STATE._lastGeoCount = points.length;
+    if (!points.length) {
+      renderTopCountries([]);
+      setTimeout(() => STATE.map.invalidateSize(), 200);
+      return 0;
+    }
     points.forEach(pt => {
       if (pt.lat === undefined || pt.lon === undefined) return;
       const marker = L.circleMarker([pt.lat, pt.lon], {
-        radius: 6, color: "#1c5b63", fillColor: "#1c5b63", fillOpacity: 0.6, weight: 1.5,
+        radius: 7, color: "#2f8f8a", fillColor: "#4fb0a8", fillOpacity: 0.75, weight: 1.6,
       }).bindTooltip(`${pt.name || pt.peer_name || "Client"} - ${pt.city || pt.country || ""}`);
       marker.addTo(STATE.map);
       STATE.mapMarkers.push(marker);
@@ -3340,50 +3514,67 @@ async function renderGeoipMap() {
     renderTopCountries(points);
   } catch (err) { /* carte non bloquante */ }
   setTimeout(() => STATE.map.invalidateSize(), 200);
+  return STATE._lastGeoCount || 0;
 }
 
 function renderTopCountries(points) {
   const el = document.getElementById("geoip-top-countries");
   const counts = {};
-  points.forEach(p => { const c = p.country || "?"; counts[c] = (counts[c] || 0) + 1; });
-  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  if (!top.length) { el.innerHTML = ""; return; }
+  (points || []).forEach(p => { const c = p.country || "?"; counts[c] = (counts[c] || 0) + 1; });
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  if (!top.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:24px 8px;"><strong>Aucun pays</strong><span>Les endpoints apparaîtront ici une fois géolocalisés.</span></div>`;
+    return;
+  }
   const max = top[0][1];
-  el.innerHTML = `<span class="cell-muted" style="margin-bottom:6px;display:block;">Top ${top.length} pays</span>` +
+  el.innerHTML = `<div class="cell-muted" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">Top pays</div>` +
     top.map(([country, n]) => `
-      <div class="row-flex" style="justify-content:space-between;gap:8px;margin-bottom:4px;">
-        <span style="flex:0 0 90px;">${escapeHtml(country)}</span>
-        <div style="flex:1;background:var(--bg-inset);border-radius:3px;overflow:hidden;height:8px;align-self:center;">
-          <div style="width:${(n / max) * 100}%;background:var(--teal-mid);height:100%;"></div>
+      <div class="monitoring-country">
+        <div>
+          <div class="monitoring-country-name">${escapeHtml(country)}</div>
+          <div class="monitoring-country-bar"><i style="width:${(n / max) * 100}%"></i></div>
         </div>
-        <span class="cell-muted" style="flex:0 0 24px;text-align:right;">${n}</span>
+        <span class="monitoring-country-n">${n}</span>
       </div>`).join("");
 }
 
 async function renderAnomalies() {
   const el = document.getElementById("anomalies-feed");
+  const hint = document.getElementById("anomalies-count-hint");
   try {
     if (STATE.demoMode) {
+      STATE._lastAnomalies = [];
+      if (hint) hint.textContent = "Démo";
       el.innerHTML = `<div class="empty-state"><strong>Mode démonstration</strong><span>La détection d'anomalies nécessite l'API connectée.</span></div>`;
-      return;
+      return [];
     }
     const data = await apiGet("/api/anomalies");
     const findings = data.anomalies || [];
+    STATE._lastAnomalies = findings;
+    if (hint) hint.textContent = findings.length ? `${findings.length} signalement(s)` : "Nominal";
     if (!findings.length) {
       el.innerHTML = `<div class="empty-state"><strong>Aucune anomalie</strong><span>Tout est nominal.</span></div>`;
-      return;
+      return findings;
     }
-    el.innerHTML = findings.map(a => `
+    el.innerHTML = findings.map(a => {
+      const sev = a.severity === "critical" ? "danger" : "warning";
+      return `
       <div class="feed-item">
-        <div class="feed-icon" style="background:var(--warning-dim);color:var(--warning);">
+        <div class="feed-icon" style="background:var(--${sev}-dim);color:var(--${sev});">
           <svg viewBox="0 0 20 20" fill="none"><path d="M10 7v4M10 14h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
         <div class="feed-body">
-          <div class="feed-title">${escapeHtml(a.title || a.type || "Anomalie")}</div>
+          <div class="feed-title">${escapeHtml(a.title || a.type || a.peer || "Anomalie")}</div>
           <div class="feed-meta">${escapeHtml(a.detail || a.message || "")}</div>
         </div>
-      </div>`).join("");
-  } catch (err) { el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`; }
+      </div>`;
+    }).join("");
+    return findings;
+  } catch (err) {
+    STATE._lastAnomalies = [];
+    el.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`;
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------

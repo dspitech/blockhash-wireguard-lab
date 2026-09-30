@@ -701,9 +701,63 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 .kpi-grid .kpi-card:nth-child(2) { animation-delay: 60ms; }
 .kpi-grid .kpi-card:nth-child(3) { animation-delay: 120ms; }
 .kpi-grid .kpi-card:nth-child(4) { animation-delay: 180ms; }
+.kpi-grid .kpi-card:nth-child(5) { animation-delay: 240ms; }
+
+.modal-edit-client .modal-body {
+  min-height: 0 !important;
+  max-height: min(68vh, 720px);
+}
+.modal-edit-client .wizard-step-stack { gap: 12px; }
+
+.monitoring-charts-grid {
+  display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--sp-4); align-items: stretch;
+}
+.monitoring-span-2 { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .monitoring-charts-grid { grid-template-columns: 1fr; }
+  .monitoring-span-2 { grid-column: auto; }
+}
+.monitoring-map-layout {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(180px, 0.8fr); gap: 16px; align-items: stretch;
+}
+@media (max-width: 900px) {
+  .monitoring-map-layout { grid-template-columns: 1fr; }
+}
+.monitoring-countries { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.monitoring-country {
+  display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; align-items: center;
+  padding: 8px 10px; border-radius: var(--radius-md); background: var(--bg-inset); border: 1px solid var(--border-subtle);
+}
+.monitoring-country-name { font-size: var(--fs-xs); font-weight: 700; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-country-bar { height: 6px; border-radius: var(--radius-pill); background: var(--border-subtle); overflow: hidden; margin-top: 6px; }
+.monitoring-country-bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); }
+.monitoring-country-n { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 700; text-align: right; color: var(--text-primary); }
+.host-gauges { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.host-gauge {
+  display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+  background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+}
+.host-gauge-ring {
+  --pct: 0; --tone: var(--accent);
+  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
+  background: conic-gradient(var(--tone) calc(var(--pct) * 1%), var(--border-subtle) 0);
+  display: grid; place-items: center; position: relative;
+}
+.host-gauge-ring::before {
+  content: ""; position: absolute; inset: 7px; border-radius: 50%; background: var(--bg-surface);
+}
+.host-gauge-ring strong {
+  position: relative; z-index: 1; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.host-gauge-copy { min-width: 0; flex: 1; }
+.host-gauge-label { font-size: var(--fs-sm); font-weight: 700; color: var(--text-primary); }
+.host-gauge-meta { font-size: var(--fs-2xs); color: var(--text-tertiary); margin-top: 2px; }
+.host-services { border-top: 1px solid var(--border-subtle); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.host-service-row { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-xs); }
 
 /* ---- Cartes : survol "lift" premium ---- */
 .card, .kpi-card {
+  position: relative;
   transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
 }
 .card:hover, .kpi-card:hover {
@@ -724,6 +778,7 @@ code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 
 /* ---- KPI : compteur animé (piloté en JS via animateValue) ---- */
 .kpi-value { transition: color .2s var(--ease); }
+.kpi-trend { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: 700; margin-top: 2px; }
 .kpi-value.is-counting { color: var(--accent); }
 
 /* ---- Boutons : interactions "ultra pro" ---- */

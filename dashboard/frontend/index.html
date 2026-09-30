@@ -54,6 +54,7 @@
 
     .chart-box { @apply relative h-[260px]; }
     .chart-box.sm { @apply h-[160px]; }
+    .chart-box-lg { @apply h-[300px]; }
 
     table.data-table { @apply w-full text-[13px]; border-collapse: collapse; }
     .data-table thead th { @apply text-left text-xs font-bold px-3 py-3 whitespace-nowrap; }
@@ -1329,38 +1330,54 @@
           </div>
         </div>
 
-        <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
-          <div class="card">
+        <div class="kpi-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="monitoring-kpi-grid"></div>
+
+        <div class="monitoring-charts-grid">
+          <div class="card reveal monitoring-span-2" style="--reveal-delay:0ms;">
             <div class="card-header">
-              <h3 data-i18n="h3.debit-serie-longue-duree">Débit - série longue durée</h3>
+              <h3 data-i18n="h3.debit-serie-longue-duree">Débit — série longue durée</h3>
               <button class="btn ghost sm" id="btn-chart-reset-zoom"
                 title="Molette : zoom · glisser : déplacer">Réinitialiser le zoom</button>
             </div>
-            <div class="chart-box"><canvas id="chart-longterm"></canvas></div>
+            <div class="chart-box chart-box-lg"><canvas id="chart-longterm"></canvas></div>
+            <div class="chart-legend">
+              <span><i style="background:#123c47"></i>Entrant (Rx)</span>
+              <span><i style="background:#2f8f8a"></i>Sortant (Tx)</span>
+            </div>
           </div>
-          <div class="card">
+          <div class="card reveal" style="--reveal-delay:40ms;">
             <div class="card-header">
-              <h3 data-i18n="h3.hote">Hôte</h3>
+              <h3>Répartition du volume</h3>
+              <span class="hint" id="monitoring-volume-hint">Sur la plage sélectionnée</span>
+            </div>
+            <div class="donut-panel">
+              <div class="chart-box sm donut-canvas"><canvas id="chart-monitoring-volume"></canvas></div>
+              <div class="donut-legend" id="monitoring-volume-legend"></div>
+            </div>
+          </div>
+          <div class="card reveal" style="--reveal-delay:80ms;">
+            <div class="card-header">
+              <h3 data-i18n="h3.hote">Santé de l'hôte</h3>
+              <span class="hint">CPU, mémoire, disque</span>
             </div>
             <div class="stack" id="system-meters"></div>
           </div>
-        </div>
-
-        <div class="grid-2 grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start"
-          style="margin-top: var(--sp-4);">
-          <div class="card">
+          <div class="card reveal monitoring-span-2" style="--reveal-delay:120ms;">
             <div class="card-header">
-              <h3 data-i18n="h3.localisation-des-endpoints">Localisation des endpoints</h3><span class="hint">GeoIP
-                approximatif</span>
+              <h3 data-i18n="h3.localisation-des-endpoints">Localisation des endpoints</h3>
+              <span class="hint">GeoIP approximatif</span>
             </div>
-            <div id="geoip-map"></div>
-            <div id="geoip-top-countries" class="stack" style="padding:var(--sp-3) var(--sp-4);"></div>
+            <div class="monitoring-map-layout">
+              <div id="geoip-map"></div>
+              <div id="geoip-top-countries" class="monitoring-countries"></div>
+            </div>
           </div>
-          <div class="card">
+          <div class="card reveal" style="--reveal-delay:160ms;">
             <div class="card-header">
               <h3 data-i18n="h3.anomalies-detectees">Anomalies détectées</h3>
+              <span class="hint" id="anomalies-count-hint"></span>
             </div>
-            <div class="feed" id="anomalies-feed"></div>
+            <div class="feed feed-scroll" id="anomalies-feed"></div>
           </div>
         </div>
       </section>
@@ -2314,57 +2331,127 @@
   </div>
 
   <div class="modal-overlay" id="modal-client-edit">
-    <div class="modal" style="max-width:520px;">
-      <div class="modal-header">
-        <h3 data-i18n="h3.modifier-le-client">Modifier le client</h3><button class="icon-btn"
-          data-close-modal>✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-section">
-          <div class="form-section-title">Identité</div>
-          <div class="field"><label data-i18n="label.nom-renommer">Nom (renommer)</label><input class="input"
-              id="field-edit-name" placeholder="ex. alice-laptop" /></div>
-          <div class="field-grid">
-            <div class="field"><label data-i18n="label.prenom-nom-complet">Prénom / nom complet</label><input
-                class="input" id="field-edit-prenom" /></div>
-            <div class="field"><label data-i18n="label.fonction">Fonction</label><input class="input"
-                id="field-edit-fonction" /></div>
-          </div>
+    <div class="modal modal-pro modal-wizard modal-wizard-client modal-edit-client">
+      <div class="modal-header modal-header-pro">
+        <div class="client-avatar-preview" id="edit-client-avatar">?</div>
+        <div class="modal-header-pro-copy">
+          <h3 data-i18n="h3.modifier-le-client">Modifier le client</h3>
+          <p class="modal-subtitle" id="edit-client-subtitle">Mettre à jour le profil, le contact et la configuration</p>
         </div>
-        <div class="form-section">
-          <div class="form-section-title">Contact</div>
-          <div class="field-grid">
-            <div class="field"><label data-i18n="label.email">Email</label><input class="input" type="email"
-                id="field-edit-email" /></div>
-            <div class="field"><label data-i18n="label.telephone">Téléphone</label><input class="input"
-                id="field-edit-telephone" /></div>
+        <button class="icon-btn modal-header-close" data-close-modal aria-label="Fermer">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="wizard-step-stack">
+          <div class="form-block tone-accent">
+            <div class="tw-settings-section-header" style="margin-bottom:10px;">
+              <div class="tw-settings-icon tone-accent">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5" />
+                  <path d="M4.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.5"
+                    stroke-linecap="round" />
+                </svg>
+              </div>
+              <div>
+                <h2 class="tw-h2">Identité</h2>
+                <p class="tw-p-muted">Nom technique du pair et informations de la personne</p>
+              </div>
+            </div>
+            <div class="wizard-fields">
+              <div class="field wizard-field-span">
+                <label class="tw-label" data-i18n="label.nom-renommer">Nom du client</label>
+                <input class="tw-input" id="field-edit-name" placeholder="ex. alice-laptop" autocomplete="off" />
+                <p class="tw-hint">Identifiant technique unique. Le modifier renomme le pair WireGuard.</p>
+              </div>
+              <div class="field">
+                <label class="tw-label" data-i18n="label.prenom-nom-complet">Prénom / nom complet</label>
+                <input class="tw-input" id="field-edit-prenom" placeholder="ex. Alice Martin" />
+              </div>
+              <div class="field">
+                <label class="tw-label" data-i18n="label.fonction">Fonction</label>
+                <input class="tw-input" id="field-edit-fonction" placeholder="ex. Technicienne" />
+              </div>
+            </div>
           </div>
-          <div class="field"><label data-i18n="label.adresse">Adresse</label><input class="input"
-              id="field-edit-adresse" /></div>
-          <div class="field"><label data-i18n="label.tags-separes-par-des-virgules">Tags (séparés par des
-              virgules)</label><input class="input" id="field-edit-tags" /></div>
-          <div class="field"><label data-i18n="label.notes">Notes</label><textarea class="input" id="field-edit-notes"
-              rows="2" style="width:100%;"></textarea></div>
-          <div class="field"><label><input type="checkbox" id="field-edit-rgpd-consent" /> Consentement RGPD
-              recueilli</label>
-            <button class="btn ghost sm" id="btn-gdpr-export" style="margin-left:10px;"
+
+          <div class="form-block tone-success">
+            <div class="tw-settings-section-header" style="margin-bottom:10px;">
+              <div class="tw-settings-icon tone-success">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="M3 5.5h14v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M3 6l7 5 7-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <h2 class="tw-h2">Contact</h2>
+                <p class="tw-p-muted">Coordonnées de la personne, facultatives</p>
+              </div>
+            </div>
+            <div class="wizard-fields">
+              <div class="field">
+                <label class="tw-label" data-i18n="label.email">Email</label>
+                <input class="tw-input" type="email" id="field-edit-email" placeholder="alice@example.com" />
+              </div>
+              <div class="field">
+                <label class="tw-label" data-i18n="label.telephone">Téléphone</label>
+                <input class="tw-input" id="field-edit-telephone" placeholder="+33612345678" />
+              </div>
+              <div class="field wizard-field-span">
+                <label class="tw-label" data-i18n="label.adresse">Adresse</label>
+                <input class="tw-input" id="field-edit-adresse" placeholder="12 rue de Paris, 75001 Paris" />
+              </div>
+              <div class="field wizard-field-span">
+                <label class="tw-label" data-i18n="label.notes">Notes</label>
+                <textarea class="tw-textarea" id="field-edit-notes" rows="2" style="width:100%;min-height:64px;"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-block tone-warning">
+            <div class="tw-settings-section-header" style="margin-bottom:10px;">
+              <div class="tw-settings-icon tone-warning">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4" />
+                  <path d="M10 6v4l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div>
+                <h2 class="tw-h2">Configuration</h2>
+                <p class="tw-p-muted">Cycle de vie, quota et conformité</p>
+              </div>
+            </div>
+            <div class="wizard-fields">
+              <div class="field wizard-field-span">
+                <label class="tw-label" data-i18n="label.tags-separes-par-des-virgules">Tags (séparés par des
+                  virgules)</label>
+                <input class="tw-input" id="field-edit-tags" placeholder="vip, audit" />
+              </div>
+              <div class="field">
+                <label class="tw-label" data-i18n="label.date-d-expiration-laisser-vide-pas-d-expiration">Date
+                  d'expiration</label>
+                <input class="tw-input" type="date" id="field-edit-expires" />
+                <p class="tw-hint">Laisser vide pour un accès sans expiration.</p>
+              </div>
+              <div class="field">
+                <label class="tw-label">Bande passante (Mbit/s)</label>
+                <input class="tw-input" type="number" min="1" step="1" id="field-edit-bandwidth"
+                  placeholder="illimité" />
+              </div>
+            </div>
+            <label class="tw-toggle-row" style="cursor:pointer;margin-top:12px;">
+              <input type="checkbox" class="tw-checkbox" id="field-edit-rgpd-consent" />
+              <span class="tw-p-muted" style="font-size:13px;">Consentement RGPD recueilli</span>
+            </label>
+            <button class="btn ghost sm" id="btn-gdpr-export" style="margin-top:12px;"
               data-i18n="btn.btn-gdpr-export">Exporter les données (RGPD)</button>
           </div>
         </div>
-        <div class="form-section">
-          <div class="form-section-title">Configuration technique</div>
-          <div class="field-grid">
-            <div class="field"><label data-i18n="label.date-d-expiration-laisser-vide-pas-d-expiration">Expiration (vide
-                = aucune)</label><input class="input" type="date" id="field-edit-expires" /></div>
-            <div class="field"><label>Bande passante (Mbit/s)</label><input class="input" type="number" min="1" step="1"
-                id="field-edit-bandwidth" placeholder="illimité" /></div>
-          </div>
-        </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn" data-close-modal data-i18n="btn.cancel">Annuler</button>
-        <button class="btn primary" id="btn-confirm-client-edit"
-          data-i18n="btn.btn-confirm-client-edit">Enregistrer</button>
+      <div class="modal-footer modal-footer-wizard">
+        <button class="btn ghost" data-close-modal data-i18n="btn.cancel">Annuler</button>
+        <button class="btn primary" id="btn-confirm-client-edit" data-i18n="btn.btn-confirm-client-edit">
+          Enregistrer
+        </button>
       </div>
     </div>
   </div>
